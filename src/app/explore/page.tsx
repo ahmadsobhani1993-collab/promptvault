@@ -1,15 +1,11 @@
 import Link from 'next/link'
 import { cookies } from 'next/headers'
 import { type Locale } from '@/lib/i18n'
-import { prompts, typeLabel, L, type PromptType } from '@/lib/data'
+import { getPrompts, promptTypes, L, getPromptTypeLabel } from '@/lib/data'
 import PromptCard from '@/components/prompt-card'
 
-export const metadata = {
-  title: 'کاوش',
-  description: 'جستجو و فیلتر پرامپت‌های هوش مصنوعی',
-}
-
-const types: (PromptType | 'all')[] = ['all', 'image', 'video', 'text', 'code', 'audio']
+export const metadata = { title: 'کاوش', description: 'جستجو و فیلتر پرامپت‌ها' }
+export const dynamic = 'force-dynamic'
 
 export default async function ExplorePage({
   searchParams,
@@ -20,20 +16,7 @@ export default async function ExplorePage({
   const cookieStore = await cookies()
   const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
 
-  let list = prompts
-  if (params.type && params.type !== 'all') {
-    list = list.filter((p) => p.type === params.type)
-  }
-  if (params.q) {
-    const q = params.q.toLowerCase()
-    list = list.filter(
-      (p) =>
-        p.titleFa.includes(q) ||
-        p.titleEn.toLowerCase().includes(q) ||
-        p.tagsFa.some((t) => t.includes(q)) ||
-        p.tagsEn.some((t) => t.toLowerCase().includes(q))
-    )
-  }
+  const prompts = await getPrompts({ type: params.type, q: params.q })
 
   return (
     <section className="container-app py-16">
@@ -45,29 +28,33 @@ export default async function ExplorePage({
         <input
           name="q"
           defaultValue={params.q ?? ''}
-          placeholder={L(locale, 'جستجو در پرامپت‌ها و تگ‌ها...', 'Search prompts and tags...')}
+          placeholder={L(locale, 'جستجو در پرامپت‌ها...', 'Search prompts...')}
           className="input text-base"
         />
       </form>
 
       <div className="mt-6 flex flex-wrap gap-2">
-        {types.map((tp) => (
+        <Link
+          href="/explore"
+          className={'rounded-full border px-4 py-1.5 text-xs ' + (!params.type ? 'border-gold bg-gold/15 text-gold-bright' : 'border-line bg-elevated text-ink-muted')}
+        >
+          {L(locale, 'همه', 'All')}
+        </Link>
+        {promptTypes.map((tp) => (
           <Link
-            key={tp}
-            href={tp === 'all' ? '/explore' : '/explore?type=' + tp}
-            className={'rounded-full border px-4 py-1.5 text-xs ' + ((params.type ?? 'all') === tp ? 'border-gold bg-gold/15 text-gold-bright' : 'border-line bg-elevated text-ink-muted')}
+            key={tp.value}
+            href={'/explore?type=' + tp.value}
+            className={'rounded-full border px-4 py-1.5 text-xs ' + (params.type === tp.value ? 'border-gold bg-gold/15 text-gold-bright' : 'border-line bg-elevated text-ink-muted')}
           >
-            {tp === 'all'
-              ? L(locale, 'همه', 'All')
-              : L(locale, typeLabel[tp].fa, typeLabel[tp].en)}
+            {L(locale, tp.fa, tp.en)}
           </Link>
         ))}
       </div>
 
-      {list.length > 0 ? (
+      {prompts.length > 0 ? (
         <div className="mt-10 grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-5">
-          {list.map((item) => (
-            <PromptCard key={item.slug} item={item} locale={locale} />
+          {prompts.map((item) => (
+            <PromptCard key={item.id} item={item} locale={locale} />
           ))}
         </div>
       ) : (

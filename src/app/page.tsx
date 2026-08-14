@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers'
 import { dictionaries, type Locale } from '@/lib/i18n'
-import { categories, prompts, articles, L } from '@/lib/data'
+import { getCategories, getPrompts, getArticles, L } from '@/lib/data'
 import PromptCard from '@/components/prompt-card'
 import Hero from '@/components/hero'
 import ZoomSection from '@/components/zoom-section'
@@ -12,18 +12,25 @@ import Link from 'next/link'
 const chips = [
   { fa: 'داغ‌ترین', en: 'Trending', href: '/explore?sort=trending' },
   { fa: 'جدید', en: 'New', href: '/explore?sort=newest' },
-  { fa: 'تصویر', en: 'Image', href: '/explore?type=image' },
-  { fa: 'ویدیو', en: 'Video', href: '/explore?type=video' },
-  { fa: 'متن', en: 'Text', href: '/explore?type=text' },
-  { fa: 'کد', en: 'Code', href: '/explore?type=code' },
-  { fa: 'موسیقی', en: 'Music', href: '/explore?type=audio' },
-  { fa: 'بهره‌وری', en: 'Productivity', href: '/explore?type=productivity' },
+  { fa: 'تصویر', en: 'Image', href: '/explore?type=IMAGE' },
+  { fa: 'ویدیو', en: 'Video', href: '/explore?type=VIDEO' },
+  { fa: 'متن', en: 'Text', href: '/explore?type=TEXT' },
+  { fa: 'کد', en: 'Code', href: '/explore?type=CODE' },
+  { fa: 'موسیقی', en: 'Music', href: '/explore?type=AUDIO' },
 ]
+
+export const dynamic = 'force-dynamic'
 
 export default async function HomePage() {
   const cookieStore = await cookies()
   const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
   const t = dictionaries[locale]
+
+  const [categories, prompts, articles] = await Promise.all([
+    getCategories(),
+    getPrompts({ take: 5 }),
+    getArticles(),
+  ])
 
   return (
     <>
@@ -48,8 +55,8 @@ export default async function HomePage() {
             </Reveal>
 
             <div className="mt-10 grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-5">
-              {prompts.slice(0, 5).map((item, i) => (
-                <Reveal key={item.slug} delay={i * 90}>
+              {prompts.map((item, i) => (
+                <Reveal key={item.id} delay={i * 90}>
                   <PromptCard item={item} locale={locale} />
                 </Reveal>
               ))}
@@ -72,7 +79,7 @@ export default async function HomePage() {
                 items={categories.map((c) => ({
                   slug: c.slug,
                   icon: c.icon,
-                  label: L(locale, c.fa, c.en),
+                  label: L(locale, c.nameFa, c.nameEn),
                 }))}
               />
             </Reveal>
@@ -96,7 +103,7 @@ export default async function HomePage() {
 
             <div className="mt-10 grid gap-5 md:grid-cols-3">
               {articles.map((a, i) => (
-                <Reveal key={a.slug} delay={i * 120}>
+                <Reveal key={a.id} delay={i * 120}>
                   <Link href={'/blog/' + a.slug} className="card group block overflow-hidden transition-colors hover:border-line-strong">
                     <div className="overflow-hidden">
                       <img

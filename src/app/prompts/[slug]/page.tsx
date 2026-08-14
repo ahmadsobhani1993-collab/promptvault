@@ -3,7 +3,7 @@ import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { type Locale } from '@/lib/i18n'
-import { prompts, categories, typeLabel, L } from '@/lib/data'
+import { getPromptBySlug, getRelatedPrompts, getPromptTypeLabel, L } from '@/lib/data'
 import PromptCard from '@/components/prompt-card'
 import CopyButton from '@/components/copy-button'
 
@@ -13,13 +13,12 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>
 }): Promise<Metadata> {
   const { slug } = await params
-  const item = prompts.find((p) => p.slug === slug)
+  const item = await getPromptBySlug(slug)
   if (!item) return {}
-  return {
-    title: item.titleFa,
-    description: item.prompt.slice(0, 150),
-  }
+  return { title: item.titleFa, description: item.prompt.slice(0, 150) }
 }
+
+export const dynamic = 'force-dynamic'
 
 export default async function PromptDetailPage({
   params,
@@ -30,33 +29,24 @@ export default async function PromptDetailPage({
   const cookieStore = await cookies()
   const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
 
-  const item = prompts.find((p) => p.slug === slug)
+  const item = await getPromptBySlug(slug)
   if (!item) notFound()
 
-  const cat = categories.find((c) => c.slug === item.category)
-  const related = prompts.filter((p) => p.category === item.category && p.slug !== slug).slice(0, 3)
+  const related = await getRelatedPrompts(item.categoryId, slug)
 
   return (
     <section className="container-app py-16">
       <div className="grid gap-10 lg:grid-cols-[1.2fr_1fr]">
         <div>
-          <img
-            src={item.img}
-            alt={L(locale, item.titleFa, item.titleEn)}
-            className="glow-gold w-full rounded-2xl object-cover"
-          />
+          <img src={item.img} alt={L(locale, item.titleFa, item.titleEn)} className="glow-gold w-full rounded-2xl object-cover" />
         </div>
 
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            {cat && (
-              <Link href={'/categories/' + cat.slug} className="gold-badge">
-                {L(locale, cat.fa, cat.en)}
-              </Link>
-            )}
-            <span className="badge">
-              {L(locale, typeLabel[item.type].fa, typeLabel[item.type].en)}
-            </span>
+            <Link href={'/categories/' + item.category.slug} className="gold-badge">
+              {L(locale, item.category.nameFa, item.category.nameEn)}
+            </Link>
+            <span className="badge">{getPromptTypeLabel(item.type, locale)}</span>
             <span className="badge">{item.model}</span>
           </div>
 
@@ -99,7 +89,7 @@ export default async function PromptDetailPage({
           </h2>
           <div className="mt-6 grid grid-cols-2 gap-5 md:grid-cols-3">
             {related.map((r) => (
-              <PromptCard key={r.slug} item={r} locale={locale} />
+              <PromptCard key={r.id} item={r} locale={locale} />
             ))}
           </div>
         </div>
