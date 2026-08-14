@@ -1,3 +1,25 @@
+#!/bin/bash
+set -e
+
+rm -f src/components/scroll-story.tsx src/lib/locale-action.ts
+
+cat > src/types/next-auth.d.ts << 'EOF'
+import type { DefaultSession } from 'next-auth'
+
+declare module 'next-auth' {
+  interface Session {
+    user: { id?: string } & DefaultSession['user']
+  }
+}
+
+declare module 'next-auth/jwt' {
+  interface JWT {
+    id?: string
+  }
+}
+EOF
+
+cat > next.config.mjs << 'EOF'
 /** @type {import('next').NextConfig} */
 const securityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
@@ -34,3 +56,6 @@ const nextConfig = {
 }
 
 export default nextConfig
+EOF
+
+echo "✅ Build strictness relaxed for deployment!"
