@@ -64,6 +64,12 @@ export default async function Header({ locale }: { locale: Locale }) {
         </div>
 
         <div className="flex items-center gap-3">
+          {session?.user?.role === 'ADMIN' && (
+            <Link href="/admin" className="btn-secondary hidden md:inline-flex">
+              {locale === 'fa' ? 'مدیریت' : 'Admin'}
+            </Link>
+          )}
+
           <Link href="/submit" className="btn-secondary hidden md:inline-flex">
             {t.submit}
           </Link>
