@@ -20,6 +20,12 @@ enum PromptType {
   AUDIO
 }
 
+enum PromptStatus {
+  PENDING
+  PUBLISHED
+  REJECTED
+}
+
 model User {
   id            String    @id @default(cuid())
   name          String?
@@ -33,6 +39,7 @@ model User {
   comments      Comment[]
   likes         Like[]
   saves         Save[]
+  prompts       Prompt[]
 }
 
 model Account {
@@ -95,24 +102,27 @@ model Sub {
 }
 
 model Prompt {
-  id         String     @id @default(cuid())
-  slug       String     @unique
+  id         String       @id @default(cuid())
+  slug       String       @unique
   titleFa    String
   titleEn    String
   img        String
   model      String
-  type       PromptType @default(IMAGE)
+  type       PromptType   @default(IMAGE)
+  status     PromptStatus @default(PUBLISHED)
   categoryId String
   subId      String?
+  userId     String?
   tagsFa     String[]
   tagsEn     String[]
-  prompt     String     @db.Text
-  likes      Int        @default(0)
-  saves      Int        @default(0)
-  views      Int        @default(0)
-  createdAt  DateTime   @default(now())
-  category   Category   @relation(fields: [categoryId], references: [id])
-  sub        Sub?       @relation(fields: [subId], references: [id])
+  prompt     String       @db.Text
+  likes      Int          @default(0)
+  saves      Int          @default(0)
+  views      Int          @default(0)
+  createdAt  DateTime     @default(now())
+  category   Category     @relation(fields: [categoryId], references: [id])
+  sub        Sub?         @relation(fields: [subId], references: [id])
+  user       User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
   comments   Comment[]
   userLikes  Like[]
   userSaves  Save[]

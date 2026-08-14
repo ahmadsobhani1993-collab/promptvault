@@ -37,14 +37,10 @@ export async function getPrompts(opts?: {
   subSlug?: string
   take?: number
 }) {
-  const where: any = {}
+  const where: any = { status: 'PUBLISHED' }
   if (opts?.type) where.type = opts.type
-  if (opts?.categorySlug) {
-    where.category = { slug: opts.categorySlug }
-  }
-  if (opts?.subSlug) {
-    where.sub = { slug: opts.subSlug }
-  }
+  if (opts?.categorySlug) where.category = { slug: opts.categorySlug }
+  if (opts?.subSlug) where.sub = { slug: opts.subSlug }
   if (opts?.q) {
     const q = opts.q
     where.OR = [
@@ -63,15 +59,15 @@ export async function getPrompts(opts?: {
 }
 
 export async function getPromptBySlug(slug: string) {
-  return prisma.prompt.findUnique({
-    where: { slug },
+  return prisma.prompt.findFirst({
+    where: { slug, status: 'PUBLISHED' },
     include: { category: true, sub: true },
   })
 }
 
 export async function getRelatedPrompts(categoryId: string, excludeSlug: string) {
   return prisma.prompt.findMany({
-    where: { categoryId, NOT: { slug: excludeSlug } },
+    where: { categoryId, status: 'PUBLISHED', NOT: { slug: excludeSlug } },
     orderBy: { likes: 'desc' },
     take: 3,
     include: { category: true, sub: true },
