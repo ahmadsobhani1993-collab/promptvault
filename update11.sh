@@ -1,3 +1,7 @@
+#!/bin/bash
+set -e
+
+cat > src/components/layout/header.tsx << 'EOF'
 import Link from 'next/link'
 import { auth, signOut } from '@/auth'
 import { dictionaries, type Locale } from '@/lib/i18n'
@@ -82,3 +86,6 @@ export default async function Header({ locale }: { locale: Locale }) {
     </header>
   )
 }
+EOF
+
+echo "✅ Header now reads categories from database!"
