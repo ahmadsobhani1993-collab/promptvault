@@ -4,8 +4,13 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { type Locale } from '@/lib/i18n'
 import { getPromptBySlug, getRelatedPrompts, getPromptTypeLabel, L } from '@/lib/data'
+import { prisma } from '@/lib/db'
+import { auth } from '@/auth'
 import PromptCard from '@/components/prompt-card'
 import CopyButton from '@/components/copy-button'
+import RealLikeButton from '@/components/real-like-button'
+import SaveButton from '@/components/save-button'
+import RealCommentBox from '@/components/real-comment-box'
 
 export async function generateMetadata({
   params,
@@ -28,11 +33,30 @@ export default async function PromptDetailPage({
   const { slug } = await params
   const cookieStore = await cookies()
   const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
+  const session = await auth()
 
   const item = await getPromptBySlug(slug)
   if (!item) notFound()
 
   const related = await getRelatedPrompts(item.categoryId, slug)
+
+  const userId = session?.user?.id
+  let liked = false
+  let saved = false
+  if (userId) {
+    liked = !!(await prisma.like.findUnique({
+      where: { userId_promptId: { userId, promptId: item.id } },
+    }))
+    saved = !!(await prisma.save.findUnique({
+      where: { userId_promptId: { userId, promptId: item.id } },
+    }))
+  }
+
+  const comments = await prisma.comment.findMany({
+    where: { promptId: item.id },
+    orderBy: { createdAt: 'desc' },
+    include: { user: true },
+  })
 
   return (
     <section className="container-app py-16">
@@ -54,10 +78,21 @@ export default async function PromptDetailPage({
             {L(locale, item.titleFa, item.titleEn)}
           </h1>
 
-          <div className="mt-4 flex items-center gap-5 text-xs text-ink-muted">
-            <span>{item.likes} {L(locale, 'پسند', 'likes')}</span>
-            <span>{item.saves} {L(locale, 'ذخیره', 'saves')}</span>
-            <span>{item.views} {L(locale, 'بازدید', 'views')}</span>
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <RealLikeButton
+              promptId={item.id}
+              initialLiked={liked}
+              initialCount={item.likes}
+              label={L(locale, 'پسند', 'likes')}
+              requireLogin={L(locale, 'برای لایک کردن ابتدا وارد شو', 'Login to like')}
+            />
+            <SaveButton
+              promptId={item.id}
+              initialSaved={saved}
+              initialCount={item.saves}
+              label={L(locale, 'ذخیره', 'saves')}
+              requireLogin={L(locale, 'برای ذخیره کردن ابتدا وارد شو', 'Login to save')}
+            />
           </div>
 
           <div className="mt-5 flex flex-wrap gap-1">
@@ -94,6 +129,23 @@ export default async function PromptDetailPage({
           </div>
         </div>
       )}
+
+      <RealCommentBox
+        initial={comments.map((c) => ({
+          id: c.id,
+          name: c.user?.name ?? c.name,
+          image: c.user?.image ?? null,
+          text: c.text,
+          createdAt: new Date(c.createdAt).toLocaleString('fa-IR'),
+        }))}
+        targetId={item.id}
+        targetType="prompt"
+        titleLabel={L(locale, 'دیدگاه‌ها', 'Comments')}
+        textPlaceholder={L(locale, 'دیدگاهت را بنویس...', 'Write your comment...')}
+        submitLabel={L(locale, 'ارسال دیدگاه', 'Submit')}
+        loginRequired={L(locale, 'برای ارسال دیدگاه ابتدا وارد شو', 'Login to comment')}
+        isLoggedIn={!!userId}
+      />
     </section>
   )
 }

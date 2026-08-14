@@ -32,6 +32,7 @@ model User {
   sessions      Session[]
   comments      Comment[]
   likes         Like[]
+  saves         Save[]
 }
 
 model Account {
@@ -114,6 +115,7 @@ model Prompt {
   sub        Sub?       @relation(fields: [subId], references: [id])
   comments   Comment[]
   userLikes  Like[]
+  userSaves  Save[]
 }
 
 model Article {
@@ -150,6 +152,16 @@ model Comment {
 }
 
 model Like {
+  id       String @id @default(cuid())
+  userId   String
+  promptId String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prompt   Prompt @relation(fields: [promptId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, promptId])
+}
+
+model Save {
   id       String @id @default(cuid())
   userId   String
   promptId String

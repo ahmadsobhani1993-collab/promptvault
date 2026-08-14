@@ -4,9 +4,10 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { type Locale } from '@/lib/i18n'
 import { getArticleBySlug, getArticles, getPrompts, L } from '@/lib/data'
+import { prisma } from '@/lib/db'
+import { auth } from '@/auth'
 import PromptCard from '@/components/prompt-card'
-import LikeButton from '@/components/like-button'
-import CommentBox from '@/components/comment-box'
+import RealCommentBox from '@/components/real-comment-box'
 
 const relatedMap: Record<string, { fa: string; en: string }[]> = {
   'midjourney-starter': [{ fa: 'سینمایی', en: 'cinematic' }, { fa: 'محصول', en: 'product' }],
@@ -35,6 +36,8 @@ export default async function ArticlePage({
   const { slug } = await params
   const cookieStore = await cookies()
   const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
+  const session = await auth()
+  const userId = session?.user?.id
 
   const a = await getArticleBySlug(slug)
   if (!a) notFound()
@@ -44,14 +47,22 @@ export default async function ArticlePage({
   const content = locale === 'fa' ? a.contentFa : a.contentEn
 
   const keywords = relatedMap[slug] ?? []
-  let related = []
+  let related: any[] = []
   if (keywords.length > 0) {
     const allPrompts = await getPrompts()
-    related = allPrompts.filter((p) => {
-      const tags = locale === 'fa' ? p.tagsFa : p.tagsEn
-      return keywords.some((k) => tags.some((t) => t.toLowerCase() === k[locale].toLowerCase()))
-    }).slice(0, 3)
+    related = allPrompts
+      .filter((p) => {
+        const tags = locale === 'fa' ? p.tagsFa : p.tagsEn
+        return keywords.some((k) => tags.some((t) => t.toLowerCase() === k[locale].toLowerCase()))
+      })
+      .slice(0, 3)
   }
+
+  const comments = await prisma.comment.findMany({
+    where: { articleId: a.id },
+    orderBy: { createdAt: 'desc' },
+    include: { user: true },
+  })
 
   return (
     <article className="container-app max-w-4xl py-16">
@@ -80,10 +91,6 @@ export default async function ArticlePage({
         {content.map((p, i) => (
           <p key={i} className="text-base leading-8 text-ink-muted">{p}</p>
         ))}
-      </div>
-
-      <div className="mt-10 flex items-center gap-3">
-        <LikeButton initial={128} label={L(locale, 'پسند', 'likes')} />
       </div>
 
       {related.length > 0 && (
@@ -116,15 +123,21 @@ export default async function ArticlePage({
         </div>
       </div>
 
-      <CommentBox
-        initial={[
-          { name: 'سارا', text: L(locale, 'عالی بود!', 'Great!') },
-          { name: 'Ali', text: L(locale, 'نکات کاربردی.', 'Practical tips.') },
-        ]}
+      <RealCommentBox
+        initial={comments.map((c) => ({
+          id: c.id,
+          name: c.user?.name ?? c.name,
+          image: c.user?.image ?? null,
+          text: c.text,
+          createdAt: new Date(c.createdAt).toLocaleString('fa-IR'),
+        }))}
+        targetId={a.id}
+        targetType="article"
         titleLabel={L(locale, 'دیدگاه‌ها', 'Comments')}
-        namePlaceholder={L(locale, 'نام تو', 'Your name')}
         textPlaceholder={L(locale, 'دیدگاهت را بنویس...', 'Write your comment...')}
         submitLabel={L(locale, 'ارسال دیدگاه', 'Submit')}
+        loginRequired={L(locale, 'برای ارسال دیدگاه ابتدا وارد شو', 'Login to comment')}
+        isLoggedIn={!!userId}
       />
     </article>
   )
