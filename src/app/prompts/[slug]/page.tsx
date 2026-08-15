@@ -93,7 +93,7 @@ export default async function PromptDetailPage({ params }: { params: Promise<{ s
             {item.tagsFa.map((tag, i) => L(locale, tag, item.tagsEn[i] ?? tag)).map((tag) => (
               <Link
                 key={tag}
-                href={'/explore?q=' + encodeURIComponent(tag)}
+                href={'/explore?tags=' + encodeURIComponent(tag)}
                 className="badge transition-colors hover:border-gold/60 hover:text-gold-bright"
               >
                 {tag}

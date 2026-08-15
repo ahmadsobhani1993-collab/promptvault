@@ -128,3 +128,14 @@ html {
 @media (prefers-reduced-motion: reduce) {
   .anim-float, .anim-float2, .anim-fade-up, .title-shine { animation: none }
 }
+
+@media (max-width: 768px) {
+  html, body {
+    scroll-snap-type: none !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  .snap-section {
+    scroll-snap-align: none !important;
+    min-height: auto !important;
+  }
+}

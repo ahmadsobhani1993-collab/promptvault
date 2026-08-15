@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import type { Locale } from '@/lib/i18n'
 import { L, getPromptTypeLabel } from '@/lib/data'
+import SafeImg from '@/components/safe-img'
 
 type PromptItem = {
   slug: string
@@ -21,15 +22,32 @@ function fmt(n: number) {
   return String(n)
 }
 
-export default function PromptCard({ item, locale }: { item: PromptItem; locale: Locale }) {
+export default function PromptCard({
+  item,
+  locale,
+  cornerTags,
+}: {
+  item: PromptItem
+  locale: Locale
+  cornerTags?: string[]
+}) {
   return (
     <article className="card-cream glow-gold p-3 transition-transform hover:-translate-y-1">
       <Link href={'/prompts/' + item.slug} className="block">
         <div className="relative">
-          <img src={item.img} alt={L(locale, item.titleFa, item.titleEn)} loading="lazy" className="aspect-square w-full rounded-lg object-cover" />
+          <SafeImg src={item.img} alt={L(locale, item.titleFa, item.titleEn)} className="aspect-square w-full rounded-lg object-cover" />
           <span className="absolute right-2 top-2 rounded-full bg-gold px-2.5 py-0.5 text-[10px] font-bold text-[#171512]">
             {getPromptTypeLabel(item.type, locale)}
           </span>
+          {cornerTags && cornerTags.length > 0 && (
+            <span className="absolute left-2 top-2 flex flex-col items-start gap-1">
+              {cornerTags.map((t) => (
+                <span key={t} className="rounded-full bg-[#171512]/85 px-2 py-0.5 text-[9px] text-gold-bright">
+                  {t}
+                </span>
+              ))}
+            </span>
+          )}
           <span className="glow-soft absolute -bottom-3 right-2 grid h-10 w-10 place-items-center rounded-full border border-gold bg-[#1b1408] text-[9px] font-bold text-gold-bright">
             {item.model}
           </span>
@@ -43,7 +61,7 @@ export default function PromptCard({ item, locale }: { item: PromptItem; locale:
         {item.tagsFa.map((tag, i) => L(locale, tag, item.tagsEn[i] ?? tag)).map((tag) => (
           <Link
             key={tag}
-            href={'/explore?q=' + encodeURIComponent(tag)}
+            href={'/explore?tags=' + encodeURIComponent(tag)}
             className="rounded-full bg-[#e7dcc4] px-2 py-0.5 text-[10px] text-[#5c5443] transition-colors hover:bg-gold hover:text-[#171512]"
           >
             {tag}

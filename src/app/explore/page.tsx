@@ -1,8 +1,10 @@
 import Link from 'next/link'
 import { cookies } from 'next/headers'
 import { type Locale } from '@/lib/i18n'
-import { getPrompts, promptTypes, L, getPromptTypeLabel } from '@/lib/data'
+import { getPrompts, promptTypes, L } from '@/lib/data'
+import { TAG_VOCAB } from '@/lib/gemini'
 import PromptCard from '@/components/prompt-card'
+import TagFilter from '@/components/tag-filter'
 
 export const metadata = { title: 'کاوش', description: 'جستجو و فیلتر پرامپت‌ها' }
 export const dynamic = 'force-dynamic'
@@ -10,13 +12,19 @@ export const dynamic = 'force-dynamic'
 export default async function ExplorePage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; q?: string }>
+  searchParams: Promise<{ type?: string; q?: string; tags?: string }>
 }) {
   const params = await searchParams
   const cookieStore = await cookies()
   const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
 
-  const prompts = await getPrompts({ type: params.type, q: params.q })
+  const selectedTags = (params.tags ?? '')
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .slice(0, 2)
+
+  const prompts = await getPrompts({ type: params.type, q: params.q, tags: selectedTags })
 
   return (
     <section className="container-app py-16">
@@ -51,10 +59,12 @@ export default async function ExplorePage({
         ))}
       </div>
 
+      <TagFilter all={TAG_VOCAB.map((t) => t.fa)} selected={selectedTags} />
+
       {prompts.length > 0 ? (
         <div className="mt-10 grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-5">
           {prompts.map((item) => (
-            <PromptCard key={item.id} item={item} locale={locale} />
+            <PromptCard key={item.id} item={item} locale={locale} cornerTags={selectedTags} />
           ))}
         </div>
       ) : (

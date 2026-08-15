@@ -35,12 +35,14 @@ export async function getPrompts(opts?: {
   q?: string
   categorySlug?: string
   subSlug?: string
+  tags?: string[]
   take?: number
 }) {
   const where: any = { status: 'PUBLISHED' }
   if (opts?.type) where.type = opts.type
   if (opts?.categorySlug) where.category = { slug: opts.categorySlug }
   if (opts?.subSlug) where.sub = { slug: opts.subSlug }
+  if (opts?.tags && opts.tags.length > 0) where.tagsFa = { hasEvery: opts.tags }
   if (opts?.q) {
     const q = opts.q
     where.OR = [
