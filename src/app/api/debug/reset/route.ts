@@ -9,17 +9,15 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
-  const deleted = await prisma.telegramQueue.deleteMany({})
-  await prisma.setting.upsert({
-    where: { key: 'tg_synced' },
-    update: { value: '0' },
-    create: { key: 'tg_synced', value: '0' },
-  })
-  await prisma.setting.upsert({
-    where: { key: 'tg_before' },
-    update: { value: '0' },
-    create: { key: 'tg_before', value: '0' },
-  })
+  const delPrompts = await prisma.prompt.deleteMany({ where: { slug: { startsWith: 'tg-' } } })
+  const delQueue = await prisma.telegramQueue.deleteMany({})
+  await prisma.setting.upsert({ where: { key: 'tg_synced' }, update: { value: '0' }, create: { key: 'tg_synced', value: '0' } })
+  await prisma.setting.upsert({ where: { key: 'tg_before' }, update: { value: '0' }, create: { key: 'tg_before', value: '0' } })
 
-  return NextResponse.json({ ok: true, deleted: deleted.count, msg: 'Queue reset — sync will restart from scratch' })
+  return NextResponse.json({
+    ok: true,
+    deletedPrompts: delPrompts.count,
+    deletedQueue: delQueue.count,
+    msg: 'Garbage prompts + queue cleared. Sync will restart.',
+  })
 }

@@ -71,8 +71,15 @@ export async function analyzeWithGemini(opts: {
     }
   )
 
-  const json = await res.json()
+  const body = await res.text()
+  if (!res.ok) {
+    throw new Error('Gemini HTTP ' + res.status + ' :: ' + body.slice(0, 300))
+  }
+
+  const json = JSON.parse(body)
   const raw: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+  if (!raw) throw new Error('Gemini empty response :: ' + body.slice(0, 300))
+
   const m = raw.match(/\{[\s\S]*\}/)
   const parsed = m ? JSON.parse(m[0]) : {}
 

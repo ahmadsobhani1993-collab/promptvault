@@ -28,9 +28,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ debug: d })
   }
 
-  // force reprocess: ?retry=1 skips queue to next PENDING regardless
-  const retry = searchParams.get('retry') === '1'
-
   const synced = await getSetting('tg_synced', '0')
 
   if (synced !== '1') {
@@ -64,9 +61,8 @@ export async function GET(req: Request) {
     })
   }
 
-  // ---------- PHASE 2: process ONE post per tick ----------
   const item = await prisma.telegramQueue.findFirst({
-    where: retry ? {} : { status: 'PENDING' },
+    where: { status: 'PENDING' },
     orderBy: { id: 'asc' },
   })
   if (!item) return NextResponse.json({ ok: true, phase: 'idle', msg: 'all processed' })
@@ -76,7 +72,6 @@ export async function GET(req: Request) {
     let img = item.img
     const skipIds: number[] = []
 
-    // photo without text + next message has the long prompt
     if (img && promptText.length < 40) {
       const next = await prisma.telegramQueue.findFirst({
         where: { id: { gt: item.id }, status: 'PENDING' },
@@ -88,7 +83,6 @@ export async function GET(req: Request) {
       }
     }
 
-    // text-only reply pointing to a photo above
     if (!img && promptText && item.reply) {
       const prev = await prisma.telegramQueue.findFirst({
         where: { id: { lt: item.id }, img: { not: null } },
@@ -97,14 +91,20 @@ export async function GET(req: Request) {
       if (prev && prev.id >= item.id - 3) img = prev.img
     }
 
-    // اگر هیچ متنی نبود ولی عکس بود، با جمینای از روی عکس حدس می‌زنیم
     if (!promptText && !img) {
       await prisma.telegramQueue.update({ where: { id: item.id }, data: { status: 'SKIPPED' } })
       return NextResponse.json({ ok: true, phase: 'skip-empty' })
     }
 
+    // تصویر دائمی: کش در wsrv.nl + دانلود برای جمینای
+    let finalImg = img
     let imgBase64: string | null = null
     if (img) {
+      const wsrv = 'https://wsrv.nl/?url=' + encodeURIComponent(img) + '&w=900&q=75&output=webp'
+      try {
+        await fetch(wsrv, { signal: AbortSignal.timeout(9000) })
+        finalImg = wsrv
+      } catch {}
       try {
         const ir = await fetch(img, { signal: AbortSignal.timeout(8000) })
         const buf = Buffer.from(await ir.arrayBuffer())
@@ -129,7 +129,7 @@ export async function GET(req: Request) {
         usageFa: ai.usageFa,
         usageEn: ai.usageEn,
         slug: 'tg-' + item.id,
-        img: img ?? 'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=800&auto=format&fit=crop',
+        img: finalImg ?? 'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=800&auto=format&fit=crop',
         model: /--v\s?\d|--ar/.test(promptText) ? 'Midjourney' : 'AI',
         type: img ? 'IMAGE' : 'TEXT',
         status: 'PUBLISHED',

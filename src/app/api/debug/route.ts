@@ -9,35 +9,35 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
-  const envs = {
-    AUTH_SECRET: !!process.env.AUTH_SECRET ? 'set (' + process.env.AUTH_SECRET!.length + ' chars)' : 'MISSING',
-    AUTH_URL: process.env.AUTH_URL || 'MISSING',
-    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || 'MISSING',
-    AUTH_GOOGLE_ID: !!process.env.AUTH_GOOGLE_ID ? 'set (ends: ...' + process.env.AUTH_GOOGLE_ID!.slice(-10) + ')' : 'MISSING',
-    AUTH_GOOGLE_SECRET: !!process.env.AUTH_GOOGLE_SECRET ? 'set (' + process.env.AUTH_GOOGLE_SECRET!.length + ' chars)' : 'MISSING',
-    DATABASE_URL: !!process.env.DATABASE_URL ? 'set' : 'MISSING',
-    ADMIN_EMAIL: process.env.ADMIN_EMAIL || 'MISSING',
-  }
-
-  let dbStatus: string
+  let geminiTest: string
   try {
-    await prisma.$queryRaw`SELECT 1`
-    dbStatus = 'OK'
+    const r = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/' +
+        (process.env.GEMINI_MODEL || 'gemini-2.0-flash-lite') +
+        ':generateContent?key=' +
+        process.env.GEMINI_API_KEY,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: 'Reply with the single word: OK' }] }] }),
+        signal: AbortSignal.timeout(15000),
+      }
+    )
+    const b = await r.text()
+    geminiTest = r.ok ? 'OK: ' + (b.match(/"text":\s*"([^"]+)"/)?.[1] ?? 'answered') : 'HTTP ' + r.status + ' :: ' + b.slice(0, 250)
   } catch (e: any) {
-    dbStatus = 'ERROR: ' + (e?.message ?? String(e))
-  }
-
-  let userCount: number | string
-  try {
-    userCount = await prisma.user.count()
-  } catch (e: any) {
-    userCount = 'ERROR: ' + (e?.message ?? String(e))
+    geminiTest = 'ERROR: ' + String(e?.message ?? e)
   }
 
   return NextResponse.json({
-    envs,
-    db: dbStatus,
-    userCount,
+    envs: {
+      GEMINI_API_KEY: process.env.GEMINI_API_KEY ? 'set (' + process.env.GEMINI_API_KEY!.length + ' chars)' : 'MISSING',
+      GEMINI_MODEL: process.env.GEMINI_MODEL || 'default(gemini-2.0-flash-lite)',
+      TELEGRAM_CHANNEL: process.env.TELEGRAM_CHANNEL || 'MISSING',
+      TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN ? 'set' : 'MISSING',
+      TELEGRAM_OUTPUT: process.env.TELEGRAM_OUTPUT || 'MISSING',
+    },
+    geminiTest,
     time: new Date().toISOString(),
   })
 }
