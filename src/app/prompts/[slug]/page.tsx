@@ -10,6 +10,8 @@ import PromptCard from '@/components/prompt-card'
 import CopyButton from '@/components/copy-button'
 import RealLikeButton from '@/components/real-like-button'
 import SaveButton from '@/components/save-button'
+import StarButton from '@/components/star-button'
+import SafeImg from '@/components/safe-img'
 import RealCommentBox from '@/components/real-comment-box'
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -66,7 +68,7 @@ export default async function PromptDetailPage({ params }: { params: Promise<{ s
     <section className="container-app py-16">
       <div className="grid gap-10 lg:grid-cols-[1.2fr_1fr]">
         <div>
-          <img src={item.img} alt={L(locale, item.titleFa, item.titleEn)} className="glow-gold w-full rounded-2xl object-cover" />
+          <SafeImg src={item.img} alt={L(locale, item.titleFa, item.titleEn)} className="glow-gold w-full rounded-2xl object-cover" loading="eager" />
         </div>
 
         <div>
@@ -87,6 +89,7 @@ export default async function PromptDetailPage({ params }: { params: Promise<{ s
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <RealLikeButton promptId={item.id} initialLiked={liked} initialCount={item.likes} label={L(locale, 'پسند', 'likes')} requireLogin={L(locale, 'برای لایک کردن ابتدا وارد شو', 'Login to like')} />
             <SaveButton promptId={item.id} initialSaved={saved} initialCount={item.saves} label={L(locale, 'ذخیره', 'saves')} requireLogin={L(locale, 'برای ذخیره کردن ابتدا وارد شو', 'Login to save')} />
+            <StarButton promptId={item.id} initial={item.stars} label={L(locale, 'ستاره', 'stars')} />
           </div>
 
           <div className="mt-5 flex flex-wrap gap-1">

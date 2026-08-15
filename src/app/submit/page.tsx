@@ -4,6 +4,8 @@ import { cookies } from 'next/headers'
 import { prisma } from '@/lib/db'
 import { type Locale } from '@/lib/i18n'
 import { L } from '@/lib/data'
+import { TAG_VOCAB } from '@/lib/gemini'
+import TagPicker from '@/components/tag-picker'
 import { createSubmit } from './actions'
 
 export const dynamic = 'force-dynamic'
@@ -76,9 +78,11 @@ export default async function SubmitPage({
           ))}
         </select>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <input name="tagsFa" placeholder={L(locale, 'تگ فارسی (با ، جدا کن)', 'Persian tags')} className="input" />
-          <input name="tagsEn" placeholder="tags (comma separated)" className="input" />
+        <div>
+          <p className="mb-2 text-xs font-bold text-gold-bright">
+            {L(locale, 'تگ‌ها (فقط از لیست مجاز — حداکثر ۴)', 'Tags (choose from list — max 4)')}
+          </p>
+          <TagPicker vocab={TAG_VOCAB} max={4} />
         </div>
 
         <textarea
@@ -92,11 +96,7 @@ export default async function SubmitPage({
 
         <textarea
           name="usageFa"
-          placeholder={L(
-            locale,
-            'راهنمای استفاده (فارسی): مثلا در کدام مدل بگذارم، چه پارامترهایی بزنم، نکات مهم...',
-            'How to use (Persian)...'
-          )}
+          placeholder={L(locale, 'راهنمای استفاده (فارسی): مثلا در کدام مدل بگذارم، چه پارامترهایی بزنم، نکات مهم...', 'How to use (Persian)...')}
           rows={3}
           className="input resize-none"
         />

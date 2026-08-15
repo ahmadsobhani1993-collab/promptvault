@@ -1,21 +1,34 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 
-export default function TagFilter({ all, selected }: { all: string[]; selected: string[] }) {
+export default function TagFilter({
+  all,
+  top,
+  selected,
+}: {
+  all: string[]
+  top: string[]
+  selected: string[]
+}) {
   const router = useRouter()
+  const [q, setQ] = useState('')
 
   const apply = (tags: string[]) => {
-    const q = new URLSearchParams(window.location.search)
-    if (tags.length) q.set('tags', tags.join(','))
-    else q.delete('tags')
-    router.push('/explore?' + q.toString())
+    const query = new URLSearchParams(window.location.search)
+    if (tags.length) query.set('tags', tags.join(','))
+    else query.delete('tags')
+    router.push('/explore?' + query.toString())
   }
 
   const toggle = (t: string) => {
     if (selected.includes(t)) apply(selected.filter((x) => x !== t))
     else if (selected.length < 2) apply([...selected, t])
   }
+
+  const matches = q.trim() ? all.filter((t) => t.includes(q.trim())).slice(0, 10) : []
+  const show = q.trim() ? matches : top
 
   return (
     <div className="mt-6">
@@ -39,8 +52,15 @@ export default function TagFilter({ all, selected }: { all: string[]; selected: 
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        {all.map((t) => {
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="جستجوی تگ... (بقیه تگ‌ها را تایپ کن)"
+        className="input max-w-xs"
+      />
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {show.map((t) => {
           const active = selected.includes(t)
           return (
             <button
@@ -58,6 +78,9 @@ export default function TagFilter({ all, selected }: { all: string[]; selected: 
             </button>
           )
         })}
+        {q.trim() && show.length === 0 && (
+          <span className="text-xs text-ink-faint">تگی یافت نشد.</span>
+        )}
       </div>
     </div>
   )

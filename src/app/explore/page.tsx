@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { type Locale } from '@/lib/i18n'
 import { getPrompts, promptTypes, L } from '@/lib/data'
 import { TAG_VOCAB } from '@/lib/gemini'
+import { prisma } from '@/lib/db'
 import PromptCard from '@/components/prompt-card'
 import TagFilter from '@/components/tag-filter'
 
@@ -25,6 +26,17 @@ export default async function ExplorePage({
     .slice(0, 2)
 
   const prompts = await getPrompts({ type: params.type, q: params.q, tags: selectedTags })
+
+  const allTagsRows = await prisma.prompt.findMany({
+    where: { status: 'PUBLISHED' },
+    select: { tagsFa: true },
+  })
+  const freq: Record<string, number> = {}
+  for (const r of allTagsRows) for (const t of r.tagsFa) freq[t] = (freq[t] ?? 0) + 1
+  const top = Object.entries(freq)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map((e) => e[0])
 
   return (
     <section className="container-app py-16">
@@ -59,7 +71,7 @@ export default async function ExplorePage({
         ))}
       </div>
 
-      <TagFilter all={TAG_VOCAB.map((t) => t.fa)} selected={selectedTags} />
+      <TagFilter all={TAG_VOCAB.map((t) => t.fa)} top={top.length ? top : TAG_VOCAB.slice(0, 8).map((t) => t.fa)} selected={selectedTags} />
 
       {prompts.length > 0 ? (
         <div className="mt-10 grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-5">
