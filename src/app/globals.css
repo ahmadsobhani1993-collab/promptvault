@@ -85,3 +85,7 @@ html[dir='rtl'] * { letter-spacing: 0 !important; }
     transform: translate(var(--dx), var(--dy)) scale(0.3) rotate(90deg);
   }
 }
+
+html {
+  scroll-behavior: smooth;
+}

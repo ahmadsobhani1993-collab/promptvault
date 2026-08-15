@@ -96,7 +96,6 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: true, phase: 'skip-empty' })
     }
 
-    // تصویر دائمی: کش در wsrv.nl + دانلود برای جمینای
     let finalImg = img
     let imgBase64: string | null = null
     if (img) {
@@ -145,17 +144,20 @@ export async function GET(req: Request) {
       await prisma.telegramQueue.update({ where: { id: sid }, data: { status: 'MERGED', promptId: prompt.id } })
     }
 
+    let tg: any = null
     const out = process.env.TELEGRAM_OUTPUT
     if (out && process.env.TELEGRAM_BOT_TOKEN) {
-      await tgSendText(out, '✨ ' + ai.titleFa)
-      await tgSendFile(out, 'prompt-' + item.id + '.txt', promptText || ai.titleEn)
-      await tgSendText(
-        out,
-        '📘 راهنمای استفاده:\n' + (ai.usageFa || '—') + '\n\n📘 How to use:\n' + (ai.usageEn || '—') + '\n\n🆔 ' + out + ' ⭐'
-      )
+      tg = {
+        title: await tgSendText(out, '✨ ' + ai.titleFa),
+        file: await tgSendFile(out, 'prompt-' + item.id + '.txt', promptText || ai.titleEn),
+        usage: await tgSendText(
+          out,
+          '📘 راهنمای استفاده:\n' + (ai.usageFa || '—') + '\n\n📘 How to use:\n' + (ai.usageEn || '—')
+        ),
+      }
     }
 
-    return NextResponse.json({ ok: true, phase: 'processed', id: item.id, slug: prompt.slug, title: ai.titleFa })
+    return NextResponse.json({ ok: true, phase: 'processed', id: item.id, slug: prompt.slug, title: ai.titleFa, tg })
   } catch (e: any) {
     await prisma.telegramQueue.update({ where: { id: item.id }, data: { status: 'FAILED' } }).catch(() => {})
     return NextResponse.json({ ok: false, phase: 'failed', id: item.id, error: String(e?.message ?? e) }, { status: 500 })

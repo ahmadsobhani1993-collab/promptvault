@@ -47,12 +47,14 @@ export async function getPrompts(opts?: {
       { titleFa: { contains: q, mode: 'insensitive' } },
       { titleEn: { contains: q, mode: 'insensitive' } },
       { prompt: { contains: q, mode: 'insensitive' } },
+      { tagsFa: { hasSome: [q] } },
+      { tagsEn: { hasSome: [q] } },
     ]
   }
 
   return prisma.prompt.findMany({
     where,
-    orderBy: { likes: 'desc' },
+    orderBy: { createdAt: 'desc' },
     take: opts?.take,
     include: { category: true, sub: true },
   })
@@ -68,7 +70,7 @@ export async function getPromptBySlug(slug: string) {
 export async function getRelatedPrompts(categoryId: string, excludeSlug: string) {
   return prisma.prompt.findMany({
     where: { categoryId, status: 'PUBLISHED', NOT: { slug: excludeSlug } },
-    orderBy: { likes: 'desc' },
+    orderBy: { createdAt: 'desc' },
     take: 3,
     include: { category: true, sub: true },
   })

@@ -15,7 +15,6 @@ function decode(s: string) {
     .replace(/&gt;/g, '>')
     .replace(/&#39;/g, "'")
     .replace(/&quot;/g, '"')
-    .replace(/\u200c/g, '')
     .trim()
 }
 
@@ -43,16 +42,13 @@ function parseRaw(html: string): TgMessage[] {
   return out
 }
 
-// ادغام پست‌های جفت: placeholder + عکس → با متن پیام بعدی
 function mergePairs(raw: TgMessage[]): TgMessage[] {
-  // مرتب‌سازی صعودی بر اساس id
   const sorted = [...raw].sort((a, b) => a.id - b.id)
   const out: TgMessage[] = []
   let i = 0
   while (i < sorted.length) {
     const cur = sorted[i]
     const next = sorted[i + 1]
-    // اگر این یک placeholder با عکس است و بعدی متن طولانی دارد، ترکیب کن
     if (
       cur.isPromptPlaceholder &&
       cur.img &&
@@ -110,18 +106,28 @@ export async function diagnoseChannel(username: string) {
 
 const TG = () => 'https://api.telegram.org/bot' + process.env.TELEGRAM_BOT_TOKEN
 
-export async function tgSendText(chat: string, text: string) {
-  await fetch(TG() + '/sendMessage', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chat, text }),
-    signal: AbortSignal.timeout(8000),
-  }).catch(() => {})
+export async function tgSendText(chat: string, text: string): Promise<boolean> {
+  try {
+    const res = await fetch(TG() + '/sendMessage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chat, text }),
+      signal: AbortSignal.timeout(8000),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
 }
 
-export async function tgSendFile(chat: string, filename: string, content: string) {
-  const form = new FormData()
-  form.append('chat_id', chat)
-  form.append('document', new Blob([content], { type: 'text/plain' }), filename)
-  await fetch(TG() + '/sendDocument', { method: 'POST', body: form, signal: AbortSignal.timeout(8000) }).catch(() => {})
+export async function tgSendFile(chat: string, filename: string, content: string): Promise<boolean> {
+  try {
+    const form = new FormData()
+    form.append('chat_id', chat)
+    form.append('document', new Blob([content], { type: 'text/plain' }), filename)
+    const res = await fetch(TG() + '/sendDocument', { method: 'POST', body: form, signal: AbortSignal.timeout(8000) })
+    return res.ok
+  } catch {
+    return false
+  }
 }

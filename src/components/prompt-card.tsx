@@ -39,7 +39,13 @@ export default function PromptCard({ item, locale }: { item: PromptItem; locale:
         </h3>
         <div className="mt-2 flex flex-wrap gap-1">
           {item.tagsFa.map((tag, i) => L(locale, tag, item.tagsEn[i] ?? tag)).map((tag) => (
-            <span key={tag} className="rounded-full bg-[#e7dcc4] px-2 py-0.5 text-[10px] text-[#5c5443]">{tag}</span>
+            <Link
+              key={tag}
+              href={'/explore?q=' + encodeURIComponent(tag)}
+              className="rounded-full bg-[#e7dcc4] px-2 py-0.5 text-[10px] text-[#5c5443] transition-colors hover:bg-gold hover:text-[#171512]"
+            >
+              {tag}
+            </Link>
           ))}
         </div>
         <div className="mt-3 flex items-center justify-between border-t border-[#e2d8c2] pt-2 text-[10px] text-[#6b6353]">
