@@ -1,3 +1,12 @@
+#!/bin/bash
+set -e
+
+mkdir -p src/app/api/cron/telegram
+
+# fix wrong import in submit page
+sed -i "s|import { type Locale, L } from '@/lib/i18n'|import { type Locale } from '@/lib/i18n'\nimport { L } from '@/lib/data'|" src/app/submit/page.tsx
+
+cat > src/app/api/cron/telegram/route.ts << 'EOF'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { fetchPage, tgSendText, tgSendFile } from '@/lib/telegram'
@@ -145,3 +154,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, phase: 'failed', error: String(e?.message ?? e) }, { status: 500 })
   }
 }
+EOF
+
+echo "✅ cron route fixed + submit import fixed!"
