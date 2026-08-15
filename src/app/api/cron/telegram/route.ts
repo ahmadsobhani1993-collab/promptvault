@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { fetchPage, tgSendText, tgSendFile } from '@/lib/telegram'
+import { fetchPage, diagnoseChannel, tgSendText, tgSendFile } from '@/lib/telegram'
 import { analyzeWithGemini } from '@/lib/gemini'
 
 export const maxDuration = 60
@@ -23,14 +23,18 @@ export async function GET(req: Request) {
   const channel = process.env.TELEGRAM_CHANNEL
   if (!channel) return NextResponse.json({ error: 'no channel env' }, { status: 500 })
 
+  if (searchParams.get('debug') === '1') {
+    const d = await diagnoseChannel(channel)
+    return NextResponse.json({ debug: d })
+  }
+
   const synced = await getSetting('tg_synced', '0')
 
-  // ---------- PHASE 1: build queue from oldest post (fast, 8 pages per tick) ----------
   if (synced !== '1') {
     let before = parseInt(await getSetting('tg_before', '0'), 10)
     let total = 0
 
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 3; i++) {
       const page = before === 0 ? await fetchPage(channel) : await fetchPage(channel, before)
       if (page.length === 0) {
         await setSetting('tg_synced', '1')
@@ -45,7 +49,6 @@ export async function GET(req: Request) {
         })
       }
       total += page.length
-      if (minId >= before && before !== 0) break
       before = minId
       await setSetting('tg_before', String(before))
     }
@@ -53,7 +56,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, phase: 'sync', added: total, synced: await getSetting('tg_synced', '0') })
   }
 
-  // ---------- PHASE 2: process ONE post per tick ----------
   const item = await prisma.telegramQueue.findFirst({
     where: { status: 'PENDING' },
     orderBy: { id: 'asc' },
@@ -65,7 +67,6 @@ export async function GET(req: Request) {
     let img = item.img
     const skipIds: number[] = []
 
-    // photo without text + next message has the long prompt (reply/continuation)
     if (img && promptText.length < 40) {
       const next = await prisma.telegramQueue.findFirst({
         where: { id: { gt: item.id }, status: 'PENDING' },
@@ -77,7 +78,6 @@ export async function GET(req: Request) {
       }
     }
 
-    // text-only reply pointing to a photo above
     if (!img && promptText && item.reply) {
       const prev = await prisma.telegramQueue.findFirst({
         where: { id: { lt: item.id }, img: { not: null } },
@@ -94,7 +94,7 @@ export async function GET(req: Request) {
     let imgBase64: string | null = null
     if (img) {
       try {
-        const ir = await fetch(img)
+        const ir = await fetch(img, { signal: AbortSignal.timeout(8000) })
         const buf = Buffer.from(await ir.arrayBuffer())
         if (buf.length < 4_000_000) imgBase64 = buf.toString('base64')
       } catch {}

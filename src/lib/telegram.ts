@@ -37,11 +37,41 @@ export function parsePage(html: string): TgMessage[] {
   return out
 }
 
+async function fetchText(url: string, ms: number): Promise<string> {
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+    signal: AbortSignal.timeout(ms),
+  })
+  if (!res.ok) throw new Error('HTTP ' + res.status)
+  return await res.text()
+}
+
 export async function fetchPage(username: string, before?: number): Promise<TgMessage[]> {
   const url = 'https://t.me/s/' + username + (before ? '?before=' + before : '')
-  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
-  if (!res.ok) return []
-  return parsePage(await res.text())
+  let html: string
+  try {
+    html = await fetchText(url, 7000)
+  } catch {
+    html = await fetchText('https://api.allorigins.win/raw?url=' + encodeURIComponent(url), 9000)
+  }
+  return parsePage(html)
+}
+
+export async function diagnoseChannel(username: string) {
+  try {
+    const direct = await fetchText('https://t.me/s/' + username, 7000)
+    return { via: 'direct', messages: parsePage(direct).length }
+  } catch (e: any) {
+    try {
+      const proxied = await fetchText(
+        'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://t.me/s/' + username),
+        9000
+      )
+      return { via: 'allorigins', messages: parsePage(proxied).length, directError: String(e?.message ?? e) }
+    } catch (e2: any) {
+      return { via: 'none', directError: String(e?.message ?? e), proxyError: String(e2?.message ?? e2) }
+    }
+  }
 }
 
 const TG = () => 'https://api.telegram.org/bot' + process.env.TELEGRAM_BOT_TOKEN
@@ -51,12 +81,13 @@ export async function tgSendText(chat: string, text: string) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chat, text }),
-  })
+    signal: AbortSignal.timeout(8000),
+  }).catch(() => {})
 }
 
 export async function tgSendFile(chat: string, filename: string, content: string) {
   const form = new FormData()
   form.append('chat_id', chat)
   form.append('document', new Blob([content], { type: 'text/plain' }), filename)
-  await fetch(TG() + '/sendDocument', { method: 'POST', body: form })
+  await fetch(TG() + '/sendDocument', { method: 'POST', body: form, signal: AbortSignal.timeout(8000) }).catch(() => {})
 }

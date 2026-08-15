@@ -54,16 +54,12 @@ export async function analyzeWithGemini(opts: {
     '- usageFa/usageEn: 2-3 sentences explaining HOW to use this prompt (which tool/model, where to paste, tips) (fa/en).\n' +
     '- categorySlug: choose ONE from: ' +
     opts.categories.map((c) => c.slug).join(', ') +
-    '\n' +
-    '- tagsFa: choose MAX 4 from ONLY this list: ' +
+    '\n- tagsFa: choose MAX 4 ONLY from: ' +
     TAG_VOCAB.map((t) => t.fa).join('، ') +
-    '\n- tagsEn: the English equivalents of the chosen tagsFa, same order: ' +
-    TAG_VOCAB.map((t) => t.en).join(', ')
+    '\n- tagsEn: English equivalents of chosen tagsFa in same order.'
 
   const parts: any[] = [{ text: instruction + '\n\nTHE PROMPT TEXT:\n' + (opts.text || '(no text, look at image)') }]
-  if (opts.imgBase64) {
-    parts.push({ inline_data: { mime_type: 'image/jpeg', data: opts.imgBase64 } })
-  }
+  if (opts.imgBase64) parts.push({ inline_data: { mime_type: 'image/jpeg', data: opts.imgBase64 } })
 
   const res = await fetch(
     'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + process.env.GEMINI_API_KEY,
@@ -71,6 +67,7 @@ export async function analyzeWithGemini(opts: {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ contents: [{ parts }] }),
+      signal: AbortSignal.timeout(25000),
     }
   )
 
@@ -84,7 +81,6 @@ export async function analyzeWithGemini(opts: {
     const v = TAG_VOCAB.find((t) => t.fa === fa)
     return v ? v.en : fa
   })
-
   const catOk = opts.categories.some((c) => c.slug === parsed.categorySlug)
 
   return {
