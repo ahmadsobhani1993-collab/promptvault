@@ -1,3 +1,58 @@
+#!/bin/bash
+set -e
+
+mkdir -p src/app/api/debug/fiximgs
+
+cat >> src/lib/telegram.ts << 'EOF'
+
+export async function verifyImage(url: string): Promise<boolean> {
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(9000) })
+    const ct = r.headers.get('content-type') ?? ''
+    return r.ok && ct.startsWith('image')
+  } catch {
+    return false
+  }
+}
+EOF
+
+cat > src/app/api/debug/fiximgs/route.ts << 'EOF'
+import { NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
+import { verifyImage } from '@/lib/telegram'
+
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60
+
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url)
+  if (searchParams.get('key') !== process.env.CRON_SECRET) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
+
+  const start = Date.now()
+  const prompts = await prisma.prompt.findMany({
+    where: { slug: { startsWith: 'tg-' } },
+    select: { id: true, img: true },
+  })
+
+  let checked = 0
+  let deleted = 0
+  for (const p of prompts) {
+    if (Date.now() - start > 45000) break
+    checked++
+    const ok = await verifyImage(p.img)
+    if (!ok) {
+      await prisma.prompt.delete({ where: { id: p.id } })
+      deleted++
+    }
+  }
+
+  return NextResponse.json({ ok: true, checked, deleted, total: prompts.length })
+}
+EOF
+
+cat > src/app/api/cron/telegram/route.ts << 'EOF'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { fetchPage, diagnoseChannel, verifyImage, tgSendText, tgSendPhoto, tgSendCode } from '@/lib/telegram'
@@ -211,3 +266,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, phase: 'failed', id: item.id, error: String(e?.message ?? e) }, { status: 500 })
   }
 }
+EOF
+
+echo "✅ Image verification + no-image skip + cleanup tool!"

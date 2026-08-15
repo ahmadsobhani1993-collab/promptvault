@@ -153,3 +153,13 @@ export async function tgSendCode(chat: string, code: string, footer?: string): P
     return false
   }
 }
+
+export async function verifyImage(url: string): Promise<boolean> {
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(9000) })
+    const ct = r.headers.get('content-type') ?? ''
+    return r.ok && ct.startsWith('image')
+  } catch {
+    return false
+  }
+}
