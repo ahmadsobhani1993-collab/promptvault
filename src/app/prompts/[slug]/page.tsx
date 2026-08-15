@@ -16,7 +16,17 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params
   const item = await getPromptBySlug(slug)
   if (!item) return {}
-  return { title: item.titleFa, description: (item.descFa ?? item.prompt).slice(0, 150) }
+  return {
+    title: item.titleFa,
+    description: (item.descFa ?? item.prompt).slice(0, 150),
+    openGraph: {
+      title: item.titleFa,
+      description: item.descFa ?? '',
+      images: [{ url: item.img }],
+      locale: 'fa_IR',
+    },
+    twitter: { card: 'summary_large_image', title: item.titleFa, description: item.descFa ?? '' },
+  }
 }
 
 export const dynamic = 'force-dynamic'

@@ -23,7 +23,17 @@ export async function generateMetadata({
   const { slug } = await params
   const a = await getArticleBySlug(slug)
   if (!a) return {}
-  return { title: a.titleFa, description: a.descFa }
+  return {
+    title: a.titleFa,
+    description: a.descFa,
+    openGraph: {
+      title: a.titleFa,
+      description: a.descFa,
+      images: [{ url: a.img }],
+      locale: 'fa_IR',
+    },
+    twitter: { card: 'summary_large_image', title: a.titleFa, description: a.descFa },
+  }
 }
 
 export const dynamic = 'force-dynamic'

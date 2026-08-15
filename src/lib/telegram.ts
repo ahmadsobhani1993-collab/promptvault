@@ -134,16 +134,17 @@ export async function tgSendPhoto(chat: string, photo: string, caption: string):
   }
 }
 
-export async function tgSendCode(chat: string, code: string): Promise<boolean> {
+export async function tgSendCode(chat: string, code: string, footer?: string): Promise<boolean> {
   try {
-    const text = code.length > 4000 ? code.slice(0, 4000) + '\n…' : code
+    const body = code.length > 4000 ? code.slice(0, 4000) + '\n…' : code
+    const text = body + (footer ?? '')
     const res = await fetch(TG() + '/sendMessage', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: chat,
         text,
-        entities: [{ type: 'pre', offset: 0, length: text.length, language: '' }],
+        entities: [{ type: 'pre', offset: 0, length: body.length, language: '' }],
       }),
       signal: AbortSignal.timeout(8000),
     })
