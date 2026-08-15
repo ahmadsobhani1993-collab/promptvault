@@ -1,3 +1,7 @@
+#!/bin/bash
+set -e
+
+cat > src/app/api/cron/telegram/route.ts << 'EOF'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { fetchPage, diagnoseChannel, tgSendText, tgSendFile } from '@/lib/telegram'
@@ -152,3 +156,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, phase: 'failed', error: String(e?.message ?? e) }, { status: 500 })
   }
 }
+EOF
+
+echo "✅ Smart sync: 40s budget + bulk inserts!"
