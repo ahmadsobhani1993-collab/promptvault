@@ -27,7 +27,7 @@ export default function Footer() {
             href="https://finsoph.ir"
             target="_blank"
             rel="noreferrer"
-            className="mt-3 inline-block text-lg font-extrabold transition-colors hover:text-gold-bright"
+            className="mt-2 inline-block text-sm font-bold text-ink-muted transition-colors hover:text-gold-bright"
           >
             فینسوف | Finsoph
           </a>

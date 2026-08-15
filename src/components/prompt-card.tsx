@@ -15,6 +15,7 @@ type PromptItem = {
   likes: number
   saves: number
   views: number
+  stars: number
 }
 
 function fmt(n: number) {
@@ -26,11 +27,14 @@ export default function PromptCard({
   item,
   locale,
   cornerTags,
+  isNew,
 }: {
   item: PromptItem
   locale: Locale
   cornerTags?: string[]
+  isNew?: boolean
 }) {
+  const dead = item.likes + item.saves + item.views === 0
   return (
     <article className="card-cream glow-gold p-3 transition-transform hover:-translate-y-1">
       <Link href={'/prompts/' + item.slug} className="block">
@@ -39,8 +43,13 @@ export default function PromptCard({
           <span className="absolute right-2 top-2 rounded-full bg-gold px-2.5 py-0.5 text-[10px] font-bold text-[#171512]">
             {getPromptTypeLabel(item.type, locale)}
           </span>
+          {isNew && (
+            <span className="absolute left-2 top-2 rounded-full bg-success px-2.5 py-0.5 text-[9px] font-bold text-[#0d1a10]">
+              ✨ {L(locale, 'جدید', 'New')}
+            </span>
+          )}
           {cornerTags && cornerTags.length > 0 && (
-            <span className="absolute left-2 top-2 flex flex-col items-start gap-1">
+            <span className="absolute bottom-2 left-2 flex flex-col items-start gap-1">
               {cornerTags.map((t) => (
                 <span key={t} className="rounded-full bg-[#171512]/85 px-2 py-0.5 text-[9px] text-gold-bright">
                   {t}
@@ -70,9 +79,15 @@ export default function PromptCard({
       </div>
 
       <div className="mt-3 flex items-center justify-between border-t border-[#e2d8c2] pt-2 text-[10px] text-[#6b6353]">
-        <span>{fmt(item.likes)} {L(locale, 'پسند', 'likes')}</span>
-        <span>{fmt(item.saves)} {L(locale, 'ذخیره', 'saves')}</span>
-        <span>{fmt(item.views)} {L(locale, 'بازدید', 'views')}</span>
+        {dead ? (
+          <span className="text-[#8a8172]">{L(locale, 'منتظر اولین تعامل ✨', 'Awaiting first interaction ✨')}</span>
+        ) : (
+          <>
+            <span>{fmt(item.likes)} {L(locale, 'پسند', 'likes')}</span>
+            <span>{fmt(item.saves)} {L(locale, 'ذخیره', 'saves')}</span>
+            <span>{fmt(item.views)} {L(locale, 'بازدید', 'views')}</span>
+          </>
+        )}
       </div>
     </article>
   )

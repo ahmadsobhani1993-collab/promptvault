@@ -28,9 +28,19 @@ export default async function HomePage() {
 
   const [categories, prompts, articles] = await Promise.all([
     getCategories(),
-    getPrompts({ take: 5 }),
+    getPrompts({ take: 12 }),
     getArticles(),
   ])
+
+  const trending: typeof prompts = []
+  for (const p of prompts) {
+    if (trending.length >= 5) break
+    if (!trending.some((d) => d.categoryId === p.categoryId)) trending.push(p)
+  }
+  for (const p of prompts) {
+    if (trending.length >= 5) break
+    if (!trending.includes(p)) trending.push(p)
+  }
 
   return (
     <>
@@ -61,9 +71,9 @@ export default async function HomePage() {
             </Reveal>
 
             <div className="mt-10 grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-5">
-              {prompts.map((item, i) => (
+              {trending.map((item, i) => (
                 <Reveal key={item.id} delay={i * 90}>
-                  <PromptCard item={item} locale={locale} />
+                  <PromptCard item={item} locale={locale} isNew={Date.now() - new Date(item.createdAt).getTime() < 48 * 3600 * 1000} />
                 </Reveal>
               ))}
             </div>

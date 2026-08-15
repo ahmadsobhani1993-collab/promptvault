@@ -65,7 +65,7 @@ export async function getPrompts(opts?: {
 export async function getPromptBySlug(slug: string) {
   return prisma.prompt.findFirst({
     where: { slug, status: 'PUBLISHED' },
-    include: { category: true, sub: true },
+    include: { category: true, sub: true, user: true },
   })
 }
 

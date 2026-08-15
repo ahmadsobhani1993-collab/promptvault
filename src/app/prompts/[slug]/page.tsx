@@ -12,6 +12,7 @@ import RealLikeButton from '@/components/real-like-button'
 import SaveButton from '@/components/save-button'
 import StarButton from '@/components/star-button'
 import SafeImg from '@/components/safe-img'
+import PromptReveal from '@/components/prompt-reveal'
 import RealCommentBox from '@/components/real-comment-box'
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -76,6 +77,11 @@ export default async function PromptDetailPage({ params }: { params: Promise<{ s
             <Link href={'/categories/' + item.category.slug} className="gold-badge transition-colors hover:bg-gold/25">
               {L(locale, item.category.nameFa, item.category.nameEn)}
             </Link>
+            {item.sub && (
+              <Link href={'/categories/' + item.category.slug + '?sub=' + item.sub.slug} className="badge transition-colors hover:border-gold/60 hover:text-gold-bright">
+                {L(locale, item.sub.fa, item.sub.en)}
+              </Link>
+            )}
             <span className="badge">{getPromptTypeLabel(item.type, locale)}</span>
             <span className="badge">{item.model}</span>
           </div>
@@ -83,6 +89,18 @@ export default async function PromptDetailPage({ params }: { params: Promise<{ s
           <h1 className="mt-5 font-display text-3xl font-extrabold tracking-tight">
             {L(locale, item.titleFa, item.titleEn)}
           </h1>
+
+          <div className="mt-4 flex items-center gap-3">
+            {item.user?.image ? (
+              <img src={item.user.image} alt="" className="h-8 w-8 rounded-full" />
+            ) : (
+              <span className="grid h-8 w-8 place-items-center rounded-full bg-gold/20 text-[10px] font-bold text-gold-bright">P</span>
+            )}
+            <div className="text-xs">
+              <p className="font-bold">{item.user?.name ?? 'تیم PromptsFA'}</p>
+              <p className="text-ink-faint">{L(locale, 'منتشرکننده', 'Creator')}</p>
+            </div>
+          </div>
 
           {desc && <p className="mt-4 text-sm leading-7 text-ink-muted">{desc}</p>}
 
@@ -104,13 +122,13 @@ export default async function PromptDetailPage({ params }: { params: Promise<{ s
             ))}
           </div>
 
-          <div className="mt-8 rounded-2xl border border-gold/40 bg-[#0d0b07] p-5">
-            <p className="text-xs font-bold text-gold-bright">Prompt</p>
-            <p dir="ltr" className="mt-3 text-left font-mono text-sm leading-7 text-[#e8d9ae]">{item.prompt}</p>
-            <div className="mt-5">
-              <CopyButton text={item.prompt} label={L(locale, 'کپی پرامپت', 'Copy Prompt')} copiedLabel={L(locale, 'کپی شد!', 'Copied!')} />
-            </div>
-          </div>
+          <PromptReveal
+            slug={item.slug}
+            revealLabel={L(locale, 'نمایش پرامپت', 'Reveal Prompt')}
+            copyLabel={L(locale, 'کپی پرامپت', 'Copy Prompt')}
+            copiedLabel={L(locale, 'کپی شد!', 'Copied!')}
+            hint={L(locale, 'پرامپت برای محافظت در برابر اسکرپینگ، فقط بعد از کلیک نمایش داده می‌شود.', 'The prompt is revealed on click to protect against scraping.') }
+          />
 
           {usage && (
             <div className="mt-6 rounded-2xl border border-line bg-elevated p-5">
@@ -143,6 +161,22 @@ export default async function PromptDetailPage({ params }: { params: Promise<{ s
         submitLabel={L(locale, 'ارسال دیدگاه', 'Submit')}
         loginRequired={L(locale, 'برای ارسال دیدگاه ابتدا وارد شو', 'Login to comment')}
         isLoggedIn={!!userId}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'CreativeWork',
+            name: item.titleFa,
+            alternateName: item.titleEn,
+            description: item.descFa ?? '',
+            image: item.img,
+            inLanguage: ['fa', 'en'],
+            creator: { '@type': 'Person', name: item.user?.name ?? 'PromptsFA' },
+            datePublished: item.createdAt,
+          }),
+        }}
       />
     </section>
   )

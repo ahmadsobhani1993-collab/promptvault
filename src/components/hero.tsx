@@ -1,10 +1,5 @@
-'use client'
-
-import { useState } from 'react'
 import Link from 'next/link'
 import type { Locale } from '@/lib/i18n'
-
-type Chip = { fa: string; en: string; href: string }
 
 export default function Hero({
   locale,
@@ -19,65 +14,49 @@ export default function Hero({
   title: string
   subtitle: string
   placeholder: string
-  chips: Chip[]
+  chips: { fa: string; en: string; href: string }[]
 }) {
-  const [focused, setFocused] = useState(false)
-
   return (
-    <section
-      data-section
-      className="hero-radial snap-section relative flex min-h-[92vh] items-center overflow-hidden border-b border-line/60"
-    >
-      <div
-        className={
-          'absolute inset-0 transition-opacity duration-700 ' +
-          (focused ? 'opacity-40' : 'opacity-20')
-        }
-      >
-        <img
-          src="https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=1600&auto=format&fit=crop"
-          alt=""
-          className="animate-kenburns h-full w-full object-cover"
-        />
-        <div className="absolute inset-0 bg-gradient-to-b from-base/60 via-base/30 to-base" />
+    <section className="relative flex min-h-[92vh] items-center justify-center overflow-hidden py-20">
+      <div aria-hidden className="pointer-events-none absolute inset-0">
+        <div className="fx-blob anim-float" style={{ top: '-10%', right: '-10%', width: '40vw', height: '40vw' }} />
+        <div className="fx-blob anim-float2" style={{ bottom: '-15%', left: '-10%', width: '36vw', height: '36vw' }} />
       </div>
 
-      <div className="container-app relative py-16 text-center">
-        <p
-          className={
-            'text-xs font-semibold uppercase text-gold-bright ' +
-            (locale === 'fa' ? '' : 'tracking-[0.35em]')
-          }
-        >
-          {label}
-        </p>
-
-        <h1 className="title-solid mt-5 font-display text-4xl font-extrabold tracking-tight md:text-6xl">
+      <div className="container-app relative text-center">
+        <p className="gold-badge mx-auto w-fit anim-fade-up">{label}</p>
+        <h1 className="anim-fade-up mx-auto mt-6 max-w-3xl font-display text-4xl font-black leading-tight md:text-6xl" style={{ animationDelay: '120ms' }}>
           {title}
         </h1>
-
-        <p className="mx-auto mt-5 max-w-xl text-sm leading-7 text-ink-muted md:text-base">
+        <p className="anim-fade-up mx-auto mt-5 max-w-xl text-sm leading-8 text-ink-muted md:text-base" style={{ animationDelay: '240ms' }}>
           {subtitle}
         </p>
 
-        <form action="/explore" className="mx-auto mt-9 max-w-2xl">
-          <input
-            name="q"
-            placeholder={placeholder}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            className="glow-gold h-14 w-full rounded-full border border-gold/60 bg-[#F7F1E3] px-6 text-base text-[#171512] placeholder:text-[#8a8271] focus:outline-none"
-          />
+        <form action="/explore" className="anim-fade-up mx-auto mt-10 max-w-2xl" style={{ animationDelay: '360ms' }}>
+          <div className="glow-gold flex items-center gap-3 rounded-2xl border border-gold/40 bg-elevated px-5 py-4">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5 shrink-0 text-gold-bright">
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.3-4.3" />
+            </svg>
+            <input
+              name="q"
+              placeholder={placeholder}
+              className="w-full bg-transparent text-base outline-none placeholder:text-ink-faint"
+            />
+            <button type="submit" className="btn-primary shrink-0">
+              {locale === 'fa' ? 'جستجو' : 'Search'}
+            </button>
+          </div>
         </form>
 
-        <div className="mt-7 flex flex-wrap justify-center gap-2">
+        <div className="anim-fade-up mt-6 flex flex-wrap justify-center gap-2" style={{ animationDelay: '480ms' }}>
           {chips.map((c) => (
             <Link
               key={c.href}
               href={c.href}
-              className="glow-soft rounded-full border border-gold/70 bg-[#141008] px-4 py-1.5 text-xs text-[#F2EAD8] transition-colors hover:bg-[#1d1608]"
+              className="rounded-full border border-line bg-elevated px-4 py-1.5 text-xs text-ink-muted transition-colors hover:border-gold/50 hover:text-gold-bright"
             >
-              {c[locale]}
+              {locale === 'fa' ? c.fa : c.en}
             </Link>
           ))}
         </div>
