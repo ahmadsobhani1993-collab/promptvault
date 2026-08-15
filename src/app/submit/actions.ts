@@ -18,7 +18,7 @@ export async function createSubmit(fd: FormData) {
   if (!session?.user?.id) redirect('/login')
 
   const titleFa = fd.get('titleFa') as string
-  const titleEn = ((fd.get('titleEn') as string) || titleFa)
+  const titleEn = (fd.get('titleEn') as string) || titleFa
 
   await prisma.prompt.create({
     data: {
@@ -33,11 +33,13 @@ export async function createSubmit(fd: FormData) {
       tagsFa: tags(fd.get('tagsFa') as string),
       tagsEn: tags(fd.get('tagsEn') as string),
       prompt: fd.get('prompt') as string,
+      usageFa: (fd.get('usageFa') as string) || null,
+      usageEn: (fd.get('usageEn') as string) || null,
       status: 'PENDING',
       userId: session.user.id,
     },
   })
 
-  revalidatePath('/admin', 'layout')
+  revalidatePath('/', 'layout')
   redirect('/submit?done=1')
 }

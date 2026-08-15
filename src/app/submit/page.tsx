@@ -90,6 +90,25 @@ export default async function SubmitPage({
           required
         />
 
+        <textarea
+          name="usageFa"
+          placeholder={L(
+            locale,
+            'راهنمای استفاده (فارسی): مثلا در کدام مدل بگذارم، چه پارامترهایی بزنم، نکات مهم...',
+            'How to use (Persian)...'
+          )}
+          rows={3}
+          className="input resize-none"
+        />
+
+        <textarea
+          name="usageEn"
+          placeholder="How to use (English): which model, parameters, tips..."
+          rows={3}
+          className="input resize-none"
+          dir="ltr"
+        />
+
         <button type="submit" className="btn-primary w-fit">
           {L(locale, 'ارسال برای بررسی', 'Submit for review')}
         </button>

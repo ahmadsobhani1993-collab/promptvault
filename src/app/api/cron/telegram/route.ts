@@ -34,7 +34,7 @@ export async function GET(req: Request) {
     let before = parseInt(await getSetting('tg_before', '0'), 10)
     let total = 0
 
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 10; i++) {
       const page = before === 0 ? await fetchPage(channel) : await fetchPage(channel, before)
       if (page.length === 0) {
         await setSetting('tg_synced', '1')

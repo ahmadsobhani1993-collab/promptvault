@@ -10,6 +10,7 @@ const items = [
   { href: '/admin/articles', fa: 'مقالات', en: 'Articles' },
   { href: '/admin/categories', fa: 'دسته‌بندی‌ها', en: 'Categories' },
   { href: '/admin/comments', fa: 'کامنت‌ها', en: 'Comments' },
+  { href: '/admin/users', fa: 'کاربرها و ادمین‌ها', en: 'Users & Admins' },
 ]
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
