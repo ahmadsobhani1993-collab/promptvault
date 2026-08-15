@@ -1,3 +1,7 @@
+#!/bin/bash
+set -e
+
+cat > prisma/schema.prisma << 'EOF'
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -199,3 +203,6 @@ model Save {
 
   @@unique([userId, promptId])
 }
+EOF
+
+echo "✅ Schema fixed with proper enum formatting!"
