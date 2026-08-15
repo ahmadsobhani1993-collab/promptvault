@@ -36,6 +36,7 @@ export type GeminiResult = {
   categorySlug: string
   tagsFa: string[]
   tagsEn: string[]
+  promptEn: string
 }
 
 export async function analyzeWithGemini(opts: {
@@ -43,15 +44,16 @@ export async function analyzeWithGemini(opts: {
   imgBase64: string | null
   categories: { slug: string; fa: string; en: string }[]
 }): Promise<GeminiResult> {
-  const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash-lite'
+  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
 
   const instruction =
     'You are an AI prompt curator. Read the given AI prompt (and image if provided). ' +
     'Return ONLY a valid JSON object (no markdown) with exactly these keys:\n' +
-    '"titleFa","titleEn","descFa","descEn","usageFa","usageEn","categorySlug","tagsFa","tagsEn"\n' +
+    '"titleFa","titleEn","descFa","descEn","usageFa","usageEn","categorySlug","tagsFa","tagsEn","promptEn"\n' +
     '- titleFa/titleEn: short catchy title (fa/en).\n' +
     '- descFa/descEn: ONE short sentence describing what this prompt does (fa/en).\n' +
     '- usageFa/usageEn: 2-3 sentences explaining HOW to use this prompt (which tool/model, where to paste, tips) (fa/en).\n' +
+    '- promptEn: the FULL prompt text translated to English. Keep every detail and parameter. If it is already English, return it unchanged. A few Persian words inside are OK.\n' +
     '- categorySlug: choose ONE from: ' +
     opts.categories.map((c) => c.slug).join(', ') +
     '\n- tagsFa: choose MAX 4 ONLY from: ' +
@@ -72,9 +74,7 @@ export async function analyzeWithGemini(opts: {
   )
 
   const body = await res.text()
-  if (!res.ok) {
-    throw new Error('Gemini HTTP ' + res.status + ' :: ' + body.slice(0, 300))
-  }
+  if (!res.ok) throw new Error('Gemini HTTP ' + res.status + ' :: ' + body.slice(0, 300))
 
   const json = JSON.parse(body)
   const raw: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
@@ -100,5 +100,6 @@ export async function analyzeWithGemini(opts: {
     categorySlug: catOk ? parsed.categorySlug : opts.categories[0]?.slug ?? 'image',
     tagsFa,
     tagsEn,
+    promptEn: parsed.promptEn || '',
   }
 }

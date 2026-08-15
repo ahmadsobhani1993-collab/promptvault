@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { fetchPage, diagnoseChannel, tgSendText, tgSendFile } from '@/lib/telegram'
+import { fetchPage, diagnoseChannel, tgSendText, tgSendPhoto, tgSendCode } from '@/lib/telegram'
 import { analyzeWithGemini } from '@/lib/gemini'
 
 export const maxDuration = 60
@@ -119,6 +119,8 @@ export async function GET(req: Request) {
     })
     const cat = await prisma.category.findUnique({ where: { slug: ai.categorySlug } })
 
+    const finalPrompt = (ai.promptEn || promptText).trim()
+
     const prompt = await prisma.prompt.create({
       data: {
         titleFa: ai.titleFa,
@@ -129,13 +131,13 @@ export async function GET(req: Request) {
         usageEn: ai.usageEn,
         slug: 'tg-' + item.id,
         img: finalImg ?? 'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=800&auto=format&fit=crop',
-        model: /--v\s?\d|--ar/.test(promptText) ? 'Midjourney' : 'AI',
+        model: /--v\s?\d|--ar/.test(finalPrompt) ? 'Midjourney' : 'AI',
         type: img ? 'IMAGE' : 'TEXT',
         status: 'PUBLISHED',
         categoryId: cat?.id ?? categories[0].id,
         tagsFa: ai.tagsFa,
         tagsEn: ai.tagsEn,
-        prompt: promptText || ai.descEn || ai.titleEn,
+        prompt: finalPrompt,
       },
     })
 
@@ -148,8 +150,10 @@ export async function GET(req: Request) {
     const out = process.env.TELEGRAM_OUTPUT
     if (out && process.env.TELEGRAM_BOT_TOKEN) {
       tg = {
-        title: await tgSendText(out, '✨ ' + ai.titleFa),
-        file: await tgSendFile(out, 'prompt-' + item.id + '.txt', promptText || ai.titleEn),
+        photo: img
+          ? await tgSendPhoto(out, finalImg ?? img, '✨ ' + ai.titleFa)
+          : await tgSendText(out, '✨ ' + ai.titleFa),
+        code: await tgSendCode(out, finalPrompt),
         usage: await tgSendText(
           out,
           '📘 راهنمای استفاده:\n' + (ai.usageFa || '—') + '\n\n📘 How to use:\n' + (ai.usageEn || '—')

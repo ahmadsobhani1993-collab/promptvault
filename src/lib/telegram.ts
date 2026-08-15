@@ -120,12 +120,33 @@ export async function tgSendText(chat: string, text: string): Promise<boolean> {
   }
 }
 
-export async function tgSendFile(chat: string, filename: string, content: string): Promise<boolean> {
+export async function tgSendPhoto(chat: string, photo: string, caption: string): Promise<boolean> {
   try {
-    const form = new FormData()
-    form.append('chat_id', chat)
-    form.append('document', new Blob([content], { type: 'text/plain' }), filename)
-    const res = await fetch(TG() + '/sendDocument', { method: 'POST', body: form, signal: AbortSignal.timeout(8000) })
+    const res = await fetch(TG() + '/sendPhoto', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chat, photo, caption }),
+      signal: AbortSignal.timeout(10000),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+export async function tgSendCode(chat: string, code: string): Promise<boolean> {
+  try {
+    const text = code.length > 4000 ? code.slice(0, 4000) + '\n…' : code
+    const res = await fetch(TG() + '/sendMessage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chat,
+        text,
+        entities: [{ type: 'pre', offset: 0, length: text.length, language: '' }],
+      }),
+      signal: AbortSignal.timeout(8000),
+    })
     return res.ok
   } catch {
     return false
