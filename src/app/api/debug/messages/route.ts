@@ -1,9 +1,3 @@
-#!/bin/bash
-set -e
-
-mkdir -p src/app/api/debug/messages
-
-cat > src/app/api/debug/messages/route.ts << 'EOF'
 import { NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
@@ -55,6 +49,3 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ messages })
 }
-EOF
-
-echo "✅ Message debug endpoint added!"
