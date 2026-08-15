@@ -22,7 +22,7 @@ export default function TagPicker({ vocab, max = 4 }: { vocab: { fa: string; en:
       <input
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder="جستجوی تگ مجاز... (حداکثر " + max + ')'
+        placeholder={`جستجوی تگ مجاز... (حداکثر ${max})`}
         className="input"
       />
 
