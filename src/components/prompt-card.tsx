@@ -23,8 +23,8 @@ function fmt(n: number) {
 
 export default function PromptCard({ item, locale }: { item: PromptItem; locale: Locale }) {
   return (
-    <Link href={'/prompts/' + item.slug} className="block">
-      <article className="card-cream glow-gold p-3 transition-transform hover:-translate-y-1">
+    <article className="card-cream glow-gold p-3 transition-transform hover:-translate-y-1">
+      <Link href={'/prompts/' + item.slug} className="block">
         <div className="relative">
           <img src={item.img} alt={L(locale, item.titleFa, item.titleEn)} loading="lazy" className="aspect-square w-full rounded-lg object-cover" />
           <span className="absolute right-2 top-2 rounded-full bg-gold px-2.5 py-0.5 text-[10px] font-bold text-[#171512]">
@@ -37,23 +37,25 @@ export default function PromptCard({ item, locale }: { item: PromptItem; locale:
         <h3 className="mt-4 line-clamp-1 text-sm font-bold text-[#171512]">
           {L(locale, item.titleFa, item.titleEn)}
         </h3>
-        <div className="mt-2 flex flex-wrap gap-1">
-          {item.tagsFa.map((tag, i) => L(locale, tag, item.tagsEn[i] ?? tag)).map((tag) => (
-            <Link
-              key={tag}
-              href={'/explore?q=' + encodeURIComponent(tag)}
-              className="rounded-full bg-[#e7dcc4] px-2 py-0.5 text-[10px] text-[#5c5443] transition-colors hover:bg-gold hover:text-[#171512]"
-            >
-              {tag}
-            </Link>
-          ))}
-        </div>
-        <div className="mt-3 flex items-center justify-between border-t border-[#e2d8c2] pt-2 text-[10px] text-[#6b6353]">
-          <span>{fmt(item.likes)} {L(locale, 'پسند', 'likes')}</span>
-          <span>{fmt(item.saves)} {L(locale, 'ذخیره', 'saves')}</span>
-          <span>{fmt(item.views)} {L(locale, 'بازدید', 'views')}</span>
-        </div>
-      </article>
-    </Link>
+      </Link>
+
+      <div className="mt-2 flex flex-wrap gap-1">
+        {item.tagsFa.map((tag, i) => L(locale, tag, item.tagsEn[i] ?? tag)).map((tag) => (
+          <Link
+            key={tag}
+            href={'/explore?q=' + encodeURIComponent(tag)}
+            className="rounded-full bg-[#e7dcc4] px-2 py-0.5 text-[10px] text-[#5c5443] transition-colors hover:bg-gold hover:text-[#171512]"
+          >
+            {tag}
+          </Link>
+        ))}
+      </div>
+
+      <div className="mt-3 flex items-center justify-between border-t border-[#e2d8c2] pt-2 text-[10px] text-[#6b6353]">
+        <span>{fmt(item.likes)} {L(locale, 'پسند', 'likes')}</span>
+        <span>{fmt(item.saves)} {L(locale, 'ذخیره', 'saves')}</span>
+        <span>{fmt(item.views)} {L(locale, 'بازدید', 'views')}</span>
+      </div>
+    </article>
   )
 }

@@ -89,3 +89,42 @@ html[dir='rtl'] * { letter-spacing: 0 !important; }
 html {
   scroll-behavior: smooth;
 }
+
+@keyframes fx-float {
+  0%, 100% { transform: translate3d(0, 0, 0) }
+  50% { transform: translate3d(0, -18px, 0) }
+}
+@keyframes fx-float2 {
+  0%, 100% { transform: translate3d(0, 0, 0) }
+  50% { transform: translate3d(0, 16px, 0) }
+}
+@keyframes fx-fade-up {
+  from { opacity: 0; transform: translateY(26px) }
+  to { opacity: 1; transform: translateY(0) }
+}
+@keyframes fx-shine {
+  0% { background-position: 200% center }
+  100% { background-position: -200% center }
+}
+.fx-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(90px);
+  opacity: 0.22;
+  background: radial-gradient(circle, #d4a94e 0%, transparent 60%);
+  will-change: transform;
+}
+.anim-float { animation: fx-float 7s ease-in-out infinite; }
+.anim-float2 { animation: fx-float2 9s ease-in-out infinite; }
+.anim-fade-up { animation: fx-fade-up 0.9s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+.title-shine {
+  background: linear-gradient(90deg, #f0d491 0%, #b98a2e 25%, #f7e6b6 50%, #b98a2e 75%, #f0d491 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: fx-shine 6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .anim-float, .anim-float2, .anim-fade-up, .title-shine { animation: none }
+}

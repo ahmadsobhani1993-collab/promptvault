@@ -34,6 +34,12 @@ export default async function HomePage() {
 
   return (
     <>
+      <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div className="fx-blob anim-float" style={{ top: '-12%', right: '-14%', width: '46vw', height: '46vw' }} />
+        <div className="fx-blob anim-float2" style={{ bottom: '-18%', left: '-12%', width: '40vw', height: '40vw' }} />
+        <div className="fx-blob anim-float" style={{ top: '38%', left: '30%', width: '26vw', height: '26vw', opacity: 0.12 }} />
+      </div>
+
       <ZoomSection>
         <Hero
           locale={locale}
@@ -49,7 +55,7 @@ export default async function HomePage() {
         <section data-section className="snap-section flex min-h-screen flex-col justify-center py-16">
           <div className="container-app">
             <Reveal>
-              <h2 className="text-center font-display text-2xl font-bold tracking-tight md:text-3xl">
+              <h2 className="title-shine text-center font-display text-2xl font-bold tracking-tight md:text-3xl">
                 {t.trending}
               </h2>
             </Reveal>
@@ -69,19 +75,21 @@ export default async function HomePage() {
         <section data-section className="snap-section flex min-h-screen flex-col justify-center border-t border-line/60 py-16">
           <div className="container-app">
             <Reveal>
-              <h2 className="text-center font-display text-2xl font-bold tracking-tight md:text-3xl">
+              <h2 className="title-shine text-center font-display text-2xl font-bold tracking-tight md:text-3xl">
                 {t.categoriesTitle}
               </h2>
             </Reveal>
 
             <Reveal delay={120}>
-              <CategoryGrid
-                items={categories.map((c) => ({
-                  slug: c.slug,
-                  icon: c.icon,
-                  label: L(locale, c.nameFa, c.nameEn),
-                }))}
-              />
+              <div className="anim-float">
+                <CategoryGrid
+                  items={categories.map((c) => ({
+                    slug: c.slug,
+                    icon: c.icon,
+                    label: L(locale, c.nameFa, c.nameEn),
+                  }))}
+                />
+              </div>
             </Reveal>
           </div>
         </section>
@@ -92,7 +100,7 @@ export default async function HomePage() {
           <div className="container-app">
             <Reveal>
               <div className="flex items-end justify-between gap-6">
-                <h2 className="font-display text-2xl font-bold tracking-tight md:text-3xl">
+                <h2 className="title-shine font-display text-2xl font-bold tracking-tight md:text-3xl">
                   {t.blogSection}
                 </h2>
                 <Link href="/blog" className="text-sm text-gold-bright hover:text-gold">

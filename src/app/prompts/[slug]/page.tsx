@@ -37,6 +37,9 @@ export default async function PromptDetailPage({ params }: { params: Promise<{ s
   const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
   const session = await auth()
 
+  // شمارش بازدید
+  await prisma.prompt.updateMany({ where: { slug }, data: { views: { increment: 1 } } })
+
   const item = await getPromptBySlug(slug)
   if (!item) notFound()
 
@@ -68,7 +71,7 @@ export default async function PromptDetailPage({ params }: { params: Promise<{ s
 
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <Link href={'/categories/' + item.category.slug} className="gold-badge">
+            <Link href={'/categories/' + item.category.slug} className="gold-badge transition-colors hover:bg-gold/25">
               {L(locale, item.category.nameFa, item.category.nameEn)}
             </Link>
             <span className="badge">{getPromptTypeLabel(item.type, locale)}</span>
@@ -88,7 +91,13 @@ export default async function PromptDetailPage({ params }: { params: Promise<{ s
 
           <div className="mt-5 flex flex-wrap gap-1">
             {item.tagsFa.map((tag, i) => L(locale, tag, item.tagsEn[i] ?? tag)).map((tag) => (
-              <span key={tag} className="badge">{tag}</span>
+              <Link
+                key={tag}
+                href={'/explore?q=' + encodeURIComponent(tag)}
+                className="badge transition-colors hover:border-gold/60 hover:text-gold-bright"
+              >
+                {tag}
+              </Link>
             ))}
           </div>
 
