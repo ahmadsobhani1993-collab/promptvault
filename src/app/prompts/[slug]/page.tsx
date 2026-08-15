@@ -12,24 +12,16 @@ import RealLikeButton from '@/components/real-like-button'
 import SaveButton from '@/components/save-button'
 import RealCommentBox from '@/components/real-comment-box'
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ slug: string }>
-}): Promise<Metadata> {
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
   const item = await getPromptBySlug(slug)
   if (!item) return {}
-  return { title: item.titleFa, description: item.prompt.slice(0, 150) }
+  return { title: item.titleFa, description: (item.descFa ?? item.prompt).slice(0, 150) }
 }
 
 export const dynamic = 'force-dynamic'
 
-export default async function PromptDetailPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>
-}) {
+export default async function PromptDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const cookieStore = await cookies()
   const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
@@ -44,12 +36,8 @@ export default async function PromptDetailPage({
   let liked = false
   let saved = false
   if (userId) {
-    liked = !!(await prisma.like.findUnique({
-      where: { userId_promptId: { userId, promptId: item.id } },
-    }))
-    saved = !!(await prisma.save.findUnique({
-      where: { userId_promptId: { userId, promptId: item.id } },
-    }))
+    liked = !!(await prisma.like.findUnique({ where: { userId_promptId: { userId, promptId: item.id } } }))
+    saved = !!(await prisma.save.findUnique({ where: { userId_promptId: { userId, promptId: item.id } } }))
   }
 
   const comments = await prisma.comment.findMany({
@@ -57,6 +45,9 @@ export default async function PromptDetailPage({
     orderBy: { createdAt: 'desc' },
     include: { user: true },
   })
+
+  const desc = L(locale, item.descFa ?? '', item.descEn ?? '')
+  const usage = L(locale, item.usageFa ?? '', item.usageEn ?? '')
 
   return (
     <section className="container-app py-16">
@@ -78,21 +69,11 @@ export default async function PromptDetailPage({
             {L(locale, item.titleFa, item.titleEn)}
           </h1>
 
+          {desc && <p className="mt-4 text-sm leading-7 text-ink-muted">{desc}</p>}
+
           <div className="mt-6 flex flex-wrap items-center gap-3">
-            <RealLikeButton
-              promptId={item.id}
-              initialLiked={liked}
-              initialCount={item.likes}
-              label={L(locale, 'پسند', 'likes')}
-              requireLogin={L(locale, 'برای لایک کردن ابتدا وارد شو', 'Login to like')}
-            />
-            <SaveButton
-              promptId={item.id}
-              initialSaved={saved}
-              initialCount={item.saves}
-              label={L(locale, 'ذخیره', 'saves')}
-              requireLogin={L(locale, 'برای ذخیره کردن ابتدا وارد شو', 'Login to save')}
-            />
+            <RealLikeButton promptId={item.id} initialLiked={liked} initialCount={item.likes} label={L(locale, 'پسند', 'likes')} requireLogin={L(locale, 'برای لایک کردن ابتدا وارد شو', 'Login to like')} />
+            <SaveButton promptId={item.id} initialSaved={saved} initialCount={item.saves} label={L(locale, 'ذخیره', 'saves')} requireLogin={L(locale, 'برای ذخیره کردن ابتدا وارد شو', 'Login to save')} />
           </div>
 
           <div className="mt-5 flex flex-wrap gap-1">
@@ -103,25 +84,26 @@ export default async function PromptDetailPage({
 
           <div className="mt-8 rounded-2xl border border-gold/40 bg-[#0d0b07] p-5">
             <p className="text-xs font-bold text-gold-bright">Prompt</p>
-            <p dir="ltr" className="mt-3 text-left font-mono text-sm leading-7 text-[#e8d9ae]">
-              {item.prompt}
-            </p>
+            <p dir="ltr" className="mt-3 text-left font-mono text-sm leading-7 text-[#e8d9ae]">{item.prompt}</p>
             <div className="mt-5">
-              <CopyButton
-                text={item.prompt}
-                label={L(locale, 'کپی پرامپت', 'Copy Prompt')}
-                copiedLabel={L(locale, 'کپی شد!', 'Copied!')}
-              />
+              <CopyButton text={item.prompt} label={L(locale, 'کپی پرامپت', 'Copy Prompt')} copiedLabel={L(locale, 'کپی شد!', 'Copied!')} />
             </div>
           </div>
+
+          {usage && (
+            <div className="mt-6 rounded-2xl border border-line bg-elevated p-5">
+              <p className="text-xs font-bold text-gold-bright">
+                {L(locale, '📘 راهنمای استفاده', '📘 How to use')}
+              </p>
+              <p className="mt-3 text-sm leading-7 text-ink-muted">{usage}</p>
+            </div>
+          )}
         </div>
       </div>
 
       {related.length > 0 && (
         <div className="mt-20">
-          <h2 className="font-display text-xl font-bold tracking-tight">
-            {L(locale, 'پرامپت‌های مشابه', 'Related prompts')}
-          </h2>
+          <h2 className="font-display text-xl font-bold tracking-tight">{L(locale, 'پرامپت‌های مشابه', 'Related prompts')}</h2>
           <div className="mt-6 grid grid-cols-2 gap-5 md:grid-cols-3">
             {related.map((r) => (
               <PromptCard key={r.id} item={r} locale={locale} />
@@ -131,13 +113,7 @@ export default async function PromptDetailPage({
       )}
 
       <RealCommentBox
-        initial={comments.map((c) => ({
-          id: c.id,
-          name: c.user?.name ?? c.name,
-          image: c.user?.image ?? null,
-          text: c.text,
-          createdAt: new Date(c.createdAt).toLocaleString('fa-IR'),
-        }))}
+        initial={comments.map((c) => ({ id: c.id, name: c.user?.name ?? c.name, image: c.user?.image ?? null, text: c.text, createdAt: new Date(c.createdAt).toLocaleString('fa-IR') }))}
         targetId={item.id}
         targetType="prompt"
         titleLabel={L(locale, 'دیدگاه‌ها', 'Comments')}
