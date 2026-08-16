@@ -103,4 +103,4 @@ if (changed) fs.writeFileSync(p, s)
 else console.log('⚠️ schema already complete')
 NODEEOF
 
-echo "✅ Repair complete — now push the schema and code!"
+echo "✅ Repair complete — now push the schema and code!"git add . && git commit -m "full repair" && git push
