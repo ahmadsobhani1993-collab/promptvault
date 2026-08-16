@@ -1,3 +1,4 @@
+import { isCronAuthorized } from '@/lib/cron-auth'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyImage, tgSendText } from '@/lib/telegram'
@@ -28,10 +29,7 @@ function tehranDate() {
 }
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url)
-  if (searchParams.get('key') !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
-  }
+  if (!isCronAuthorized(req)) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
   const today = tehranDate()
   const last = await prisma.setting.findUnique({ where: { key: 'article_last_date' } })
