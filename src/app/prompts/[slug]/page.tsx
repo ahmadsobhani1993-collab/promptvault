@@ -13,6 +13,7 @@ import SaveButton from '@/components/save-button'
 import StarButton from '@/components/star-button'
 import SafeImg from '@/components/safe-img'
 import PromptReveal from '@/components/prompt-reveal'
+import ShareButtons from '@/components/share-buttons'
 import RealCommentBox from '@/components/real-comment-box'
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -23,10 +24,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     title: item.titleFa,
     description: (item.descFa ?? item.prompt).slice(0, 150),
     openGraph: {
-      title: item.titleFa,
-      description: item.descFa ?? '',
-      images: [{ url: item.img }],
+      title: '✨ ' + item.titleFa,
+      description: (item.descFa ?? item.titleFa) + ' — دیدن و کپی پرامپت در PromptsFA',
+      images: [{ url: item.img.replace('output=webp', 'output=jpg'), width: 900, height: 900 }],
       locale: 'fa_IR',
+      siteName: 'PromptsFA',
+      url: (process.env.NEXT_PUBLIC_APP_URL ?? '') + '/prompts/' + item.slug,
+      type: 'article',
     },
     twitter: { card: 'summary_large_image', title: item.titleFa, description: item.descFa ?? '' },
   }
@@ -108,6 +112,7 @@ export default async function PromptDetailPage({ params }: { params: Promise<{ s
             <RealLikeButton promptId={item.id} initialLiked={liked} initialCount={item.likes} label={L(locale, 'پسند', 'likes')} requireLogin={L(locale, 'برای لایک کردن ابتدا وارد شو', 'Login to like')} />
             <SaveButton promptId={item.id} initialSaved={saved} initialCount={item.saves} label={L(locale, 'ذخیره', 'saves')} requireLogin={L(locale, 'برای ذخیره کردن ابتدا وارد شو', 'Login to save')} />
             <StarButton promptId={item.id} initial={(item as any).stars ?? 0} label={L(locale, 'ستاره', 'stars')} />
+            <ShareButtons title={L(locale, item.titleFa, item.titleEn)} desc={L(locale, item.descFa ?? '', item.descEn ?? '')} />
           </div>
 
           <div className="mt-5 flex flex-wrap gap-1">
