@@ -139,3 +139,23 @@ html {
     min-height: auto !important;
   }
 }
+
+.article-body h2 {
+  font-weight: 800;
+  color: #f0d491;
+  margin: 1.6rem 0 0.8rem;
+  font-size: 1.05rem;
+}
+.article-body p { margin-bottom: 1rem; }
+.article-body img { border-radius: 1rem; margin: 1rem 0; width: 100%; border: 1px solid rgba(212, 169, 78, 0.25); }
+.article-body a { color: #d4a94e; }
+
+.article-body h2 {
+  font-weight: 800;
+  color: #f0d491;
+  margin: 1.6rem 0 0.8rem;
+  font-size: 1.05rem;
+}
+.article-body p { margin-bottom: 1rem; }
+.article-body img { border-radius: 1rem; margin: 1rem 0; width: 100%; border: 1px solid rgba(212, 169, 78, 0.25); }
+.article-body a { color: #d4a94e; }
