@@ -3,11 +3,10 @@
     {
       "path": "/api/cron/telegram",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/article",
+      "schedule": "30 5 * * *"
     }
-  ],
-  "functions": {
-    "src/app/api/cron/telegram/route.ts": {
-      "maxDuration": 60
-    }
-  }
+  ]
 }
