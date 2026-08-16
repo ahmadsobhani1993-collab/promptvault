@@ -38,6 +38,11 @@ export default async function RootLayout({
         className="flex min-h-screen flex-col bg-base text-ink"
         suppressHydrationWarning
       >
+      <link rel="manifest" href="/manifest.json" />
+      <meta name="theme-color" content="#d4a94e" />
+      <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+      <meta name="apple-mobile-web-app-capable" content="yes" />
+      <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <ScrollProgress />
         <MouseTrail />
         <Header locale={locale} />

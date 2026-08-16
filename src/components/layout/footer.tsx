@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import PWAControls from '@/components/pwa-controls'
 
 export default function Footer() {
   return (
@@ -45,8 +46,10 @@ export default function Footer() {
         </div>
       </div>
 
-      <div className="border-t border-line/50 py-5 text-center text-[11px] text-ink-faint">
-        © {new Date().getFullYear()} PromptsFA — همه حقوق محفوظ است.
+      <div className="container-app flex flex-wrap items-center justify-center gap-4 border-t border-line/50 py-5">
+        <PWAControls />
+        <p className="text-[11px] text-ink-faint">
+        © {new Date().getFullYear()} PromptsFA — همه حقوق محفوظ است.</p>
       </div>
     </footer>
   )
