@@ -150,6 +150,7 @@ model Prompt {
   userSaves  Save[]
   imgData    String?
   imgType    String?
+  image    PromptImage?
 }
 
 model Article {
@@ -227,4 +228,11 @@ model Comment {
   parentId  String?
   parent    Comment?  @relation(name: "CommentThread", fields: [parentId], references: [id], onDelete: Cascade)
   children  Comment[] @relation(name: "CommentThread")
+}
+
+model PromptImage {
+  promptId String @id
+  data     String
+  type     String?
+  prompt   Prompt @relation(fields: [promptId], references: [id], onDelete: Cascade)
 }

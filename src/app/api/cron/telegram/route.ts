@@ -123,11 +123,11 @@ export async function GET(req: Request) {
           type: 'IMAGE', status: 'PUBLISHED',
           categoryId: cat?.id ?? categories[0].id,
           tagsFa: ai.tagsFa, tagsEn: ai.tagsEn, prompt: finalPrompt,
-          imgData: imgBase64, imgType,
-          views: 1 + Math.floor(Math.random() * 10),
+                    views: 1 + Math.floor(Math.random() * 10),
         },
       })
       await prisma.prompt.update({ where: { id: prompt.id }, data: { img: APP() + '/api/img/' + prompt.id } })
+      await prisma.promptImage.create({ data: { promptId: prompt.id, data: imgBase64, type: imgType } }).catch(() => {})
 
       // send to output channel
       let tg: any = null

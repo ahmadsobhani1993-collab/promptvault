@@ -4,16 +4,16 @@ import { useEffect } from 'react'
 
 export default function RouteLoader() {
   useEffect(() => {
+    const show = () => document.body.classList.add('route-loading')
     const handler = (e: MouseEvent) => {
       const a = (e.target as HTMLElement).closest('a')
       if (!a) return
       const href = a.getAttribute('href') || ''
       if (!href.startsWith('/') || a.target === '_blank' || e.metaKey || e.ctrlKey) return
-      e.preventDefault()
-      document.body.classList.add('route-loading')
-      setTimeout(() => { window.location.href = href }, 700)
+      show()
     }
     document.addEventListener('click', handler)
+    window.addEventListener('pageshow', () => document.body.classList.remove('route-loading'))
     return () => document.removeEventListener('click', handler)
   }, [])
 
