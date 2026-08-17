@@ -1,3 +1,8 @@
+#!/bin/bash
+set -e
+
+# ---------- gemini.ts: model cascade ----------
+cat > src/lib/gemini.ts << 'EOF'
 export const TAG_VOCAB: { fa: string; en: string }[] = [
   { fa: 'پرتره', en: 'portrait' },
   { fa: 'محصول', en: 'product' },
@@ -136,3 +141,42 @@ export async function analyzeWithGemini(opts: {
     promptEn: parsed.promptEn || '',
   }
 }
+EOF
+
+# ---------- article route: use cascade ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'src/app/api/cron/article/route.ts'
+let s = fs.readFileSync(p, 'utf8')
+
+s = s.replace(
+  "import { isCronAuthorized } from '@/lib/cron-auth'",
+  "import { isCronAuthorized } from '@/lib/cron-auth'\nimport { generateText } from '@/lib/gemini'"
+)
+
+const old = `  const res = await fetch(
+    'https://generativelanguage.googleapis.com/v1beta/models/' + (process.env.GEMINI_MODEL || 'gemini-2.5-flash') + ':generateContent?key=' + process.env.GEMINI_API_KEY,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: instruction }] }] }),
+      signal: AbortSignal.timeout(30000),
+    }
+  )
+  const rbody = await res.text()
+  if (!res.ok) return NextResponse.json({ ok: false, error: 'Gemini HTTP ' + res.status + ' :: ' + rbody.slice(0, 250) }, { status: 500 })
+  const json = JSON.parse(rbody)
+  const raw: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''`
+
+const nw = `  let raw = ''
+  try {
+    raw = (await generateText({ instruction })).text
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: String(e?.message ?? e) }, { status: 500 })
+  }`
+
+if (s.includes(old)) { s = s.replace(old, nw); fs.writeFileSync(p, s); console.log('✅ article: cascade') }
+else console.log('❌ article fetch block not found')
+NODEEOF
+
+echo "✅ update72 done! (model cascade: pro → flash → lite → gemma)"

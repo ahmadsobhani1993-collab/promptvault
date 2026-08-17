@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyImage, tgSendText } from '@/lib/telegram'
 import { isCronAuthorized } from '@/lib/cron-auth'
+import { generateText } from '@/lib/gemini'
 
 export const maxDuration = 60
 
@@ -48,19 +49,12 @@ export async function GET(req: Request) {
     '- introFa: 2-3 sentences hook. conclusionFa: 2-3 sentences.\n' +
     '- tagsFa: max 3 from: پرتره، محصول، سینمایی، فانتزی، انیمه، واقع‌گرایانه، مینیمال، لوکس، تاریک، نئون، طبیعت، معماری، کاراکتر، لوگو، پوستر، تبلیغات، آموزش، کد، نویسندگی، بهره‌وری، موسیقی، ویدیو، عکاسی، سه‌بعدی، رنگی'
 
-  const res = await fetch(
-    'https://generativelanguage.googleapis.com/v1beta/models/' + (process.env.GEMINI_MODEL || 'gemini-2.5-flash') + ':generateContent?key=' + process.env.GEMINI_API_KEY,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: instruction }] }] }),
-      signal: AbortSignal.timeout(30000),
-    }
-  )
-  const rbody = await res.text()
-  if (!res.ok) return NextResponse.json({ ok: false, error: 'Gemini HTTP ' + res.status + ' :: ' + rbody.slice(0, 250) }, { status: 500 })
-  const json = JSON.parse(rbody)
-  const raw: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+  let raw = ''
+  try {
+    raw = (await generateText({ instruction })).text
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: String(e?.message ?? e) }, { status: 500 })
+  }
   const m = raw.match(/\{[\s\S]*\}/)
   if (!m) return NextResponse.json({ ok: false, error: 'no json from gemini' }, { status: 500 })
   let a: any
