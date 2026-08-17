@@ -9,6 +9,7 @@ import Footer from '@/components/layout/footer'
 import ScrollProgress from '@/components/scroll-progress'
 import MouseTrail from '@/components/mouse-trail'
 import type { Locale } from '@/lib/i18n'
+import { Analytics } from '@vercel/analytics/next'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 const sora = Sora({ subsets: ['latin'], weight: ['500', '600', '700'], variable: '--font-sora' })
@@ -52,6 +53,7 @@ export default async function RootLayout({
         <Footer locale={locale} />
             <PWAControls />
       <RouteLoader />
+      <Analytics />
     </body>
     </html>
   )
