@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyImage, tgSendText } from '@/lib/telegram'
 import { isCronAuthorized } from '@/lib/cron-auth'
+import { buildDailySchedule } from '@/lib/schedule'
 import { generateText } from '@/lib/gemini'
 
 export const maxDuration = 60
@@ -128,5 +129,5 @@ export async function GET(req: Request) {
     tg = await tgSendText(out, '📚 ' + (a.titleFa ?? topic.fa) + '\n' + (process.env.NEXT_PUBLIC_APP_URL ?? '') + '/blog/' + slug)
   }
 
-  return NextResponse.json({ ok: true, slug, title: a.titleFa, tg })
+  return NextResponse.json({ schedule, ok: true, slug, title: a.titleFa, tg })
 }

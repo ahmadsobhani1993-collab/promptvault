@@ -242,3 +242,12 @@ model UploadImage {
   fileId String
   createdAt DateTime @default(now())
 }
+
+model ScheduledPost {
+  id       String   @id @default(cuid())
+  promptId String
+  target   String
+  sendAt   DateTime
+  sent     Boolean  @default(false)
+  day      String
+}
