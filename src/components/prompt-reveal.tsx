@@ -38,7 +38,6 @@ export default function PromptReveal({
           <div className="h-3 w-4/5 rounded bg-[#241b0d]" />
           <div className="h-3 w-3/5 rounded bg-[#241b0d]" />
         </div>
-        <p className="mt-4 text-[11px] leading-6 text-ink-faint">{hint}</p>
         <button type="button" onClick={reveal} className="btn-primary mt-4">
           {loading ? '...' : revealLabel}
         </button>

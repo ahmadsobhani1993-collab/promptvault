@@ -42,6 +42,7 @@ export type GeminiResult = {
 export async function analyzeWithGemini(opts: {
   text: string
   imgBase64: string | null
+  imgMime?: string
   categories: { slug: string; fa: string; en: string }[]
 }): Promise<GeminiResult> {
   const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
@@ -61,7 +62,7 @@ export async function analyzeWithGemini(opts: {
     '\n- tagsEn: English equivalents of chosen tagsFa in same order.'
 
   const parts: any[] = [{ text: instruction + '\n\nTHE PROMPT TEXT:\n' + (opts.text || '(no text, look at image)') }]
-  if (opts.imgBase64) parts.push({ inline_data: { mime_type: 'image/jpeg', data: opts.imgBase64 } })
+  if (opts.imgBase64) parts.push({ inline_data: { mime_type: opts.imgMime || 'image/jpeg', data: opts.imgBase64 } })
 
   const res = await fetch(
     'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + process.env.GEMINI_API_KEY,

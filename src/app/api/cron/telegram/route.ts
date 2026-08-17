@@ -111,11 +111,21 @@ export async function GET(req: Request) {
     }
 
     const categories = await prisma.category.findMany()
-    const ai = await analyzeWithGemini({
-      text: promptText || '(no text — describe the image as a prompt idea)',
-      imgBase64,
-      categories,
-    })
+    let ai
+    try {
+      ai = await analyzeWithGemini({
+        text: promptText || '(no text — describe the image as a prompt idea)',
+        imgBase64,
+        imgMime: imgType,
+        categories,
+      })
+    } catch (e1) {
+      ai = await analyzeWithGemini({
+        text: promptText || '(no text — describe the image as a prompt idea)',
+        imgBase64: null,
+        categories,
+      })
+    }
     const cat = await prisma.category.findUnique({ where: { slug: ai.categorySlug } })
     const finalPrompt = (ai.promptEn || promptText).trim()
 

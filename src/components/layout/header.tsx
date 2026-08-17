@@ -6,6 +6,7 @@ import { getCategories, L } from '@/lib/data'
 import LocaleSwitcher from '@/components/locale-switcher'
 import MobileMenu from '@/components/mobile-menu'
 import LogoutButton from '@/components/logout-button'
+import NotifBell from '@/components/notif-bell'
 
 export default async function Header() {
   const cookieStore = await cookies()
@@ -64,6 +65,7 @@ export default async function Header() {
         </nav>
 
         <div className="flex items-center gap-2">
+          <NotifBell />
           <LocaleSwitcher />
           {session?.user ? (
             <>

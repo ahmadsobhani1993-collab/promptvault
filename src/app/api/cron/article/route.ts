@@ -112,7 +112,12 @@ export async function GET(req: Request) {
       img: cover,
       tagFa: (a.tagsFa ?? ['آموزش'])[0] ?? 'آموزش',
       tagEn: 'tutorial',
-      contentFa: bodyHtml,
+      dateFa: new Intl.DateTimeFormat('fa-IR', { timeZone: 'Asia/Tehran', dateStyle: 'long' }).format(new Date()),
+      dateEn: today,
+      readFa: Math.max(2, Math.ceil((bodyHtml.length / 1500))) + ' دقیقه مطالعه',
+      readEn: '5 min read',
+      contentFa: [bodyHtml],
+      contentEn: [bodyHtml],
     } as any,
   })
 

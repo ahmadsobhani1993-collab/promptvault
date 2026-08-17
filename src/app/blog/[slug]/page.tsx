@@ -34,7 +34,8 @@ export default async function BlogDetailPage({ params }: { params: Promise<{ slu
   const a = await getArticleBySlug(slug)
   if (!a) notFound()
 
-  const body = (a as any).contentFa ?? ''
+  const rawBody = (a as any).contentFa ?? ''
+  const body = Array.isArray(rawBody) ? rawBody.join('\n') : rawBody
 
   return (
     <article className="container-app max-w-3xl py-16">
