@@ -1,3 +1,7 @@
+#!/bin/bash
+set -e
+
+cat > src/app/api/debug/telegram-test/route.ts << 'EOF'
 import { NextResponse } from 'next/server'
 
 async function dl(url: string, headers: Record<string, string>) {
@@ -62,3 +66,6 @@ export async function GET() {
 
   return NextResponse.json(results)
 }
+EOF
+
+echo "✅ debug v3!"
