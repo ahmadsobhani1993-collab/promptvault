@@ -1,3 +1,25 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) tighter sections ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'src/app/page.tsx'
+let s = fs.readFileSync(p, 'utf8')
+s = s.replaceAll('min-h-screen', 'min-h-[68vh]')
+s = s.replaceAll('py-16', 'py-8')
+fs.writeFileSync(p, s)
+console.log('✅ page: sections tightened')
+NODEEOF
+
+# ---------- 2) hide hero subtitle ----------
+cat >> src/app/globals.css << 'EOF'
+
+.hero-sub { display: none !important; }
+EOF
+
+# ---------- 3) import route with auto-loop ----------
+cat > src/app/api/debug/import/route.ts << 'EOF'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { analyzeWithGemini } from '@/lib/gemini'
@@ -145,3 +167,6 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ ok: true, cursor, stop, results, chained })
 }
+EOF
+
+echo "✅ update68 done!"

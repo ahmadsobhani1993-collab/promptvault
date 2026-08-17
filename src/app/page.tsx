@@ -94,7 +94,7 @@ export default async function HomePage() {
       </ZoomSection>
 
       <ZoomSection>
-        <section data-section className="snap-section flex min-h-screen flex-col justify-center py-16">
+        <section data-section className="snap-section flex min-h-[68vh] flex-col justify-center py-8">
           <div className="container-app">
             <Reveal>
               <h2 className="title-shine text-center font-display text-2xl font-bold tracking-tight md:text-3xl">
@@ -114,7 +114,7 @@ export default async function HomePage() {
       </ZoomSection>
 
       <ZoomSection>
-        <section data-section className="snap-section flex min-h-screen flex-col justify-center border-t border-line/60 py-16">
+        <section data-section className="snap-section flex min-h-[68vh] flex-col justify-center border-t border-line/60 py-8">
           <div className="container-app">
             <Reveal>
               <h2 className="title-shine text-center font-display text-2xl font-bold tracking-tight md:text-3xl">
@@ -138,7 +138,7 @@ export default async function HomePage() {
       </ZoomSection>
 
       <ZoomSection>
-        <section data-section className="snap-section flex min-h-screen flex-col justify-center border-t border-line/60 py-16">
+        <section data-section className="snap-section flex min-h-[68vh] flex-col justify-center border-t border-line/60 py-8">
           <div className="container-app">
             <Reveal>
               <div className="flex items-end justify-between gap-6">

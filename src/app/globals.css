@@ -231,3 +231,5 @@ body.route-loading { overflow: hidden; }
 .hero-sub {
   color: #d8cdb2 !important;
 }
+
+.hero-sub { display: none !important; }
