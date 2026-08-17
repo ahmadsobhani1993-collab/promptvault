@@ -1,12 +1,13 @@
-import { isCronAuthorized } from '@/lib/cron-auth'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { fetchPage, diagnoseChannel, verifyImage, tgSendText, tgSendPhoto, tgSendCode } from '@/lib/telegram'
 import { analyzeWithGemini } from '@/lib/gemini'
+import { isCronAuthorized } from '@/lib/cron-auth'
 
 export const maxDuration = 60
 
 const TG_FOOTER = '\n\n🔗 @Prompts_fa'
+const APP = () => process.env.NEXT_PUBLIC_APP_URL ?? 'https://promptsfa.ir'
 
 async function getSetting(key: string, def: string) {
   const s = await prisma.setting.findUnique({ where: { key } })
@@ -28,16 +29,14 @@ function tehranNow() {
 }
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url)
-  // Vercel Cron خودش header authorization می‌فرستد؛ دستی هم با key قابل دسترسی است
   if (!isCronAuthorized(req)) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
   const channel = process.env.TELEGRAM_CHANNEL
   if (!channel) return NextResponse.json({ error: 'no channel env' }, { status: 500 })
 
+  const { searchParams } = new URL(req.url)
   if (searchParams.get('debug') === '1') {
-    const d = await diagnoseChannel(channel)
-    return NextResponse.json({ debug: d })
+    return NextResponse.json({ debug: await diagnoseChannel(channel) })
   }
 
   const synced = await getSetting('tg_synced', '0')
@@ -46,14 +45,10 @@ export async function GET(req: Request) {
     const start = Date.now()
     let before = parseInt(await getSetting('tg_before', '0'), 10)
     let total = 0
-
     for (let i = 0; i < 12; i++) {
       if (Date.now() - start > 40000) break
       const page = before === 0 ? await fetchPage(channel) : await fetchPage(channel, before)
-      if (page.length === 0) {
-        await setSetting('tg_synced', '1')
-        break
-      }
+      if (page.length === 0) { await setSetting('tg_synced', '1'); break }
       const minId = Math.min(...page.map((m) => m.id))
       await prisma.telegramQueue.createMany({
         data: page.map((m) => ({ id: m.id, text: m.text, img: m.img, reply: m.reply })),
@@ -63,21 +58,11 @@ export async function GET(req: Request) {
       before = minId
       await setSetting('tg_before', String(before))
     }
-
-    return NextResponse.json({
-      ok: true,
-      phase: 'sync',
-      added: total,
-      synced: await getSetting('tg_synced', '0'),
-      ms: Date.now() - start,
-    })
+    return NextResponse.json({ ok: true, phase: 'sync', added: total, synced: await getSetting('tg_synced', '0') })
   }
 
-  const item = await prisma.telegramQueue.findFirst({
-    where: { status: 'PENDING' },
-    orderBy: { id: 'asc' },
-  })
-  if (!item) return NextResponse.json({ ok: true, phase: 'idle', msg: 'all processed' })
+  const item = await prisma.telegramQueue.findFirst({ where: { status: 'PENDING' }, orderBy: { id: 'asc' } })
+  if (!item) return NextResponse.json({ ok: true, phase: 'idle' })
 
   try {
     let promptText = (item.text ?? '').trim()
@@ -85,21 +70,12 @@ export async function GET(req: Request) {
     const skipIds: number[] = []
 
     if (img && promptText.length < 40) {
-      const next = await prisma.telegramQueue.findFirst({
-        where: { id: { gt: item.id }, status: 'PENDING' },
-        orderBy: { id: 'asc' },
-      })
-      if (next && !next.img && (next.text ?? '').length > 40) {
-        promptText = (next.text ?? '').trim()
-        skipIds.push(next.id)
-      }
+      const next = await prisma.telegramQueue.findFirst({ where: { id: { gt: item.id }, status: 'PENDING' }, orderBy: { id: 'asc' } })
+      if (next && !next.img && (next.text ?? '').length > 40) { promptText = (next.text ?? '').trim(); skipIds.push(next.id) }
     }
 
     if (!img && promptText && item.reply) {
-      const prev = await prisma.telegramQueue.findFirst({
-        where: { id: { lt: item.id }, img: { not: null } },
-        orderBy: { id: 'desc' },
-      })
+      const prev = await prisma.telegramQueue.findFirst({ where: { id: { lt: item.id }, img: { not: null } }, orderBy: { id: 'desc' } })
       if (prev && prev.id >= item.id - 3) img = prev.img
     }
 
@@ -108,16 +84,15 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: true, phase: 'skip-empty' })
     }
 
+    // download original image (for Gemini + self-host)
     let imgBase64: string | null = null
-    let imgType = "image/jpeg"
+    let imgType = 'image/jpeg'
     if (img) {
       try {
-        const ir = await fetch(img, { signal: AbortSignal.timeout(8000) })
+        const ir = await fetch(img, { signal: AbortSignal.timeout(9000) })
+        imgType = ir.headers.get('content-type') ?? 'image/jpeg'
         const buf = Buffer.from(await ir.arrayBuffer())
-        if (buf.length < 4_000_000) {
-          imgBase64 = buf.toString('base64')
-          imgType = ir.headers.get('content-type') ?? 'image/jpeg'
-        }
+        if (buf.length > 0 && buf.length < 900_000) imgBase64 = buf.toString('base64')
       } catch {}
     }
 
@@ -129,11 +104,9 @@ export async function GET(req: Request) {
       else if (await verifyImage(st)) finalImg = st
     }
 
-    if (!finalImg) {
+    if (!finalImg && !imgBase64) {
       await prisma.telegramQueue.update({ where: { id: item.id }, data: { status: 'SKIPPED' } })
-      for (const sid of skipIds) {
-        await prisma.telegramQueue.update({ where: { id: sid }, data: { status: 'SKIPPED' } })
-      }
+      for (const sid of skipIds) await prisma.telegramQueue.update({ where: { id: sid }, data: { status: 'SKIPPED' } })
       return NextResponse.json({ ok: true, phase: 'skip-no-image', id: item.id })
     }
 
@@ -144,39 +117,30 @@ export async function GET(req: Request) {
       categories,
     })
     const cat = await prisma.category.findUnique({ where: { slug: ai.categorySlug } })
-
     const finalPrompt = (ai.promptEn || promptText).trim()
 
     const prompt = await prisma.prompt.create({
       data: {
-        titleFa: ai.titleFa,
-        titleEn: ai.titleEn,
-        descFa: ai.descFa,
-        descEn: ai.descEn,
-        usageFa: ai.usageFa,
-        usageEn: ai.usageEn,
+        titleFa: ai.titleFa, titleEn: ai.titleEn, descFa: ai.descFa, descEn: ai.descEn,
+        usageFa: ai.usageFa, usageEn: ai.usageEn,
         slug: 'tg-' + item.id,
-        img: finalImg,
+        img: finalImg ?? 'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=800&auto=format&fit=crop',
         model: /--v\s?\d|--ar/.test(finalPrompt) ? 'Midjourney' : 'AI',
-        type: 'IMAGE',
-        status: 'PUBLISHED',
+        type: 'IMAGE', status: 'PUBLISHED',
         categoryId: cat?.id ?? categories[0].id,
-        tagsFa: ai.tagsFa,
-        tagsEn: ai.tagsEn,
-        prompt: finalPrompt,
+        tagsFa: ai.tagsFa, tagsEn: ai.tagsEn, prompt: finalPrompt,
       },
     })
 
-    if (imgBase64 && imgBase64.length < 1_200_000) {
-      const selfUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '') + '/api/img/' + prompt.id
+    // self-host if we downloaded the bytes
+    if (imgBase64) {
+      const selfUrl = APP() + '/api/img/' + prompt.id
       await prisma.prompt.update({ where: { id: prompt.id }, data: { imgData: imgBase64, imgType, img: selfUrl } })
       finalImg = selfUrl
     }
 
     await prisma.telegramQueue.update({ where: { id: item.id }, data: { status: 'PROCESSED', promptId: prompt.id } })
-    for (const sid of skipIds) {
-      await prisma.telegramQueue.update({ where: { id: sid }, data: { status: 'MERGED', promptId: prompt.id } })
-    }
+    for (const sid of skipIds) await prisma.telegramQueue.update({ where: { id: sid }, data: { status: 'MERGED', promptId: prompt.id } })
 
     let tg: any = null
     const out = process.env.TELEGRAM_OUTPUT
@@ -186,34 +150,21 @@ export async function GET(req: Request) {
       let sentCount = sentDate === date ? parseInt(await getSetting('tg_sent_count', '0'), 10) : 0
       const inWindow = hour >= 12 && hour <= 23
 
-      if (!inWindow) {
-        tg = { skipped: true, reason: 'outside Tehran window (12:00-23:59). current hour: ' + hour }
-      } else if (sentCount >= 24) {
-        tg = { skipped: true, reason: 'daily limit 24 reached' }
-      } else {
+      if (!inWindow) tg = { skipped: true, reason: 'outside window, hour=' + hour }
+      else if (sentCount >= 24) tg = { skipped: true, reason: 'daily limit' }
+      else {
         const tagLine = ai.tagsFa.map((t) => '#' + t.replace(/\s+/g, '_')).join(' ')
         const usageFa = (ai.usageFa || '').trim()
-
-        const fullCaption =
-          '✨ ' + ai.titleFa + '\n\n' + finalPrompt + '\n\n📘 ' + usageFa + '\n\n' + tagLine + TG_FOOTER
-
+        const fullCaption = '✨ ' + ai.titleFa + '\n\n' + finalPrompt + '\n\n📘 ' + usageFa + '\n\n' + tagLine + TG_FOOTER
         const shortCaption = '✨ ' + ai.titleFa + '\n\n📘 ' + usageFa + '\n\n' + tagLine + TG_FOOTER
-
-        if (fullCaption.length <= 1024) {
-          tg = { single: await tgSendPhoto(out, finalImg, fullCaption) }
-        } else {
-          tg = {
-            photo: await tgSendPhoto(out, finalImg, shortCaption),
-            code: await tgSendCode(out, finalPrompt, TG_FOOTER),
-          }
-        }
-
+        if (fullCaption.length <= 1024) tg = { single: await tgSendPhoto(out, finalImg!, fullCaption) }
+        else tg = { photo: await tgSendPhoto(out, finalImg!, shortCaption), code: await tgSendCode(out, finalPrompt, TG_FOOTER) }
         await setSetting('tg_sent_date', date)
         await setSetting('tg_sent_count', String(sentCount + 1))
       }
     }
 
-    return NextResponse.json({ ok: true, phase: 'processed', id: item.id, slug: prompt.slug, title: ai.titleFa, tg })
+    return NextResponse.json({ ok: true, phase: 'processed', id: item.id, slug: prompt.slug, selfHosted: !!imgBase64, tg })
   } catch (e: any) {
     await prisma.telegramQueue.update({ where: { id: item.id }, data: { status: 'FAILED' } }).catch(() => {})
     return NextResponse.json({ ok: false, phase: 'failed', id: item.id, error: String(e?.message ?? e) }, { status: 500 })
