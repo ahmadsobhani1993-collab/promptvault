@@ -24,8 +24,8 @@ export default function Hero({
       </div>
 
       <div className="container-app relative text-center">
-        <p className="gold-badge mx-auto w-fit anim-fade-up">{label}</p>
-        <h1 className="anim-fade-up mx-auto mt-6 max-w-3xl font-display text-4xl font-black leading-tight md:text-6xl" style={{ animationDelay: '120ms' }}>
+        <p className="hero-sub gold-badge mx-auto w-fit anim-fade-up">{label}</p>
+        <h1 className="hero-title anim-fade-up mx-auto mt-6 max-w-3xl font-display text-4xl font-black leading-tight md:text-6xl" style={{ animationDelay: '120ms' }}>
           {title}
         </h1>
         <p className="anim-fade-up mx-auto mt-5 max-w-xl text-sm leading-8 text-ink-muted md:text-base" style={{ animationDelay: '240ms' }}>

@@ -218,3 +218,16 @@ body.route-loading .route-bar {
   100% { background-position: -200% 0; }
 }
 body.route-loading { overflow: hidden; }
+
+/* hero fixes */
+.hero-title {
+  font-size: clamp(1.5rem, 4.2vw, 2.9rem) !important;
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+}
+@media (max-width: 700px) {
+  .hero-title { white-space: normal; }
+}
+.hero-sub {
+  color: #d8cdb2 !important;
+}
