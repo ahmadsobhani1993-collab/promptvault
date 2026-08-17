@@ -1,3 +1,13 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) no crons in vercel.json ----------
+cat > vercel.json << 'EOF'
+{}
+EOF
+
+# ---------- 2) Bot API based pipeline ----------
+cat > src/app/api/cron/telegram/route.ts << 'EOF'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { tgSendText, tgSendPhoto, tgSendCode } from '@/lib/telegram'
@@ -156,3 +166,6 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ ok: true, phase: 'processed', newPosts: posts.length, results })
 }
+EOF
+
+echo "✅ Bot API pipeline ready! (no more scraping)"
