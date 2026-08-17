@@ -1,85 +1,70 @@
-import Link from 'next/link'
-import { redirect } from 'next/navigation'
-import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { requireAdmin } from '@/lib/admin'
 
 export const dynamic = 'force-dynamic'
-export const metadata = { title: 'مدیریت | PromptsFA' }
 
-export default async function AdminPage() {
-  const session = await auth()
-  if (session?.user?.role !== 'ADMIN') redirect('/')
+export default async function AdminDashboard() {
+  await requireAdmin()
 
-  const [prompts, users, likes, comments, pending] = await Promise.all([
+  const [prompts, users, comments, likes] = await Promise.all([
     prisma.prompt.count(),
     prisma.user.count(),
-    prisma.like.count(),
     prisma.comment.count(),
-    prisma.prompt.count({ where: { status: 'PENDING' } }),
+    prisma.like.count(),
   ])
 
-  const latest = await prisma.prompt.findMany({
-    orderBy: { createdAt: 'desc' },
-    take: 6,
-    select: { id: true, titleFa: true, likes: true, status: true, slug: true },
-  })
-
-  const nav = [
-    { href: '/admin', label: ' داشبورد' },
-    { href: '/admin/prompts', label: '📦 پرامپت‌ها' + (pending ? ' (' + pending + ')' : '') },
-    { href: '/admin/articles', label: '📚 مقالات' },
-    { href: '/admin/categories', label: '🗂 دسته‌بندی‌ها' },
-    { href: '/admin/comments', label: '💬 کامنت‌ها' },
-    { href: '/admin/users', label: '👥 کاربرها و ادمین‌ها' },
-  ]
+  const recentPrompts = await prisma.prompt.findMany({ orderBy: { createdAt: 'desc' }, take: 5 })
+  const recentUsers = await prisma.user.findMany({ orderBy: { createdAt: 'desc' }, take: 5 })
 
   const stats = [
     { label: 'پرامپت‌ها', value: prompts },
     { label: 'کاربرها', value: users },
-    { label: 'لایک‌ها', value: likes },
     { label: 'کامنت‌ها', value: comments },
+    { label: 'لایک‌ها', value: likes },
   ]
 
   return (
-    <section className="container-app py-10">
-      <div className="grid items-start gap-6 lg:grid-cols-[220px_1fr]">
-        <aside className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:flex lg:flex-col">
-          {nav.map((n) => (
-            <Link key={n.href} href={n.href} className="btn-secondary justify-center whitespace-nowrap text-xs">
-              {n.label}
-            </Link>
-          ))}
-          <Link href="/" className="btn-secondary justify-center whitespace-nowrap text-xs">← بازگشت به سایت</Link>
-        </aside>
+    <div>
+      <h1 className="font-display text-2xl font-extrabold">داشبورد</h1>
 
-        <div className="min-w-0">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {stats.map((s) => (
-              <div key={s.label} className="card p-4 text-center">
-                <p className="text-xs text-ink-muted">{s.label}</p>
-                <p className="mt-2 font-display text-2xl font-extrabold text-gold-bright">{s.value}</p>
-              </div>
+      <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {stats.map((s) => (
+          <div key={s.label} className="card p-5">
+            <p className="text-xs text-ink-muted">{s.label}</p>
+            <p className="mt-2 font-display text-3xl font-extrabold text-gold-bright">{s.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-8 grid gap-6 lg:grid-cols-2">
+        <div className="card p-5">
+          <h2 className="text-sm font-bold text-gold-bright">آخرین پرامپت‌ها</h2>
+          <ul className="mt-4 space-y-3">
+            {recentPrompts.map((p) => (
+              <li key={p.id} className="flex items-center justify-between text-sm">
+                <span className="line-clamp-1">{p.titleFa}</span>
+                <span className="text-xs text-ink-faint">{p.likes} لایک</span>
+              </li>
             ))}
-          </div>
-
-          <div className="card mt-5 overflow-hidden">
-            <p className="border-b border-line p-4 text-sm font-bold text-gold-bright">آخرین پرامپت‌ها</p>
-            <div className="divide-y divide-line">
-              {latest.map((p) => (
-                <Link key={p.id} href={'/prompts/' + p.slug} className="flex items-center justify-between gap-3 p-4 transition-colors hover:bg-elevated">
-                  <span className="min-w-0 truncate text-xs text-ink">{p.titleFa}</span>
-                  <span className="flex shrink-0 items-center gap-2">
-                    <span className={'rounded-full px-2 py-0.5 text-[9px] ' + (p.status === 'PUBLISHED' ? 'bg-green-500/15 text-green-400' : p.status === 'PENDING' ? 'bg-yellow-500/15 text-yellow-400' : 'bg-red-500/15 text-red-400')}>
-                      {p.status === 'PUBLISHED' ? 'منتشر' : p.status === 'PENDING' ? 'در انتظار' : 'رد'}
-                    </span>
-                    <span className="text-[10px] text-ink-faint">❤ {p.likes}</span>
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </div>
+          </ul>
+        </div>
+        <div className="card p-5">
+          <h2 className="text-sm font-bold text-gold-bright">آخرین کاربرها</h2>
+          <ul className="mt-4 space-y-3">
+            {recentUsers.map((u) => (
+              <li key={u.id} className="flex items-center gap-3 text-sm">
+                {u.image ? (
+                  <img src={u.image} alt="" className="h-7 w-7 rounded-full" />
+                ) : (
+                  <span className="grid h-7 w-7 place-items-center rounded-full bg-gold/20 text-xs text-gold-bright">؟</span>
+                )}
+                <span className="line-clamp-1">{u.name ?? u.email}</span>
+                <span className="ms-auto text-xs text-ink-faint">{u.role}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
-    </section>
+    </div>
   )
 }
