@@ -1,3 +1,7 @@
+#!/bin/bash
+set -e
+
+cat > src/app/api/debug/fix-imgs/route.ts << 'EOF'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { isCronAuthorized } from '@/lib/cron-auth'
@@ -79,3 +83,6 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ ok: true, movedRows, movedPrompt, repaired, leftBad, leftRows, leftPrompt, errors: errors.slice(0, 8) })
 }
+EOF
+
+echo "✅ update83 done!"
