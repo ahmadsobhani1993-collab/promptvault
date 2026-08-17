@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db'
 
 const BASE = process.env.NEXT_PUBLIC_APP_URL || 'https://promptvault-ahmad-5c7c.vercel.app'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 3600
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const [prompts, categories, articles] = await Promise.all([
     prisma.prompt.findMany({ where: { status: 'PUBLISHED' }, select: { slug: true, createdAt: true } }),
