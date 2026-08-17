@@ -1,3 +1,7 @@
+#!/bin/bash
+set -e
+
+cat > src/app/api/debug/tg-bot-test/route.ts << 'EOF'
 import { NextResponse } from 'next/server'
 
 export async function GET() {
@@ -58,3 +62,6 @@ export async function GET() {
       : '✅ همه‌چیز آماده است! cron به‌زودی پست را می‌گیرد.',
   })
 }
+EOF
+
+echo "✅ bot test v2!"
