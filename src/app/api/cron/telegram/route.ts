@@ -6,7 +6,7 @@ import { isCronAuthorized } from '@/lib/cron-auth'
 
 export const maxDuration = 60
 
-const TG_FOOTER = '\n\n🔗 @Prompts_fa'
+const TG_FOOTER = '\n\n@Prompts_fa'
 const APP = () => process.env.NEXT_PUBLIC_APP_URL ?? 'https://promptsfa.ir'
 
 async function getSetting(key: string, def: string) {
@@ -130,7 +130,7 @@ export async function GET(req: Request) {
         if (hour >= 12 && hour <= 23 && sentCount < 24) {
           const tagLine = ai.tagsFa.map((t) => '#' + t.replace(/\s+/g, '_')).join(' ')
           const usageFa = (ai.usageFa || '').trim()
-          const full = '✨ ' + ai.titleFa + '\n\n' + finalPrompt + '\n\n📘 ' + usageFa + '\n\n' + tagLine + TG_FOOTER
+          const full = '✨ ' + ai.titleFa + '\n\n📘 ' + usageFa + '\n\n📝 ' + finalPrompt + '\n\n' + tagLine + TG_FOOTER
           const short = '✨ ' + ai.titleFa + '\n\n📘 ' + usageFa + '\n\n' + tagLine + TG_FOOTER
           const selfUrl = APP() + '/api/img/' + prompt.id
           if (full.length <= 1024) tg = { single: await tgSendPhoto(out, selfUrl, full) }

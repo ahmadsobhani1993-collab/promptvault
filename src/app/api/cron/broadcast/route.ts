@@ -5,7 +5,7 @@ import { isCronAuthorized } from '@/lib/cron-auth'
 
 export const maxDuration = 30
 
-const TG_FOOTER = '\n\n🔗 @Prompts_fa'
+const TG_FOOTER = '\n\n@Prompts_fa'
 const APP = () => process.env.NEXT_PUBLIC_APP_URL ?? 'https://promptsfa.ir'
 
 async function getSetting(key: string, def: string) {

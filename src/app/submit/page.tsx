@@ -35,7 +35,7 @@ export default async function SubmitPage() {
     const prompt = String(fd.get('prompt') ?? '').trim()
     if (!img || !title || !prompt) return
     const catId = String(fd.get('category') ?? '')
-    await prisma.prompt.create({
+    const created = await prisma.prompt.create({
       data: {
         titleFa: title,
         titleEn: title,
@@ -55,6 +55,7 @@ export default async function SubmitPage() {
         userId: s.user.id,
       },
     })
+    fetch((process.env.NEXT_PUBLIC_APP_URL ?? 'https://promptsfa.ir') + '/api/process-submit?id=' + created.id + '&key=' + (process.env.CRON_SECRET ?? ''), { signal: AbortSignal.timeout(8000) }).catch(() => {})
     redirect('/?sent=1')
   }
 
