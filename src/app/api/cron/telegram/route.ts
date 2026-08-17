@@ -90,9 +90,11 @@ export async function GET(req: Request) {
     if (img) {
       try {
         const ir = await fetch(img, { signal: AbortSignal.timeout(9000) })
-        imgType = ir.headers.get('content-type') ?? 'image/jpeg'
-        const buf = Buffer.from(await ir.arrayBuffer())
-        if (buf.length > 0 && buf.length < 900_000) imgBase64 = buf.toString('base64')
+        imgType = ir.headers.get('content-type') ?? ''
+        if (imgType.startsWith('image/')) {
+          const buf = Buffer.from(await ir.arrayBuffer())
+          if (buf.length > 1000 && buf.length < 900_000) imgBase64 = buf.toString('base64')
+        }
       } catch {}
     }
 

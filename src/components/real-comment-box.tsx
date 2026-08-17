@@ -75,7 +75,7 @@ export default function RealCommentBox({
       <button type="button" onClick={() => setReplyTo(c)} className="mt-2 text-[11px] text-ink-faint transition-colors hover:text-gold-bright">
         ↩️ پاسخ
       </button>
-      {kids(c.id).map((k) => renderOne(k, depth + 1))}
+      {kids(c.id).map((k) => renderOne(k, Math.min(depth + 1, 2)))}
     </div>
   )
 

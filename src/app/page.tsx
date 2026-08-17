@@ -19,6 +19,19 @@ const chips = [
   { fa: 'موسیقی', en: 'Music', href: '/explore?type=AUDIO' },
 ]
 
+export const metadata = {
+  title: 'PromptsFA | پلتفرم پرامپت‌های هوش مصنوعی',
+  description: 'هزاران پرامپت حرفه‌ای هوش مصنوعی برای تصویر، ویدیو، متن، کد و موسیقی + آموزش‌های روز هوش مصنوعی',
+  openGraph: {
+    title: 'PromptsFA | پلتفرم پرامپت‌های هوش مصنوعی',
+    description: 'کشف، کپی و اشتراک پرامپت‌های حرفه‌ای AI + آموزش روز',
+    siteName: 'PromptsFA',
+    locale: 'fa_IR',
+    images: [{ url: (process.env.NEXT_PUBLIC_APP_URL ?? 'https://promptsfa.ir') + '/icon.svg' }],
+  },
+  twitter: { card: 'summary_large_image', title: 'PromptsFA', description: 'پلتفرم پرامپت‌های هوش مصنوعی' },
+}
+
 export const dynamic = 'force-dynamic'
 
 export default async function HomePage() {
@@ -44,6 +57,22 @@ export default async function HomePage() {
 
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'WebSite',
+            name: 'PromptsFA',
+            url: process.env.NEXT_PUBLIC_APP_URL ?? 'https://promptsfa.ir',
+            potentialAction: {
+              '@type': 'SearchAction',
+              target: (process.env.NEXT_PUBLIC_APP_URL ?? 'https://promptsfa.ir') + '/explore?q={search_term_string}',
+              'query-input': 'required name=search_term_string',
+            },
+          }),
+        }}
+      />
       <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
         <div className="fx-blob anim-float" style={{ top: '-12%', right: '-14%', width: '46vw', height: '46vw' }} />
         <div className="fx-blob anim-float2" style={{ bottom: '-18%', left: '-12%', width: '40vw', height: '40vw' }} />

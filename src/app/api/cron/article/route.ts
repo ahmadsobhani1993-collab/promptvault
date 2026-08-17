@@ -19,8 +19,8 @@ const TOPICS = [
 ]
 
 function pollUrl(kw: string, seed: number) {
-  const p = encodeURIComponent(kw + ', cinematic dark luxury style, golden light accents, ultra detailed, no text, no watermark')
-  const raw = 'https://image.pollinations.ai/prompt/' + p + '?width=1200&height=675&seed=' + seed + '&nologo=true'
+  const p = encodeURIComponent(kw + ', award-winning digital art, cinematic dark luxury style, golden light accents, ultra detailed, 8k, sharp focus, no text, no watermark')
+  const raw = 'https://image.pollinations.ai/prompt/' + p + '?model=flux&width=1280&height=720&seed=' + seed + '&nologo=true'
   return 'https://wsrv.nl/?url=' + encodeURIComponent(raw) + '&w=1200&q=80&output=jpg'
 }
 
@@ -41,10 +41,10 @@ export async function GET(req: Request) {
   const topic = TOPICS[dayIndex % TOPICS.length]
 
   const instruction =
-    'You are a Persian tech educator. Write an engaging educational article about: "' + topic.fa + '".\n' +
+    'You are a Persian tech educator. Write a COMPLETE long-form article of at least 1200 words in Persian. Write an engaging educational article about: "' + topic.fa + '".\n' +
     'Return ONLY valid JSON (no markdown) with keys:\n' +
     '"titleFa","titleEn","descFa","descEn","introFa","sections","conclusionFa","tagsFa"\n' +
-    '- sections: array of 3-4 objects {"hFa","pFa"} where pFa is 3-5 friendly practical sentences.\n' +
+    '- sections: array of 5 objects {"hFa","pFa"} where pFa is 6-8 friendly practical sentences.\n' +
     '- introFa: 2-3 sentences hook. conclusionFa: 2-3 sentences.\n' +
     '- tagsFa: max 3 from: پرتره، محصول، سینمایی، فانتزی، انیمه، واقع‌گرایانه، مینیمال، لوکس، تاریک، نئون، طبیعت، معماری، کاراکتر، لوگو، پوستر، تبلیغات، آموزش، کد، نویسندگی، بهره‌وری، موسیقی، ویدیو، عکاسی، سه‌بعدی، رنگی'
 
@@ -87,7 +87,7 @@ export async function GET(req: Request) {
   for (let i = 0; i < sections.length; i++) {
     const sec = sections[i]
     bodyHtml += '<h2>' + (sec.hFa ?? '') + '</h2><p>' + (sec.pFa ?? '') + '</p>'
-    if (i === 1) {
+    if (i === 1 || i === 3) {
       const secImg = pollUrl(topic.kw + ' variation ' + i, dayIndex + i * 13)
       if (await verifyImage(secImg)) bodyHtml += '<img src="' + secImg + '" alt="' + (sec.hFa ?? '') + '" loading="lazy" />'
     }
