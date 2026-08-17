@@ -196,3 +196,25 @@ body.route-loading { overflow: hidden; }
   animation: routepulse 1.2s ease-in-out infinite;
 }
 @keyframes routepulse { 50% { opacity: 0.4; } }
+
+.route-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 100;
+  pointer-events: none;
+  background: transparent;
+}
+body.route-loading .route-bar {
+  background: linear-gradient(90deg, transparent, #d4a94e 40%, #f0d491 50%, #d4a94e 60%, transparent);
+  background-size: 200% 100%;
+  animation: routebar 1.1s linear infinite;
+  box-shadow: 0 0 12px rgba(212, 169, 78, 0.6);
+}
+@keyframes routebar {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+body.route-loading { overflow: hidden; }

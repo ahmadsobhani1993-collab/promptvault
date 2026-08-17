@@ -63,16 +63,22 @@ export async function GET(req: Request) {
 
   if (!posts.length) return NextResponse.json({ ok: true, phase: 'idle', offset })
 
-  // merge photo + following long text
+  // merge photo + following long text (look ahead up to 3)
   const merged: { id: number; text: string; fileId: string | null }[] = []
   for (let i = 0; i < posts.length; i++) {
     const cur = posts[i]
-    const next = posts[i + 1]
     const curText = (cur.caption || cur.text || '').trim()
     const fileId = cur.photo?.length ? cur.photo[cur.photo.length - 1].file_id : null
-    if (fileId && curText.length < 60 && next && !next.photo && ((next.text || next.caption || '').trim().length > 60)) {
-      merged.push({ id: cur.message_id, text: (next.text || next.caption).trim(), fileId })
-      i++
+    if (fileId && curText.length < 60) {
+      let j = i + 1
+      let longText = ''
+      while (j < posts.length && j <= i + 3) {
+        const cand = posts[j]
+        if (!cand.photo && ((cand.text || cand.caption || '').trim().length > 60)) { longText = (cand.text || cand.caption).trim(); break }
+        j++
+      }
+      if (longText) { merged.push({ id: cur.message_id, text: longText, fileId }); i = j }
+      else merged.push({ id: cur.message_id, text: curText, fileId })
     } else {
       merged.push({ id: cur.message_id, text: curText, fileId })
     }

@@ -49,11 +49,16 @@ export async function GET(req: Request) {
     let advanced = 1
 
     if (fileId && text.length < 60) {
-      const f2 = await (await fetch(api('forwardMessage', { chat_id: priv, from_chat_id: chatId, message_id: String(cursor + 1) }), { signal: AbortSignal.timeout(10000) })).json()
-      if (f2.ok && !f2.result.photo && (f2.result.text || '').trim().length > 60) {
-        text = f2.result.text.trim()
-        fwdIds.push(f2.result.message_id)
-        advanced = 2
+      for (let off = 1; off <= 3; off++) {
+        const f2 = await (await fetch(api('forwardMessage', { chat_id: priv, from_chat_id: chatId, message_id: String(cursor + off) }), { signal: AbortSignal.timeout(10000) })).json()
+        if (f2.ok && !f2.result.photo && (f2.result.text || '').trim().length > 60) {
+          text = f2.result.text.trim()
+          fwdIds.push(f2.result.message_id)
+          advanced = off + 1
+          break
+        }
+        if (f2.ok) { await fetch(api('deleteMessage', { chat_id: priv, message_id: String(f2.result.message_id) })).catch(() => {}) }
+        if (!f2.ok) break
       }
     }
 
