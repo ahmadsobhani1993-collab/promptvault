@@ -26,7 +26,7 @@ function tehranNow() {
 export async function GET(req: Request) {
   if (!isCronAuthorized(req)) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
-  const token = process.env.TELEGRAM_BOT_TOKEN
+  const token = process.env.TELEGRAM_READ_TOKEN || process.env.TELEGRAM_BOT_TOKEN
   if (!token) return NextResponse.json({ error: 'no bot token' }, { status: 500 })
   const api = (m: string, q?: Record<string, string>) =>
     'https://api.telegram.org/bot' + token + '/' + m + (q ? '?' + new URLSearchParams(q).toString() : '')
@@ -49,7 +49,7 @@ export async function GET(req: Request) {
   }
 
   // get new channel posts
-  let offset = parseInt(await getSetting('tg_update_offset', '0'), 10)
+  let offset = parseInt(await getSetting('tg_update_offset2', '0'), 10)
   const ur = await (await fetch(api('getUpdates', { offset: String(offset), limit: '100', timeout: '3' }), { signal: AbortSignal.timeout(30000) })).json()
   const ups: any[] = ur.result ?? []
 
@@ -59,7 +59,7 @@ export async function GET(req: Request) {
     if (p && String(p.chat.id) === chatId) posts.push(p)
     if (u.update_id + 1 > offset) offset = u.update_id + 1
   }
-  await setSetting('tg_update_offset', String(offset))
+  await setSetting('tg_update_offset2', String(offset))
 
   if (!posts.length) return NextResponse.json({ ok: true, phase: 'idle', offset })
 

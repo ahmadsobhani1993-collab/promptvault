@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 
 export async function GET() {
-  const token = process.env.TELEGRAM_BOT_TOKEN
+  const token = process.env.TELEGRAM_READ_TOKEN || process.env.TELEGRAM_BOT_TOKEN
   if (!token) return NextResponse.json({ error: 'no TELEGRAM_BOT_TOKEN' }, { status: 500 })
   const api = (m: string, q?: Record<string, string>) =>
     'https://api.telegram.org/bot' + token + '/' + m + (q ? '?' + new URLSearchParams(q).toString() : '')
@@ -30,6 +30,10 @@ export async function GET() {
     member = { error: e.message }
   }
 
+  // webhook check (if set, getUpdates returns nothing!)
+  let webhook: any = {}
+  try { webhook = await (await fetch(api('getWebhookInfo'), { signal: AbortSignal.timeout(8000) })).json() } catch {}
+
   // 4) get latest updates (force include channel_post)
   let updates: any = {}
   try {
@@ -49,6 +53,7 @@ export async function GET() {
     chat: { id: chatId, title: chat.result.title, type: chat.result.type },
     memberStatus: member.ok ? member.result?.status : 'error: ' + (member.description || member.error || JSON.stringify(member)),
     isCreatorOrAdmin: member.ok && (member.result?.status === 'administrator' || member.result?.status === 'creator'),
+    webhookUrl: webhook.result?.url || '(none — getUpdates works)',
     totalUpdates: (updates.result || []).length,
     channelPostsInUpdates: posts.length,
     hint: !member.ok || !['administrator', 'creator'].includes(member.result?.status)
