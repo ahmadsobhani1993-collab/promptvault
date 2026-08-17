@@ -4,6 +4,7 @@ import { cookies } from 'next/headers'
 import './globals.css'
 import Header from '@/components/layout/header'
 import PWAControls from '@/components/pwa-controls'
+import RouteLoader from '@/components/route-loader'
 import Footer from '@/components/layout/footer'
 import ScrollProgress from '@/components/scroll-progress'
 import MouseTrail from '@/components/mouse-trail'
@@ -50,6 +51,7 @@ export default async function RootLayout({
         <main className="flex-1">{children}</main>
         <Footer locale={locale} />
             <PWAControls />
+      <RouteLoader />
     </body>
     </html>
   )

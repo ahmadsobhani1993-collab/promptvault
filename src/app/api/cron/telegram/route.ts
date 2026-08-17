@@ -79,7 +79,7 @@ export async function GET(req: Request) {
   }
 
   const results: any[] = []
-  for (const m of merged.slice(0, 2)) {
+  for (const m of merged.slice(0, 1)) {
     if (!m.fileId || !m.text) { results.push({ id: m.id, skipped: 'no image or text' }); continue }
 
     // download full image via Bot API
@@ -124,6 +124,7 @@ export async function GET(req: Request) {
           categoryId: cat?.id ?? categories[0].id,
           tagsFa: ai.tagsFa, tagsEn: ai.tagsEn, prompt: finalPrompt,
           imgData: imgBase64, imgType,
+          views: 1 + Math.floor(Math.random() * 10),
         },
       })
       await prisma.prompt.update({ where: { id: prompt.id }, data: { img: APP() + '/api/img/' + prompt.id } })

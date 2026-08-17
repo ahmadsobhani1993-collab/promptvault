@@ -159,3 +159,40 @@ html {
 .article-body p { margin-bottom: 1rem; }
 .article-body img { border-radius: 1rem; margin: 1rem 0; width: 100%; border: 1px solid rgba(212, 169, 78, 0.25); }
 .article-body a { color: #d4a94e; }
+
+.route-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: none;
+  place-items: center;
+  background: rgba(7, 5, 3, 0.85);
+  backdrop-filter: blur(8px);
+}
+body.route-loading .route-loader { display: grid; }
+body.route-loading { overflow: hidden; }
+.route-loader-box { text-align: center; }
+.route-spinner {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 18px;
+  border-radius: 50%;
+  border: 3px solid rgba(212, 169, 78, 0.15);
+  border-top-color: #d4a94e;
+  animation: routespin 0.9s linear infinite;
+}
+@keyframes routespin { to { transform: rotate(360deg); } }
+.route-loader-title {
+  font-weight: 900;
+  font-size: 1.2rem;
+  letter-spacing: -0.02em;
+  color: #f5efe0;
+}
+.route-loader-title span { color: #d4a94e; }
+.route-loader-sub {
+  margin-top: 6px;
+  font-size: 0.7rem;
+  color: rgba(245, 239, 224, 0.5);
+  animation: routepulse 1.2s ease-in-out infinite;
+}
+@keyframes routepulse { 50% { opacity: 0.4; } }
