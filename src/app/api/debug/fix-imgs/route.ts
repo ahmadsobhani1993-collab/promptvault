@@ -73,9 +73,25 @@ export async function GET(req: Request) {
   const unlinked = await prisma.prompt.findMany({ where: { imgData: null, NOT: { img: { contains: '/api/img/' } } }, take: 0 })
   relinked = unlinked.length
 
+  // diagnostic sample: check getFile for a few tg rows
+  const sampleRows = await prisma.promptImage.findMany({ where: { type: 'tg' }, take: 5 })
+  const sample: any[] = []
+  for (const r of sampleRows) {
+    let ok = false
+    let desc: string | null = null
+    let path: string | null = null
+    try {
+      const g = await (await fetch('https://api.telegram.org/bot' + token + '/getFile?file_id=' + encodeURIComponent(r.data), { signal: AbortSignal.timeout(8000) })).json()
+      ok = !!g?.result?.file_path
+      path = g?.result?.file_path ?? null
+      desc = g?.description ?? null
+    } catch (e: any) { desc = String(e?.message ?? e) }
+    sample.push({ promptId: r.promptId, dataLen: r.data.length, dataHead: r.data.slice(0, 40), getFileOk: ok, path, desc })
+  }
+
   const leftBad = await prisma.prompt.count({ where: { NOT: { img: { contains: '/api/img/' } } } })
   const leftRows = await prisma.promptImage.count({ where: { NOT: { type: 'tg' } } })
   const leftPrompt = await prisma.prompt.count({ where: { NOT: { imgData: null } } })
 
-  return NextResponse.json({ ok: true, movedRows, movedPrompt, repaired, leftBad, leftRows, leftPrompt, errors: errors.slice(0, 8) })
+  return NextResponse.json({ ok: true, movedRows, movedPrompt, repaired, leftBad, leftRows, leftPrompt, sample, errors: errors.slice(0, 8) })
 }
