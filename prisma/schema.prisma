@@ -172,21 +172,6 @@ model Article {
   comments  Comment[]
 }
 
-model Comment {
-  id        String   @id @default(cuid())
-  name      String
-  text      String
-  createdAt DateTime @default(now())
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  promptId  String?
-  prompt    Prompt?  @relation(fields: [promptId], references: [id], onDelete: Cascade)
-  articleId String?
-  article   Article? @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  parentId  String?
-  parent    Comment?  @relation('thread', fields: [parentId], references: [id], onDelete: Cascade)
-  children  Comment[] @relation('thread')
-}
 
 model Like {
   id       String @id @default(cuid())
@@ -226,4 +211,20 @@ model Notification {
   url       String
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
+}
+
+model Comment {
+  id        String    @id @default(cuid())
+  name      String
+  text      String
+  createdAt DateTime  @default(now())
+  userId    String?
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  promptId  String?
+  prompt    Prompt?   @relation(fields: [promptId], references: [id], onDelete: Cascade)
+  articleId String?
+  article   Article?  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  parentId  String?
+  parent    Comment?  @relation(name: "CommentThread", fields: [parentId], references: [id], onDelete: Cascade)
+  children  Comment[] @relation(name: "CommentThread")
 }
