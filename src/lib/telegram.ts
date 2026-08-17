@@ -163,3 +163,21 @@ export async function verifyImage(url: string): Promise<boolean> {
     return false
   }
 }
+
+
+// get a FRESH signed image URL by opening the single post page
+export async function fetchFreshImage(username: string, id: number): Promise<string | null> {
+  const url = 'https://t.me/' + username + '/' + id
+  let html: string | null = null
+  try {
+    html = await fetchText(url, 7000)
+  } catch {
+    try {
+      html = await fetchText('https://api.allorigins.win/raw?url=' + encodeURIComponent(url), 9000)
+    } catch {}
+  }
+  if (!html) return null
+  const m = html.match(/background-image:url\('([^']+)'\)/)
+  if (!m) return null
+  return m[1].startsWith('//') ? 'https:' + m[1] : m[1]
+}

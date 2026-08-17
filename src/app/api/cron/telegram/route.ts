@@ -69,6 +69,12 @@ export async function GET(req: Request) {
     let img = item.img
     const skipIds: number[] = []
 
+    // refresh image URL from the live post page (old signed URLs expire)
+    try {
+      const fresh = await fetchFreshImage(channel, item.id)
+      if (fresh) img = fresh
+    } catch {}
+
     if (img && promptText.length < 40) {
       const next = await prisma.telegramQueue.findFirst({ where: { id: { gt: item.id }, status: 'PENDING' }, orderBy: { id: 'asc' } })
       if (next && !next.img && (next.text ?? '').length > 40) { promptText = (next.text ?? '').trim(); skipIds.push(next.id) }
