@@ -1,3 +1,7 @@
+#!/bin/bash
+set -e
+
+cat > src/app/api/debug/telegram-test/route.ts << 'EOF'
 import { NextResponse } from 'next/server'
 
 function decode(html: string): string {
@@ -101,3 +105,6 @@ export async function GET() {
     sampleMessages: messages.slice(0, 5).map(({ fullImg, ...rest }) => rest),
   })
 }
+EOF
+
+echo "✅ telegram-test upgraded!"
