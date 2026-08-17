@@ -24,13 +24,11 @@ export default function Hero({
       </div>
 
       <div className="container-app relative text-center">
-        <p className="hero-sub gold-badge mx-auto w-fit anim-fade-up">{label}</p>
-        <h1 className="hero-title anim-fade-up mx-auto mt-6 max-w-3xl font-display text-4xl font-black leading-tight md:text-6xl" style={{ animationDelay: '120ms' }}>
+        <p className="gold-badge mx-auto w-fit anim-fade-up">{label}</p>
+        <h1 className="hero-title anim-fade-up mx-auto mt-6 max-w-none font-display text-4xl font-black leading-tight md:text-6xl" style={{ animationDelay: '120ms' }}>
           {title}
         </h1>
-        <p className="anim-fade-up mx-auto mt-5 max-w-xl text-sm leading-8 text-ink-muted md:text-base" style={{ animationDelay: '240ms' }}>
-          {subtitle}
-        </p>
+        
 
         <form action="/explore" className="anim-fade-up mx-auto mt-10 max-w-2xl" style={{ animationDelay: '360ms' }}>
           <div className="glow-gold flex items-center gap-3 rounded-2xl border border-gold/40 bg-elevated px-5 py-4">

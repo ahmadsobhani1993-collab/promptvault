@@ -233,3 +233,11 @@ body.route-loading { overflow: hidden; }
 }
 
 .hero-sub { display: none !important; }
+
+.hero-title {
+  font-size: clamp(1.5rem, 4.2vw, 2.9rem) !important;
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .hero-title { white-space: normal; }
+}
