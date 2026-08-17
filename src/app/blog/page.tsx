@@ -2,8 +2,9 @@ import Link from 'next/link'
 import { cookies } from 'next/headers'
 import { type Locale } from '@/lib/i18n'
 import { getArticles, L } from '@/lib/data'
+import SafeImg from '@/components/safe-img'
 
-export const metadata = { title: 'وبلاگ' }
+export const metadata = { title: 'وبلاگ', description: 'آموزش‌های هوش مصنوعی' }
 export const dynamic = 'force-dynamic'
 
 export default async function BlogPage() {
@@ -17,21 +18,22 @@ export default async function BlogPage() {
         {L(locale, 'وبلاگ و آموزش هوش مصنوعی', 'AI Blog & Tutorials')}
       </h1>
 
-      <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-10 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
         {articles.map((a) => (
-          <Link key={a.id} href={'/blog/' + a.slug} className="card group overflow-hidden transition-colors hover:border-line-strong">
-            <img src={a.img} alt={L(locale, a.titleFa, a.titleEn)} loading="lazy" className="h-48 w-full object-cover" />
-            <div className="space-y-3 p-5">
-              <div className="flex items-center justify-between">
-                <span className="gold-badge">{L(locale, a.tagFa, a.tagEn)}</span>
-                <span className="text-[10px] text-ink-faint">{L(locale, a.dateFa, a.dateEn)}</span>
-              </div>
-              <h2 className="text-sm font-bold text-ink">{L(locale, a.titleFa, a.titleEn)}</h2>
-              <p className="line-clamp-2 text-xs leading-6 text-ink-muted">{L(locale, a.descFa, a.descEn)}</p>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-gold-bright">{L(locale, 'ادامه مطلب', 'Read more')}</span>
-                <span className="text-ink-faint">{L(locale, a.readFa, a.readEn)}</span>
-              </div>
+          <Link
+            key={a.id}
+            href={'/blog/' + a.slug}
+            className="card glow-gold overflow-hidden transition-transform hover:-translate-y-1"
+          >
+            <SafeImg src={a.img} alt={L(locale, a.titleFa, a.titleEn)} className="aspect-video w-full object-cover" />
+            <div className="p-5">
+              <span className="gold-badge">{L(locale, a.tagFa, a.tagEn)}</span>
+              <h2 className="mt-3 font-display text-lg font-extrabold leading-snug">
+                {L(locale, a.titleFa, a.titleEn)}
+              </h2>
+              <p className="mt-2 line-clamp-2 text-xs leading-6 text-ink-muted">
+                {L(locale, a.descFa, a.descEn)}
+              </p>
             </div>
           </Link>
         ))}

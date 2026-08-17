@@ -10,7 +10,6 @@ import PromptCard from '@/components/prompt-card'
 import CopyButton from '@/components/copy-button'
 import RealLikeButton from '@/components/real-like-button'
 import SaveButton from '@/components/save-button'
-import StarButton from '@/components/star-button'
 import SafeImg from '@/components/safe-img'
 import PromptReveal from '@/components/prompt-reveal'
 import ShareButtons from '@/components/share-buttons'
@@ -111,7 +110,6 @@ export default async function PromptDetailPage({ params }: { params: Promise<{ s
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <RealLikeButton promptId={item.id} initialLiked={liked} initialCount={item.likes} label={L(locale, 'پسند', 'likes')} requireLogin={L(locale, 'برای لایک کردن ابتدا وارد شو', 'Login to like')} />
             <SaveButton promptId={item.id} initialSaved={saved} initialCount={item.saves} label={L(locale, 'ذخیره', 'saves')} requireLogin={L(locale, 'برای ذخیره کردن ابتدا وارد شو', 'Login to save')} />
-            <StarButton promptId={item.id} initial={(item as any).stars ?? 0} label={L(locale, 'ستاره', 'stars')} />
             <ShareButtons title={L(locale, item.titleFa, item.titleEn)} desc={L(locale, item.descFa ?? '', item.descEn ?? '')} />
           </div>
 

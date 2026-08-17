@@ -109,11 +109,15 @@ export async function GET(req: Request) {
     }
 
     let imgBase64: string | null = null
+    let imgType = "image/jpeg"
     if (img) {
       try {
         const ir = await fetch(img, { signal: AbortSignal.timeout(8000) })
         const buf = Buffer.from(await ir.arrayBuffer())
-        if (buf.length < 4_000_000) imgBase64 = buf.toString('base64')
+        if (buf.length < 4_000_000) {
+          imgBase64 = buf.toString('base64')
+          imgType = ir.headers.get('content-type') ?? 'image/jpeg'
+        }
       } catch {}
     }
 
@@ -162,6 +166,12 @@ export async function GET(req: Request) {
         prompt: finalPrompt,
       },
     })
+
+    if (imgBase64 && imgBase64.length < 1_200_000) {
+      const selfUrl = (process.env.NEXT_PUBLIC_APP_URL ?? '') + '/api/img/' + prompt.id
+      await prisma.prompt.update({ where: { id: prompt.id }, data: { imgData: imgBase64, imgType, img: selfUrl } })
+      finalImg = selfUrl
+    }
 
     await prisma.telegramQueue.update({ where: { id: item.id }, data: { status: 'PROCESSED', promptId: prompt.id } })
     for (const sid of skipIds) {

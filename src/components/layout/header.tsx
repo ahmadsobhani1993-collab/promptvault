@@ -5,6 +5,7 @@ import { type Locale } from '@/lib/i18n'
 import { getCategories, L } from '@/lib/data'
 import LocaleSwitcher from '@/components/locale-switcher'
 import MobileMenu from '@/components/mobile-menu'
+import LogoutButton from '@/components/logout-button'
 
 export default async function Header() {
   const cookieStore = await cookies()
@@ -18,7 +19,6 @@ export default async function Header() {
     { href: '/prompts', label: L(locale, 'پرامپت‌ها', 'Prompts') },
     { href: '/categories', label: L(locale, 'دسته‌بندی‌ها', 'Categories') },
     { href: '/blog', label: L(locale, 'وبلاگ', 'Blog') },
-    { href: '/submit', label: L(locale, 'ارسال پرامپت', 'Submit') },
   ]
 
   return (
@@ -38,16 +38,21 @@ export default async function Header() {
             <button type="button" className="transition-colors hover:text-gold-bright">
               {L(locale, 'دسته‌بندی‌ها', 'Categories')} ▾
             </button>
-            <div className="invisible absolute left-1/2 top-full z-50 w-80 -translate-x-1/2 pt-3 opacity-0 transition-all group-hover:visible group-hover:opacity-100">
-              <div className="card max-h-[70vh] overflow-auto p-4">
+            <div className="invisible absolute right-0 top-full z-50 w-[26rem] pt-3 opacity-0 transition-all group-hover:visible group-hover:opacity-100">
+              <div className="card grid grid-cols-2 gap-4 p-5">
                 {categories.map((c) => (
-                  <div key={c.id} className="mb-4 last:mb-0">
-                    <Link href={'/categories/' + c.slug} className="block rounded-lg px-3 py-1.5 text-sm font-bold text-ink transition-colors hover:bg-elevated hover:text-gold-bright">
-                      {c.icon} {L(locale, c.nameFa, c.nameEn)}
+                  <div key={c.id} className="rounded-xl border border-line/60 bg-elevated/40 p-3">
+                    <Link href={'/categories/' + c.slug} className="flex items-center gap-2 text-sm font-bold text-ink transition-colors hover:text-gold-bright">
+                      <span className="text-base">{c.icon}</span>
+                      {L(locale, c.nameFa, c.nameEn)}
                     </Link>
-                    <div className="mt-2 flex flex-wrap gap-1.5 px-3">
+                    <div className="mt-2.5 flex flex-wrap gap-1.5">
                       {c.subs.map((s) => (
-                        <Link key={s.id} href={'/categories/' + c.slug + '?sub=' + s.slug} className="rounded-full border border-line bg-elevated px-2.5 py-1 text-[10px] text-ink-muted transition-colors hover:border-gold/50 hover:text-gold-bright">
+                        <Link
+                          key={s.id}
+                          href={'/categories/' + c.slug + '?sub=' + s.slug}
+                          className="rounded-full border border-line bg-elevated px-2.5 py-1 text-[10px] text-ink-muted transition-colors hover:border-gold/50 hover:text-gold-bright"
+                        >
                           {L(locale, s.fa, s.en)}
                         </Link>
                       ))}
@@ -59,17 +64,17 @@ export default async function Header() {
           </div>
 
           <Link href="/blog" className="transition-colors hover:text-gold-bright">{L(locale, 'وبلاگ', 'Blog')}</Link>
-          <Link href="/submit" className="transition-colors hover:text-gold-bright">{L(locale, 'ارسال پرامپت', 'Submit')}</Link>
         </nav>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <LocaleSwitcher />
           {session?.user ? (
             <>
               {isAdmin && (
                 <Link href="/admin" className="btn-secondary hidden lg:inline-flex">🛠 {L(locale, 'مدیریت', 'Admin')}</Link>
               )}
-              <Link href="/submit" className="btn-primary hidden sm:inline-flex">+ {L(locale, 'ارسال', 'Submit')}</Link>
+              <Link href="/submit" className="btn-primary">+ {L(locale, 'ارسال', 'Submit')}</Link>
+              <LogoutButton label={L(locale, 'خروج', 'Logout')} />
             </>
           ) : (
             <Link href="/login" className="btn-primary">{L(locale, 'ورود', 'Login')}</Link>

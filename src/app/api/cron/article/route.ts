@@ -63,7 +63,12 @@ export async function GET(req: Request) {
   const raw: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
   const m = raw.match(/\{[\s\S]*\}/)
   if (!m) return NextResponse.json({ ok: false, error: 'no json from gemini' }, { status: 500 })
-  const a = JSON.parse(m[0])
+  let a: any
+  try {
+    a = JSON.parse(m[0])
+  } catch {
+    return NextResponse.json({ ok: false, error: 'bad json from gemini', raw: raw.slice(0, 300) }, { status: 500 })
+  }
 
   let cover = pollUrl(topic.kw, dayIndex)
   if (!(await verifyImage(cover))) cover = pollUrl(topic.kw, dayIndex + 7)

@@ -147,6 +147,8 @@ model Prompt {
   comments   Comment[]
   userLikes  Like[]
   userSaves  Save[]
+  imgData    String?
+  imgType    String?
 }
 
 model Article {
