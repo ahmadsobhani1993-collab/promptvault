@@ -56,7 +56,7 @@ export async function GET(req: Request) {
   const posts: any[] = []
   for (const u of ups) {
     const p = u.channel_post
-    if (p && String(p.chat.id) === chatId) posts.push(p)
+    if (p && String(p.chat.id) === chatId && !p.from?.is_bot) posts.push(p)
     if (u.update_id + 1 > offset) offset = u.update_id + 1
   }
   await setSetting('tg_update_offset2', String(offset))
