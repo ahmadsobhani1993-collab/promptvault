@@ -6,6 +6,7 @@ import Hero from '@/components/hero'
 import ZoomSection from '@/components/zoom-section'
 import DownButton from '@/components/down-button'
 import CategoryGrid from '@/components/category-grid'
+import HeroCanvas from '@/components/hero-canvas'
 import Reveal from '@/components/reveal'
 import Link from 'next/link'
 
@@ -45,12 +46,13 @@ export default async function HomePage() {
     getArticles(),
   ])
 
+  const imgPrompts = prompts.filter((p) => (p as any).type === 'IMAGE')
   const trending: typeof prompts = []
-  for (const p of prompts) {
+  for (const p of imgPrompts) {
     if (trending.length >= 5) break
     if (!trending.some((d) => d.categoryId === p.categoryId)) trending.push(p)
   }
-  for (const p of prompts) {
+  for (const p of imgPrompts) {
     if (trending.length >= 5) break
     if (!trending.includes(p)) trending.push(p)
   }
@@ -74,6 +76,7 @@ export default async function HomePage() {
         }}
       />
       <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <HeroCanvas />
         <div className="fx-blob anim-float" style={{ top: '-12%', right: '-14%', width: '46vw', height: '46vw' }} />
         <div className="fx-blob anim-float2" style={{ bottom: '-18%', left: '-12%', width: '40vw', height: '40vw' }} />
         <div className="fx-blob anim-float" style={{ top: '38%', left: '30%', width: '26vw', height: '26vw', opacity: 0.12 }} />

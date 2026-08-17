@@ -5,6 +5,7 @@ import { type Locale } from '@/lib/i18n'
 import { getCategories, L } from '@/lib/data'
 import LocaleSwitcher from '@/components/locale-switcher'
 import MobileMenu from '@/components/mobile-menu'
+import CategoryIcon from '@/components/category-icon'
 import LogoutButton from '@/components/logout-button'
 import NotifBell from '@/components/notif-bell'
 
@@ -45,7 +46,7 @@ export default async function Header() {
                 {categories.map((c) => (
                   <div key={c.id} className="rounded-xl border border-line/60 bg-elevated/50 p-3 transition-colors hover:border-gold/40">
                     <Link href={'/categories/' + c.slug} className="flex items-center gap-2 text-sm font-bold text-ink transition-colors hover:text-gold-bright">
-                      <span className="text-base">{c.icon}</span>
+                      <span className="text-gold-bright [&_svg]:h-5 [&_svg]:w-5"><CategoryIcon name={c.icon} /></span>
                       {L(locale, c.nameFa, c.nameEn)}
                     </Link>
                     <div className="mt-2 flex flex-wrap gap-1.5">
