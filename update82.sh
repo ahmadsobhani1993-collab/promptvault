@@ -1,3 +1,24 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) import: stop base64, use telegram storage ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'src/app/api/debug/import/route.ts'
+let s = fs.readFileSync(p, 'utf8')
+
+s = s.replace(/imgData: imgBase64, imgType,\n/g, '')
+s = s.replace(
+  "await prisma.promptImage.create({ data: { promptId: prompt.id, data: imgBase64, type: imgType } }).catch(() => {})",
+  "await prisma.promptImage.create({ data: { promptId: prompt.id, data: fileId, type: 'tg' } }).catch(() => {})"
+)
+
+fs.writeFileSync(p, s)
+console.log('✅ import: telegram storage now')
+NODEEOF
+
+# ---------- 2) fix-imgs: comprehensive repair ----------
+cat > src/app/api/debug/fix-imgs/route.ts << 'EOF'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { isCronAuthorized } from '@/lib/cron-auth'
@@ -75,3 +96,6 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ ok: true, movedRows, movedPrompt, repaired, leftRows, leftPrompt, errors: errors.slice(0, 5) })
 }
+EOF
+
+echo "✅ update82 done!"
