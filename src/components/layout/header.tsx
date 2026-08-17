@@ -73,7 +73,7 @@ export default async function Header() {
               {isAdmin && (
                 <Link href="/admin" className="btn-secondary hidden md:inline-flex">🛠 {L(locale, 'مدیریت', 'Admin')}</Link>
               )}
-              <Link href="/submit" className="btn-primary">+ {L(locale, 'ارسال', 'Submit')}</Link>
+              <Link href="/submit" className="btn-primary whitespace-nowrap">{L(locale, 'ارسال', 'Submit')}</Link>
               <LogoutButton label={L(locale, 'خروج', 'Logout')} />
             </>
           ) : (
