@@ -1,22 +1,28 @@
-import type { Metadata } from 'next'
+import { cookies } from 'next/headers'
 import { signIn } from '@/auth'
 
-export const metadata: Metadata = { title: 'Login' }
+export const metadata = { title: 'ورود | PromptsFA' }
 
-export default function LoginPage() {
-  async function signInWithGoogle() {
-    'use server'
-    await signIn('google', { redirectTo: '/' })
-  }
+export default async function LoginPage() {
+  const cookieStore = await cookies()
+  const fa = cookieStore.get('locale')?.value !== 'en'
 
   return (
-    <section className="container-app flex min-h-[70vh] items-center justify-center py-16">
-      <div className="card w-full max-w-md animate-slide-up p-8">
-        <p className="gold-badge">Members</p>
-        <h1 className="mt-6 font-display text-3xl font-semibold tracking-tight">Sign in</h1>
-        <p className="mt-3 text-sm leading-6 text-ink-muted">Use your Google account to continue.</p>
-        <form action={signInWithGoogle} className="mt-8">
-          <button type="submit" className="btn-primary h-12 w-full">Continue with Google</button>
+    <section className="container-app grid min-h-[70vh] place-items-center py-16" dir={fa ? 'rtl' : 'ltr'}>
+      <div className={'card w-full max-w-md p-8 ' + (fa ? 'text-right' : 'text-left')}>
+        <span className="gold-badge">{fa ? 'اعضا' : 'Members'}</span>
+        <h1 className="mt-4 font-display text-3xl font-extrabold">{fa ? 'ورود' : 'Sign in'}</h1>
+        <p className="mt-3 text-sm leading-7 text-ink-muted">
+          {fa ? 'برای ادامه از حساب گوگل خود استفاده کنید.' : 'Use your Google account to continue.'}
+        </p>
+        <form
+          action={async () => {
+            'use server'
+            await signIn('google', { redirectTo: '/' })
+          }}
+          className="mt-6"
+        >
+          <button type="submit" className="btn-primary w-full justify-center">Continue with Google</button>
         </form>
       </div>
     </section>

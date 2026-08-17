@@ -38,8 +38,7 @@ export default function Hero({
             </svg>
             <input
               name="q"
-              placeholder={placeholder}
-              className="w-full bg-transparent text-base outline-none placeholder:text-ink-faint"
+              className="w-full bg-transparent text-base text-[#cfc8b8] outline-none placeholder:text-[#8f887a]"
             />
             <button type="submit" className="btn-primary shrink-0">
               {locale === 'fa' ? 'جستجو' : 'Search'}
