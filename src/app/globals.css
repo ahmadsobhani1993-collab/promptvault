@@ -241,3 +241,6 @@ body.route-loading { overflow: hidden; }
 @media (max-width: 700px) {
   .hero-title { white-space: normal; }
 }
+
+input, textarea { color: #ece5d3 !important; }
+input::placeholder, textarea::placeholder { color: #9a9284 !important; }

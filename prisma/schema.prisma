@@ -236,3 +236,9 @@ model PromptImage {
   type     String?
   prompt   Prompt @relation(fields: [promptId], references: [id], onDelete: Cascade)
 }
+
+model UploadImage {
+  id     String @id @default(cuid())
+  fileId String
+  createdAt DateTime @default(now())
+}

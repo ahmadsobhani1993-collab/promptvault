@@ -88,30 +88,15 @@ export async function GET(req: Request) {
   for (const m of merged.slice(0, 1)) {
     if (!m.fileId || !m.text) { results.push({ id: m.id, skipped: 'no image or text' }); continue }
 
-    // download full image via Bot API
-    let imgBase64: string | null = null
-    let imgType = 'image/jpeg'
-    try {
-      const fr = await (await fetch(api('getFile', { file_id: m.fileId }), { signal: AbortSignal.timeout(10000) })).json()
-      const path = fr.result?.file_path
-      if (path) {
-        const fileUrl = 'https://api.telegram.org/file/bot' + token + '/' + path
-        const ir = await fetch(fileUrl, { signal: AbortSignal.timeout(20000) })
-        const buf = Buffer.from(await ir.arrayBuffer())
-        if (ir.ok && buf.length > 5000 && buf.length < 2_500_000) {
-          imgBase64 = buf.toString('base64')
-          imgType = path.endsWith('.png') ? 'image/png' : path.endsWith('.webp') ? 'image/webp' : 'image/jpeg'
-        }
-      }
-    } catch {}
-
-    if (!imgBase64) { results.push({ id: m.id, skipped: 'image download failed' }); continue }
+    // keep only file_id (image lives on Telegram forever)
+    const fileId = m.fileId
+    if (!fileId) { results.push({ id: m.id, skipped: 'no file id' }); continue }
 
     try {
       const categories = await prisma.category.findMany()
       let ai
       try {
-        ai = await analyzeWithGemini({ text: m.text, imgBase64, imgMime: imgType, categories })
+        ai = await analyzeWithGemini({ text: m.text, imgBase64: null, categories })
       } catch {
         ai = await analyzeWithGemini({ text: m.text, imgBase64: null, categories })
       }
@@ -133,7 +118,7 @@ export async function GET(req: Request) {
         },
       })
       await prisma.prompt.update({ where: { id: prompt.id }, data: { img: APP() + '/api/img/' + prompt.id } })
-      await prisma.promptImage.create({ data: { promptId: prompt.id, data: imgBase64, type: imgType } }).catch(() => {})
+      await prisma.promptImage.create({ data: { promptId: prompt.id, data: fileId, type: 'tg' } }).catch(() => {})
 
       // send to output channel
       let tg: any = null

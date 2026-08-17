@@ -1,117 +1,82 @@
-import { auth } from '@/auth'
-import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
+import { redirect } from 'next/navigation'
+import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { getCategories, L } from '@/lib/data'
 import { type Locale } from '@/lib/i18n'
-import { L } from '@/lib/data'
-import { TAG_VOCAB } from '@/lib/gemini'
-import TagPicker from '@/components/tag-picker'
-import { createSubmit } from './actions'
+import UploadInput from '@/components/upload-input'
 
+export const metadata = { title: 'ارسال پرامپت | PromptsFA' }
 export const dynamic = 'force-dynamic'
-export const metadata = { title: 'ارسال پرامپت' }
 
-export default async function SubmitPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ done?: string }>
-}) {
-  const { done } = await searchParams
-  const session = await auth()
-  if (!session?.user) redirect('/login')
-
+export default async function SubmitPage() {
   const cookieStore = await cookies()
   const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
-  const categories = await prisma.category.findMany({ include: { subs: true } })
+  const session = await auth()
+  const categories = await getCategories()
+
+  if (!session?.user) {
+    return (
+      <section className="container-app grid min-h-[60vh] place-items-center py-16">
+        <div className="card max-w-md p-8 text-center">
+          <p className="text-sm text-ink-muted">{L(locale, 'برای ارسال پرامپت ابتدا وارد شو.', 'Please login to submit.')}</p>
+          <a href="/login" className="btn-primary mt-5 inline-flex">{L(locale, 'ورود', 'Login')}</a>
+        </div>
+      </section>
+    )
+  }
+
+  async function submit(fd: FormData) {
+    'use server'
+    const s = await auth()
+    if (!s?.user?.id) return redirect('/login')
+    const img = String(fd.get('img') ?? '')
+    const title = String(fd.get('title') ?? '').trim()
+    const prompt = String(fd.get('prompt') ?? '').trim()
+    if (!img || !title || !prompt) return
+    const catId = String(fd.get('category') ?? '')
+    await prisma.prompt.create({
+      data: {
+        titleFa: title,
+        titleEn: title,
+        descFa: String(fd.get('desc') ?? '').trim(),
+        descEn: String(fd.get('desc') ?? '').trim(),
+        usageFa: '',
+        usageEn: '',
+        slug: 'u-' + Date.now(),
+        img,
+        model: 'AI',
+        type: 'IMAGE',
+        status: 'PENDING',
+        categoryId: catId || (await prisma.category.findFirst())!.id,
+        tagsFa: [],
+        tagsEn: [],
+        prompt,
+        userId: s.user.id,
+      },
+    })
+    redirect('/?sent=1')
+  }
 
   return (
-    <section className="container-app max-w-3xl py-16">
-      <h1 className="font-display text-3xl font-extrabold tracking-tight">
-        {L(locale, 'ارسال پرامپت', 'Submit Prompt')}
-      </h1>
-      <p className="mt-3 text-sm leading-7 text-ink-muted">
-        {L(
-          locale,
-          'پرامپت تو بعد از بررسی و تأیید ادمین، در سایت منتشر می‌شود و به نام تو ثبت خواهد شد.',
-          'Your prompt will be published under your name after admin approval.'
-        )}
-      </p>
+    <section className="container-app max-w-2xl py-16">
+      <h1 className="font-display text-2xl font-extrabold">{L(locale, 'ارسال پرامپت', 'Submit prompt')}</h1>
+      <p className="mt-2 text-xs text-ink-muted">{L(locale, 'پرامپت تو پس از تأیید ادمین منتشر می‌شود.', 'Your prompt will be published after admin approval.')}</p>
 
-      {done && (
-        <div className="glow-gold mt-6 rounded-2xl border border-success/40 bg-success/10 p-5 text-sm text-success">
-          {L(
-            locale,
-            '✅ پرامپت تو با موفقیت ثبت شد و در صف بررسی است. بعد از تأیید، در سایت نمایش داده می‌شود.',
-            '✅ Your prompt was submitted and is pending review.'
-          )}
-        </div>
-      )}
+      <form action={submit} className="card mt-8 space-y-5 p-6">
+        <UploadInput label={L(locale, 'آپلود تصویر (حداکثر ۱ مگابایت)', 'Upload image (max 1MB)')} tooBigMsg={L(locale, 'حجم تصویر باید کمتر از ۱ مگابایت باشد', 'Image must be under 1MB')} />
 
-      <form action={createSubmit} className="card mt-8 grid gap-4 p-6">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <input name="titleFa" placeholder={L(locale, 'عنوان فارسی *', 'Persian title *')} className="input" required />
-          <input name="titleEn" placeholder={L(locale, 'عنوان انگلیسی (اختیاری)', 'English title (optional)')} className="input" />
-        </div>
+        <input name="title" required placeholder={L(locale, 'عنوان', 'Title')} className="input" />
+        <textarea name="prompt" required rows={5} placeholder={L(locale, 'متن پرامپت', 'Prompt text')} className="input resize-none" />
+        <textarea name="desc" rows={2} placeholder={L(locale, 'توضیح کوتاه (اختیاری)', 'Short description (optional)')} className="input resize-none" />
 
-        <input name="img" placeholder={L(locale, 'آدرس تصویر خروجی (https://...) *', 'Output image URL *')} className="input" required />
-
-        <div className="grid gap-4 sm:grid-cols-3">
-          <input name="model" placeholder={L(locale, 'مدل AI (Midjourney...) *', 'AI model *')} className="input" required />
-          <select name="type" className="input">
-            <option value="IMAGE">{L(locale, 'تصویر', 'Image')}</option>
-            <option value="VIDEO">{L(locale, 'ویدیو', 'Video')}</option>
-            <option value="TEXT">{L(locale, 'متن', 'Text')}</option>
-            <option value="CODE">{L(locale, 'کد', 'Code')}</option>
-            <option value="AUDIO">{L(locale, 'موسیقی', 'Music')}</option>
-          </select>
-          <select name="categoryId" className="input" required>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>{L(locale, c.nameFa, c.nameEn)}</option>
-            ))}
-          </select>
-        </div>
-
-        <select name="subId" className="input">
-          <option value="">{L(locale, 'بدون زیردسته', 'No subcategory')}</option>
-          {categories.flatMap((c) => c.subs).map((s) => (
-            <option key={s.id} value={s.id}>{L(locale, s.fa, s.en)}</option>
+        <select name="category" className="input">
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>{L(locale, c.nameFa, c.nameEn)}</option>
           ))}
         </select>
 
-        <div>
-          <p className="mb-2 text-xs font-bold text-gold-bright">
-            {L(locale, 'تگ‌ها (فقط از لیست مجاز — حداکثر ۴)', 'Tags (choose from list — max 4)')}
-          </p>
-          <TagPicker vocab={TAG_VOCAB} max={4} />
-        </div>
-
-        <textarea
-          name="prompt"
-          placeholder={L(locale, 'متن کامل پرامپت *', 'Full prompt text *')}
-          rows={7}
-          className="input resize-none font-mono"
-          dir="ltr"
-          required
-        />
-
-        <textarea
-          name="usageFa"
-          placeholder={L(locale, 'راهنمای استفاده (فارسی): مثلا در کدام مدل بگذارم، چه پارامترهایی بزنم، نکات مهم...', 'How to use (Persian)...')}
-          rows={3}
-          className="input resize-none"
-        />
-
-        <textarea
-          name="usageEn"
-          placeholder="How to use (English): which model, parameters, tips..."
-          rows={3}
-          className="input resize-none"
-          dir="ltr"
-        />
-
-        <button type="submit" className="btn-primary w-fit">
-          {L(locale, 'ارسال برای بررسی', 'Submit for review')}
-        </button>
+        <button type="submit" className="btn-primary w-full justify-center">{L(locale, 'ارسال برای بررسی', 'Submit for review')}</button>
       </form>
     </section>
   )
