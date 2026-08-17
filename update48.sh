@@ -1,3 +1,25 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) vercel.json ----------
+cat > vercel.json << 'EOF'
+{
+  "crons": [
+    {
+      "path": "/api/cron/telegram",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/article",
+      "schedule": "30 5 * * *"
+    }
+  ]
+}
+EOF
+
+# ---------- 2) article route ----------
+mkdir -p src/app/api/cron/article
+cat > src/app/api/cron/article/route.ts << 'EOF'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyImage, tgSendText } from '@/lib/telegram'
@@ -126,3 +148,51 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ ok: true, slug, title: a.titleFa, tg })
 }
+EOF
+
+# ---------- 3) layout: manifest + PWAControls ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'src/app/layout.tsx'
+let s = fs.readFileSync(p, 'utf8')
+let changed = false
+
+if (!s.includes('rel="manifest"')) {
+  s = s.replace(/<body[^>]*>/, (m) => m + `\n      <link rel="manifest" href="/manifest.json" />\n      <meta name="theme-color" content="#d4a94e" />\n      <link rel="icon" href="/icon.svg" type="image/svg+xml" />\n      <meta name="apple-mobile-web-app-capable" content="yes" />`)
+  changed = true
+  console.log('✅ layout: manifest added')
+}
+
+if (!s.includes('PWAControls')) {
+  s = s.replace(/import Footer from ([^\n]+)/, (m) => "import PWAControls from '@/components/pwa-controls'\nimport Footer from " + m.slice(m.indexOf('Footer')))
+  if (!s.includes("import PWAControls")) {
+    s = "import PWAControls from '@/components/pwa-controls'\n" + s
+  }
+  s = s.replace(/<Footer \/>/, '<Footer />\n      <PWAControls />')
+  if (!s.includes('<PWAControls />')) {
+    s = s.replace('</body>', '      <PWAControls />\n    </body>')
+  }
+  changed = true
+  console.log('✅ layout: PWAControls rendered')
+}
+
+if (changed) fs.writeFileSync(p, s)
+else console.log('⚠️ layout already wired')
+NODEEOF
+
+# ---------- 4) SW auto-register ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'src/components/pwa-controls.tsx'
+let s = fs.readFileSync(p, 'utf8')
+if (!s.includes("register('/sw.js')")) {
+  s = s.replace(
+    "if ('Notification' in window) setPermission(Notification.permission)",
+    "if ('Notification' in window) setPermission(Notification.permission)\n    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {})"
+  )
+  fs.writeFileSync(p, s)
+  console.log('✅ pwa-controls: SW auto-register')
+} else console.log('⚠️ SW already registered')
+NODEEOF
+
+echo "✅ ALL wired: article + crons + PWA!"

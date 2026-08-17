@@ -3,7 +3,8 @@ import { Inter, Sora } from 'next/font/google'
 import { cookies } from 'next/headers'
 import './globals.css'
 import Header from '@/components/layout/header'
-import Footer from '@/components/layout/footer'
+import PWAControls from '@/components/pwa-controls'
+import Footer from Footer from '@/components/layout/footer'
 import ScrollProgress from '@/components/scroll-progress'
 import MouseTrail from '@/components/mouse-trail'
 import type { Locale } from '@/lib/i18n'
@@ -48,7 +49,8 @@ export default async function RootLayout({
         <Header locale={locale} />
         <main className="flex-1">{children}</main>
         <Footer locale={locale} />
-      </body>
+            <PWAControls />
+    </body>
     </html>
   )
 }
