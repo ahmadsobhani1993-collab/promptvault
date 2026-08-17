@@ -1,3 +1,72 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) vercel.json (دوباره، قطعی) ----------
+cat > vercel.json << 'EOF'
+{
+  "crons": [
+    {
+      "path": "/api/cron/telegram",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/article",
+      "schedule": "30 5 * * *"
+    }
+  ]
+}
+EOF
+
+# ---------- 2) article route exists? ----------
+if [ ! -f src/app/api/cron/article/route.ts ]; then
+  echo "❌ article route missing! run update48.sh first, then this script again."
+  exit 1
+fi
+echo "✅ article route exists"
+
+# ---------- 3) Mobile menu component ----------
+cat > src/components/mobile-menu.tsx << 'EOF'
+'use client'
+
+import { useState } from 'react'
+import Link from 'next/link'
+
+export default function MobileMenu({
+  links,
+  admin,
+}: {
+  links: { href: string; label: string }[]
+  admin: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="relative lg:hidden">
+      <button type="button" onClick={() => setOpen(!open)} className="btn-secondary px-3 py-1.5" aria-label="منو">
+        ☰
+      </button>
+      {open && (
+        <div className="absolute left-0 top-12 z-50 w-64 rounded-2xl border border-line bg-[#0a0805] p-5 shadow-2xl">
+          <div className="grid gap-4">
+            {links.map((l) => (
+              <Link key={l.href} href={l.href} onClick={() => setOpen(false)} className="text-sm text-ink-muted transition-colors hover:text-gold-bright">
+                {l.label}
+              </Link>
+            ))}
+            {admin && (
+              <Link href="/admin" onClick={() => setOpen(false)} className="text-sm font-bold text-gold-bright">
+                🛠 مدیریت
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+EOF
+
+# ---------- 4) Header with mobile menu ----------
+cat > src/components/layout/header.tsx << 'EOF'
 import Link from 'next/link'
 import { cookies } from 'next/headers'
 import { auth } from '@/auth'
@@ -79,3 +148,45 @@ export default async function Header() {
     </header>
   )
 }
+EOF
+
+# ---------- 5) Share buttons on detail page (robust) ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'src/app/prompts/[slug]/page.tsx'
+let s = fs.readFileSync(p, 'utf8')
+
+if (!s.includes('ShareButtons')) {
+  s = s.replace(
+    "import PromptReveal from '@/components/prompt-reveal'",
+    "import PromptReveal from '@/components/prompt-reveal'\nimport ShareButtons from '@/components/share-buttons'"
+  )
+  const anchor = '<div className="mt-5 flex flex-wrap gap-1">'
+  if (s.includes(anchor)) {
+    s = s.replace(
+      anchor,
+      `<div className="mt-5">
+            <ShareButtons
+              title={L(locale, item.titleFa, item.titleEn)}
+              desc={L(locale, item.descFa ?? '', item.descEn ?? '')}
+            />
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-1">`
+    )
+    console.log('✅ detail: share buttons inserted')
+  } else {
+    console.log('❌ detail: anchor not found')
+  }
+  fs.writeFileSync(p, s)
+} else {
+  console.log('⚠️ share buttons already present')
+}
+NODEEOF
+
+echo ""
+echo "✅ ALL FIXED! حالا حتماً این سه دستور را بزن:"
+echo ""
+echo "   git add ."
+echo "   git commit -m 'mobile menu + share + crons'"
+echo "   git push"
