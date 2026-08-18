@@ -1,3 +1,7 @@
+#!/bin/bash
+set -e
+
+cat > src/app/explore/page.tsx << 'EOF'
 import Link from 'next/link'
 import { cookies } from 'next/headers'
 import { type Locale } from '@/lib/i18n'
@@ -146,3 +150,6 @@ export default async function ExplorePage({
     </section>
   )
 }
+EOF
+
+echo "✅ explore: server pagination (current + next 3 + last)"
