@@ -1,3 +1,8 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) PWA Controls: Centered Bottom Install Button ----------
+cat > src/components/pwa-controls.tsx << 'EOF'
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -48,3 +53,7 @@ export default function PWAControls() {
     </div>
   )
 }
+EOF
+echo "✅ PWA button: centered at bottom"
+
+echo "✅ update125 done!"
