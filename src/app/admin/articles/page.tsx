@@ -17,7 +17,7 @@ export default async function AdminArticles() {
     <section className="container-app py-10">
       <div className="flex items-center justify-between">
         <h1 className="font-display text-2xl font-extrabold">📚 مقالات ({rows.length})</h1>
-        <Link href="/admin" className="btn-secondary text-xs">← داشبورد</Link>
+        <div className="flex gap-2"><Link href="/admin/articles/new" className="btn-primary text-xs">+ مقاله دستی</Link><Link href="/admin" className="btn-secondary text-xs">← داشبورد</Link></div>
       </div>
       <p className="mt-2 text-xs text-ink-muted">مقالات هوش مصنوعی ابتدا «در انتظار» می‌مانند؛ پس از بازبینی، انتشار بزن.</p>
 

@@ -1,16 +1,24 @@
-import { requireAdmin } from '@/lib/admin'
-import ArticleForm from '@/components/admin/article-form'
+import Link from 'next/link'
+import { redirect } from 'next/navigation'
+import { auth } from '@/auth'
+import ArticleForm from '@/components/article-form'
 
 export const dynamic = 'force-dynamic'
+export const metadata = { title: 'مقاله جدید | مدیریت' }
 
 export default async function NewArticle() {
-  await requireAdmin()
+  const session = await auth()
+  if (session?.user?.role !== 'ADMIN') redirect('/')
+
   return (
-    <div>
-      <h1 className="font-display text-2xl font-extrabold">مقاله جدید</h1>
-      <div className="mt-6">
-        <ArticleForm locale="fa" />
+    <section className="container-app py-10">
+      <div className="flex items-center justify-between">
+        <h1 className="font-display text-2xl font-extrabold">✍️ مقاله دستی جدید</h1>
+        <Link href="/admin/articles" className="btn-secondary text-xs">← لیست مقالات</Link>
       </div>
-    </div>
+      <div className="mt-6 max-w-3xl">
+        <ArticleForm />
+      </div>
+    </section>
   )
 }

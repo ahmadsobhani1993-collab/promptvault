@@ -6,7 +6,8 @@ import { type Locale } from '@/lib/i18n'
 
 const items = [
   { href: '/admin', fa: 'داشبورد', en: 'Dashboard' },
-  { href: '/admin/prompts', fa: 'پرامپت‌ها', en: 'Prompts' },
+  { href: '/admin/analytics', label: 'آمار بازدید' },
+    { href: '/admin/prompts', fa: 'پرامپت‌ها', en: 'Prompts' },
   { href: '/admin/articles', fa: 'مقالات', en: 'Articles' },
   { href: '/admin/categories', fa: 'دسته‌بندی‌ها', en: 'Categories' },
   { href: '/admin/comments', fa: 'کامنت‌ها', en: 'Comments' },

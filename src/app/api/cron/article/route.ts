@@ -93,12 +93,13 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const key = searchParams.get('key') ?? ''
   const step = searchParams.get('step') ?? '1'
+  const force = searchParams.get('force') === '1'
 
   if (step === '1') {
     const schedule = await buildDailySchedule().catch(() => null)
     const todayStart = new Date(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tehran' }).format(new Date()) + 'T00:00:00+03:30')
     const todayCount = await prisma.article.count({ where: { createdAt: { gte: todayStart } } })
-    if (todayCount > 0) return NextResponse.json({ ok: true, skipped: 'article exists today', schedule })
+    if (!force && todayCount > 0) return NextResponse.json({ ok: true, skipped: 'article exists today', schedule })
     let raw = ''
     let err = ''
     const recent = await prisma.article.findMany({ orderBy: { createdAt: 'desc' }, take: 8, select: { titleFa: true, tagFa: true } })
