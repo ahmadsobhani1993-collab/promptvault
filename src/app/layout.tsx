@@ -1,14 +1,17 @@
+import dynamic from 'next/dynamic'
 import type { Metadata } from 'next'
 import { Inter, Sora } from 'next/font/google'
 import { cookies } from 'next/headers'
 import './globals.css'
 import Header from '@/components/layout/header'
-import PWAControls from '@/components/pwa-controls'
-import RouteLoader from '@/components/route-loader'
 import Footer from '@/components/layout/footer'
 import ScrollProgress from '@/components/scroll-progress'
 import MouseTrail from '@/components/mouse-trail'
 import type { Locale } from '@/lib/i18n'
+const RouteLoader = dynamic(() => import('@/components/route-loader'), { ssr: false })
+const PWAControls = dynamic(() => import('@/components/pwa-controls'), { ssr: false })
+const HeroCanvas = dynamic(() => import('@/components/hero-canvas'), { ssr: false })
+
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 const sora = Sora({ subsets: ['latin'], weight: ['500', '600', '700'], variable: '--font-sora' })
