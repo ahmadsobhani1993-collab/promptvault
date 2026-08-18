@@ -1,3 +1,5 @@
+import { qwenGenerate } from '@/lib/qwen'
+
 export const TAG_VOCAB: { fa: string; en: string }[] = [
   { fa: 'پرتره', en: 'portrait' },
   { fa: 'محصول', en: 'product' },
@@ -91,6 +93,10 @@ export async function generateText(opts: {
       continue
     }
   }
+  try {
+    const t = await qwenGenerate(opts.instruction)
+    return { text: t, model: 'qwen3.8-max-free' }
+  } catch {}
   throw new Error('GEMINI_QUOTA_EXHAUSTED :: ' + lastError)
 }
 
