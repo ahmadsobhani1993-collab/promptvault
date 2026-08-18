@@ -1,3 +1,7 @@
+#!/bin/bash
+set -e
+
+cat > src/lib/qwen.ts << 'EOF'
 const FREE_MODELS = [
   'qwen/qwen3.8-max-free',
   'qwen/qwen3.7-max',
@@ -57,3 +61,6 @@ export async function qwenGenerate(instruction: string): Promise<string> {
 
   throw new Error('all free models failed :: ' + lastError)
 }
+EOF
+
+echo "✅ update101 done! (free models + retry)"
