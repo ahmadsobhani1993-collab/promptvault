@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { isCronAuthorized } from '@/lib/cron-auth'
 import { generateText } from '@/lib/gemini'
-import { buildDailySchedule } from '@/lib/schedule'
+import { buildDaily5 } from '@/lib/daily5'
 import { tgSendText } from '@/lib/telegram'
 
 export const maxDuration = 60
@@ -96,7 +96,7 @@ export async function GET(req: Request) {
   const force = searchParams.get('force') === '1'
 
   if (step === '1') {
-    const schedule = await buildDailySchedule().catch(() => null)
+    const schedule = await buildDaily5().catch(() => null)
     const todayStart = new Date(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tehran' }).format(new Date()) + 'T00:00:00+03:30')
     const todayCount = await prisma.article.count({ where: { createdAt: { gte: todayStart } } })
     if (!force && todayCount > 0) return NextResponse.json({ ok: true, skipped: 'article exists today', schedule })

@@ -4,6 +4,7 @@ import { tgSendText, tgSendPhoto, tgSendCode } from '@/lib/telegram'
 import { analyzeWithGemini } from '@/lib/gemini'
 import { isCronAuthorized } from '@/lib/cron-auth'
 import { sendDueTelegram, sendDueInstagram, ensureDailyArticle } from '@/lib/schedule'
+import { sendDueDaily5 } from '@/lib/daily5'
 
 export const maxDuration = 60
 
@@ -64,6 +65,7 @@ export async function GET(req: Request) {
 
   if (!posts.length) {
     await ensureDailyArticle(APP()).catch(() => {})
+    await sendDueDaily5().catch(() => {})
     const scheduledTg = await sendDueTelegram().catch(() => [])
     const scheduledIg = await sendDueInstagram().catch(() => [])
     return NextResponse.json({ ok: true, phase: 'idle', offset, scheduledTg, scheduledIg })
