@@ -1,13 +1,15 @@
+import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { cookies } from 'next/headers'
 import { auth } from '@/auth'
 import { type Locale } from '@/lib/i18n'
 import { getCategories, L } from '@/lib/data'
 import LocaleSwitcher from '@/components/locale-switcher'
-import MobileMenu from '@/components/mobile-menu'
 import CategoryIcon from '@/components/category-icon'
 import LogoutButton from '@/components/logout-button'
-import NotifBell from '@/components/notif-bell'
+
+const NotifBell = dynamic(() => import('@/components/notif-bell'), { ssr: false })
+const MobileMenu = dynamic(() => import('@/components/mobile-menu'), { ssr: false })
 
 export default async function Header() {
   const cookieStore = await cookies()

@@ -5,7 +5,6 @@ import dynamic from 'next/dynamic'
 import './globals.css'
 import Header from '@/components/layout/header'
 import Footer from '@/components/layout/footer'
-import { Toaster } from '@/components/ui/sonner'
 
 const RouteLoader = dynamic(() => import('@/components/route-loader'), { ssr: false })
 const PWAControls = dynamic(() => import('@/components/pwa-controls'), { ssr: false })
@@ -13,9 +12,6 @@ const PWAControls = dynamic(() => import('@/components/pwa-controls'), { ssr: fa
 export const metadata: Metadata = {
   title: 'PromptsFA',
   description: 'هزاران پرامپت حرفه‌ای هوش مصنوعی',
-  manifest: '/site.webmanifest',
-  icons: { icon: '/icon.svg', apple: '/apple-touch-icon.png' },
-  themeColor: '#d4a94e',
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -30,7 +26,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <Footer locale={locale} />
         <PWAControls />
         <RouteLoader />
-        <Toaster richColors position={locale === 'fa' ? 'bottom-left' : 'bottom-right'} />
       </body>
     </html>
   )
