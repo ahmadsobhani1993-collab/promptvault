@@ -52,6 +52,7 @@ export default async function ExplorePage({
 
   const freq: Record<string, number> = {}
   for (const r of allTagsRows) for (const t of r.tagsFa) freq[t] = (freq[t] ?? 0) + 1
+  const allTags = Object.keys(freq)
   const top = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 8).map((e) => e[0])
 
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
@@ -100,7 +101,7 @@ export default async function ExplorePage({
 
       {top.length > 0 && (
         <div className="mt-4">
-          <TagFilter tags={top} selected={selectedTags} />
+          <TagFilter all={allTags} top={top} selected={selectedTags} />
         </div>
       )}
 
