@@ -1,3 +1,28 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) client-providers.tsx (Client Component) ----------
+cat > src/components/client-providers.tsx << 'EOF'
+'use client'
+
+import dynamic from 'next/dynamic'
+
+const RouteLoader = dynamic(() => import('@/components/route-loader'), { ssr: false })
+const PWAControls = dynamic(() => import('@/components/pwa-controls'), { ssr: false })
+
+export default function ClientProviders() {
+  return (
+    <>
+      <PWAControls />
+      <RouteLoader />
+    </>
+  )
+}
+EOF
+echo "✅ client-providers.tsx created"
+
+# ---------- 2) layout.tsx: import ClientProviders ----------
+cat > src/app/layout.tsx << 'EOF'
 import type { Metadata } from 'next'
 import { cookies } from 'next/headers'
 import { type Locale } from '@/lib/i18n'
@@ -26,3 +51,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     </html>
   )
 }
+EOF
+echo "✅ layout.tsx: simplified (uses ClientProviders)"
+
+echo "✅ update92 done!"
