@@ -84,7 +84,8 @@ export async function generateText(opts: {
       const json = JSON.parse(body)
       const raw: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
       if (!raw) { lastError = model + ': empty'; continue }
-      return { text: raw, model }
+      const cleanTitle = (t: string) => t.replace(/^([\u0600-\u06FF\w]+)\s+\1/, '$1')
+  return { text: raw, model }
     } catch (e: any) {
       lastError = model + ': ' + String(e?.message ?? e)
       continue
@@ -127,8 +128,8 @@ export async function analyzeWithGemini(opts: {
   const catOk = opts.categories.some((c) => c.slug === parsed.categorySlug)
 
   return {
-    titleFa: parsed.titleFa || 'پرامپت هوش مصنوعی',
-    titleEn: parsed.titleEn || 'AI Prompt',
+    titleFa: cleanTitle(String(parsed.titleFa || 'پرامپت هوش مصنوعی')),
+    titleEn: cleanTitle(String(parsed.titleEn || 'AI Prompt')),
     descFa: parsed.descFa || '',
     descEn: parsed.descEn || '',
     usageFa: parsed.usageFa || '',

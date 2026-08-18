@@ -154,6 +154,7 @@ model Prompt {
 }
 
 model Article {
+  status    String   @default("PUBLISHED")
   id        String    @id @default(cuid())
   slug      String    @unique
   titleFa   String

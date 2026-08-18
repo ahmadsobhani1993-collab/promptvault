@@ -82,9 +82,15 @@ export async function GET(req: Request) {
 
   if (step === '1') {
     const schedule = await buildDailySchedule().catch(() => null)
+    const todayStart = new Date(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tehran' }).format(new Date()) + 'T00:00:00+03:30')
+    const todayCount = await prisma.article.count({ where: { createdAt: { gte: todayStart } } })
+    if (todayCount > 0) return NextResponse.json({ ok: true, skipped: 'article exists today', schedule })
     let raw = ''
     let err = ''
-    try { raw = (await generateText({ instruction: INSTRUCTION })).text } catch (e: any) { err = String(e?.message ?? e) }
+    const recent = await prisma.article.findMany({ orderBy: { createdAt: 'desc' }, take: 8, select: { titleFa: true, tagFa: true } })
+    const recentTopics = recent.map((r) => r.titleFa).join('، ')
+    const instruction = INSTRUCTION + '\n9) موضوعاتی که قبلاً پوشش داده شده و تکرارشان ممنوع است: ' + recentTopics + '\n10) موضوع جدید باید کاملاً متفاوت از لیست بالا باشد.'
+    try { raw = (await generateText({ instruction })).text } catch (e: any) { err = String(e?.message ?? e) }
     if (!raw) return NextResponse.json({ ok: false, error: 'text gen failed: ' + err, schedule })
 
     await setSetting('article_draft', JSON.stringify({ raw }))
@@ -141,6 +147,7 @@ export async function GET(req: Request) {
         readEn,
         contentFa: contentFa.split(/\n{1,2}/).map((x: string) => x.trim()).filter(Boolean),
         contentEn: contentEn.split(/\n{1,2}/).map((x: string) => x.trim()).filter(Boolean),
+        status: 'PENDING',
       },
     })
   } catch (e: any) {
