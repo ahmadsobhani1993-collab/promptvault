@@ -1,3 +1,8 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) gemini.ts: pure cascade, strongest first, no Gemma ----------
+cat > src/lib/gemini.ts << 'EOF'
 export const TAG_VOCAB: { fa: string; en: string }[] = [
   { fa: 'پرتره', en: 'portrait' },
   { fa: 'محصول', en: 'product' },
@@ -139,3 +144,23 @@ export async function analyzeWithGemini(opts: {
     promptEn: parsed.promptEn || '',
   }
 }
+EOF
+echo "✅ gemini.ts: pure cascade restored"
+
+# ---------- 2) article route: back to Gemini ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'src/app/api/cron/article/route.ts'
+let s = fs.readFileSync(p, 'utf8')
+
+s = s.replace("import { qwenGenerate } from '@/lib/qwen'", "import { generateText } from '@/lib/gemini'")
+s = s.replace(
+  "try { raw = await qwenGenerate(INSTRUCTION) } catch (e: any) { err = String(e?.message ?? e) }",
+  "try { raw = (await generateText({ instruction: INSTRUCTION })).text } catch (e: any) { err = String(e?.message ?? e) }"
+)
+
+fs.writeFileSync(p, s)
+console.log('✅ article: uses Gemini cascade')
+NODEEOF
+
+echo "✅ update108 done!"

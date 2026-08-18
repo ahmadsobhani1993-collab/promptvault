@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { isCronAuthorized } from '@/lib/cron-auth'
-import { qwenGenerate } from '@/lib/qwen'
+import { generateText } from '@/lib/gemini'
 import { buildDailySchedule } from '@/lib/schedule'
 import { tgSendText } from '@/lib/telegram'
 
@@ -94,7 +94,7 @@ export async function GET(req: Request) {
     const schedule = await buildDailySchedule().catch(() => null)
     let raw = ''
     let err = ''
-    try { raw = await qwenGenerate(INSTRUCTION) } catch (e: any) { err = String(e?.message ?? e) }
+    try { raw = (await generateText({ instruction: INSTRUCTION })).text } catch (e: any) { err = String(e?.message ?? e) }
     if (!raw) return NextResponse.json({ ok: false, error: 'text gen failed: ' + err, schedule })
 
     await setSetting('article_draft', JSON.stringify({ raw }))
