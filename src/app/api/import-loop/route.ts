@@ -146,7 +146,13 @@ export async function GET(req: Request) {
       results.push({ id: cursor, slug: prompt.slug })
       found++
     } catch (e: any) {
-      debug.push('  error: ' + String(e?.message ?? e))
+      const msg = String(e?.message ?? e)
+      if (msg.includes('GEMINI_QUOTA_EXHAUSTED') || msg.includes('429')) {
+        // stop the chain cleanly — cursor stays at the failed position
+        await setSetting('import_cursor', String(cursor))
+        return NextResponse.json({ ok: true, cursor, stop, results, chained: false, stopped: 'quota_exhausted', debug })
+      }
+      debug.push('  error: ' + msg)
     }
 
     cursor += advanced

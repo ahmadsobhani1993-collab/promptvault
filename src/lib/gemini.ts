@@ -41,7 +41,13 @@ export type GeminiResult = {
 
 // strongest first; on 429 falls to the next
 export const MODEL_CHAIN = [
-  'gemini-3.1-pro',
+  'gemini-2.0-flash-exp',
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-lite-001',
+  'gemini-1.5-pro',
+  'gemini-1.5-flash',
+  'gemini-1.5-flash-8b',
+  'gemini-3.1-pro-preview',
   'gemini-2.5-pro',
   'gemini-3.7-flash',
   'gemini-3.6-flash',
@@ -51,8 +57,6 @@ export const MODEL_CHAIN = [
   'gemini-3.1-flash-lite',
   'gemini-2.5-flash-lite',
   'gemini-3.5-flash-lite',
-  'gemma-4-31b',
-  'gemma-4-26b',
 ]
 
 export async function generateText(opts: {
@@ -87,7 +91,7 @@ export async function generateText(opts: {
       continue
     }
   }
-  throw new Error('all models exhausted :: ' + lastError)
+  throw new Error('GEMINI_QUOTA_EXHAUSTED :: ' + lastError)
 }
 
 export async function analyzeWithGemini(opts: {
