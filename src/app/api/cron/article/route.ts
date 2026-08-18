@@ -123,6 +123,8 @@ export async function GET(req: Request) {
   const image = await genImageFast(String(a.imagePromptEn || 'futuristic artificial intelligence education concept, golden dark theme'))
 
   let article: any = null
+  let err1 = ''
+  let err2 = ''
   try {
     article = await prisma.article.create({
       data: {
@@ -134,13 +136,16 @@ export async function GET(req: Request) {
         slug,
       },
     })
-  } catch {
-    article = await prisma.article.create({
-      data: { titleFa, titleEn: titleFa, descFa: metaDescFa, descEn: metaDescFa, img: image.url, tagFa: keywordFa, tagEn: keywordFa, slug },
-    }).catch(() => null)
+  } catch (e1: any) {
+    err1 = String(e1?.message ?? e1)
+    try {
+      article = await prisma.article.create({
+        data: { titleFa, titleEn: titleFa, descFa: metaDescFa, descEn: metaDescFa, img: image.url, tagFa: keywordFa, tagEn: keywordFa, slug },
+      })
+    } catch (e2: any) { err2 = String(e2?.message ?? e2) }
   }
 
-  if (!article) return NextResponse.json({ ok: false, error: 'article create failed' }, { status: 500 })
+  if (!article) return NextResponse.json({ ok: false, error: 'article create failed', err1: err1.slice(0, 500), err2: err2.slice(0, 500) }, { status: 500 })
 
   const hour = parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tehran', hour: 'numeric', hour12: false }).format(new Date()), 10)
   let tg: any = null
