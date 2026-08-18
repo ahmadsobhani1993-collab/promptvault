@@ -1,3 +1,8 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) PWA button: back but smaller, bottom-right ----------
+cat > src/components/pwa-controls.tsx << 'EOF'
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -51,3 +56,28 @@ export default function PWAControls() {
     </button>
   )
 }
+EOF
+echo "✅ PWA button: bottom-right, small"
+
+# ---------- 2) Fix article-form: add useRef import ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'src/components/article-form.tsx'
+let s = fs.readFileSync(p, 'utf8')
+
+// Add useRef to import
+if (!s.includes('useRef')) {
+  s = s.replace(
+    "import { useRouter } from 'next/navigation'",
+    "import { useRouter } from 'next/navigation'\nimport { useRef, useState } from 'react'"
+  )
+  // Remove duplicate useState import if exists
+  s = s.replace(/import \{ useState \} from 'react'\n/, '')
+  fs.writeFileSync(p, s)
+  console.log('✅ Article form: useRef imported')
+} else {
+  console.log('⚠️ useRef already imported')
+}
+NODEEOF
+
+echo "✅ update130 done!"
