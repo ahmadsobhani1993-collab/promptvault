@@ -92,3 +92,28 @@ export async function sendDueInstagram() {
   }
   return results
 }
+
+async function getSet(k: string, d: string) {
+  return (await prisma.setting.findUnique({ where: { key: k } }))?.value ?? d
+}
+async function setSet(k: string, v: string) {
+  await prisma.setting.upsert({ where: { key: k }, update: { value: v }, create: { key: k, value: v } })
+}
+
+// if no article today, try every 30 min (via the 5-min telegram cron)
+export async function ensureDailyArticle(appUrl: string) {
+  try {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tehran' }).format(new Date())
+    const start = new Date(today + 'T00:00:00+03:30')
+    const count = await prisma.article.count({ where: { createdAt: { gte: start } } })
+    if (count > 0) return false
+    const last = parseInt(await getSet('article_last_attempt', '0'), 10)
+    if (Date.now() - last < 30 * 60000) return false
+    await setSet('article_last_attempt', String(Date.now()))
+    const key = process.env.CRON_SECRET ?? ''
+    fetch(appUrl + '/api/cron/article?key=' + key + '&step=1', { signal: AbortSignal.timeout(8000) }).catch(() => {})
+    return true
+  } catch {
+    return false
+  }
+}
