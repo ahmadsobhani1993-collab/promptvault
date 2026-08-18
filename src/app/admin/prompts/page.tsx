@@ -58,7 +58,7 @@ export default async function AdminPrompts({ searchParams }: { searchParams: Pro
           {rows.map((p) => (
             <div key={p.id} className="flex items-center justify-between gap-3 p-4">
               <div className="min-w-0">
-                <Link href={'/prompts/' + p.slug} className="block truncate text-xs font-bold text-ink transition-colors hover:text-gold-bright">{p.titleFa}</Link>
+                <Link href={'/admin/prompts/' + p.id + '/preview'} className="block truncate text-xs font-bold text-ink transition-colors hover:text-gold-bright">{p.titleFa}</Link>
                 <p className="mt-1 text-[10px] text-ink-faint">
                   {p.category?.nameFa ?? '—'} · ❤ {p.likes} · 👁 {p.views} · {new Intl.DateTimeFormat('fa-IR', { timeZone: 'Asia/Tehran', dateStyle: 'medium' }).format(p.createdAt)}
                 </p>
