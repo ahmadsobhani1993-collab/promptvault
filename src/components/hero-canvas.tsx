@@ -8,6 +8,7 @@ export default function HeroCanvas() {
   const ref = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
     const canvas = ref.current
     if (!canvas) return
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return

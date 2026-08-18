@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 
 export default function RouteLoader() {
   useEffect(() => {
+    if (typeof window === 'undefined') return
     const start = () => document.body.classList.add('route-loading')
     const stop = () => document.body.classList.remove('route-loading')
     const handler = (e: MouseEvent) => {

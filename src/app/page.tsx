@@ -1,3 +1,4 @@
+import dynamic from 'next/dynamic'
 import { cookies } from 'next/headers'
 import { dictionaries, type Locale } from '@/lib/i18n'
 import { getCategories, getPrompts, getArticles, L } from '@/lib/data'
@@ -6,7 +7,6 @@ import Hero from '@/components/hero'
 import ZoomSection from '@/components/zoom-section'
 import DownButton from '@/components/down-button'
 import CategoryGrid from '@/components/category-grid'
-import HeroCanvas from '@/components/hero-canvas'
 import Reveal from '@/components/reveal'
 import Link from 'next/link'
 
@@ -34,6 +34,8 @@ export const metadata = {
 }
 
 export const dynamic = 'force-dynamic'
+
+const HeroCanvas = dynamic(() => import('@/components/hero-canvas'), { ssr: false })
 
 export default async function HomePage() {
   const cookieStore = await cookies()
