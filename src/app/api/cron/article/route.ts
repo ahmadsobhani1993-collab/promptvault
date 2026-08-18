@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { isCronAuthorized } from '@/lib/cron-auth'
-import { qwenSingle } from '@/lib/qwen'
+import { qwenGenerate } from '@/lib/qwen'
 import { buildDailySchedule } from '@/lib/schedule'
 import { tgSendText } from '@/lib/telegram'
 
@@ -92,17 +92,10 @@ export async function GET(req: Request) {
   // ---------------- STEP 1: text ----------------
   if (step === '1') {
     const schedule = await buildDailySchedule().catch(() => null)
-    const started = Date.now()
     let raw = ''
     let err = ''
-    for (const model of TEXT_MODELS) {
-      if (Date.now() - started > 40000) break
-      try {
-        raw = await qwenSingle(model, INSTRUCTION, 25000)
-        break
-      } catch (e: any) { err = String(e?.message ?? e) }
-    }
-    if (!raw) return NextResponse.json({ ok: false, error: 'qwen busy: ' + err, schedule })
+    try { raw = await qwenGenerate(INSTRUCTION) } catch (e: any) { err = String(e?.message ?? e) }
+    if (!raw) return NextResponse.json({ ok: false, error: 'text gen failed: ' + err, schedule })
 
     await setSetting('article_draft', JSON.stringify({ raw }))
     fetch(APP() + '/api/cron/article?key=' + key + '&step=2', { signal: AbortSignal.timeout(6000) }).catch(() => {})
