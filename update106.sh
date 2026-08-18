@@ -1,3 +1,7 @@
+#!/bin/bash
+set -e
+
+cat > src/lib/qwen.ts << 'EOF'
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 export async function qwenSingle(model: string, instruction: string, timeoutMs = 25000): Promise<string> {
@@ -66,3 +70,6 @@ export async function qwenGenerate(instruction: string): Promise<string> {
   // 2) hugging face (free, no key)
   return await huggingFaceGenerate(instruction)
 }
+EOF
+
+echo "✅ qwen.ts: Hugging Face fallback added"
