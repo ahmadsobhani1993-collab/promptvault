@@ -31,21 +31,7 @@ export default function PWAControls() {
           📲 نصب اپ
         </button>
       )}
-      {'Notification' in window && permission === 'default' && (
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={async () => {
-            const p = await Notification.requestPermission()
-            setPermission(p)
-            if (p === 'granted') {
-              try { new Notification('PromptsFA', { body: 'اعلان‌ها فعال شدند ✅' }) } catch {}
-            }
-          }}
-        >
-          🔔 فعال‌سازی نوتیفیکیشن
-        </button>
-      )}
+      
     </div>
   )
 }

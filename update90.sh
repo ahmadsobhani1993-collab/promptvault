@@ -1,3 +1,31 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) hot section: view-all button ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'src/app/page.tsx'
+let s = fs.readFileSync(p, 'utf8')
+
+const old = `            <Reveal>
+              <h2 className="title-shine text-center font-display text-2xl font-bold tracking-tight md:text-3xl">
+                {t.trending}
+              </h2>
+            </Reveal>`
+
+const nw = `            <Reveal>
+              <div className="flex items-end justify-between gap-4">
+                <h2 className="title-shine font-display text-2xl font-bold tracking-tight md:text-3xl">{t.trending}</h2>
+                <Link href="/explore" className="btn-secondary whitespace-nowrap text-xs">{L(locale, 'مشاهده همه', 'View all')}</Link>
+              </div>
+            </Reveal>`
+
+if (s.includes(old)) { s = s.replace(old, nw); fs.writeFileSync(p, s); console.log('✅ trending: view-all added') }
+else console.log('❌ trending anchor not found')
+NODEEOF
+
+# ---------- 2) notif bell: enable button inside dropdown ----------
+cat > src/components/notif-bell.tsx << 'EOF'
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
@@ -96,3 +124,46 @@ export default function NotifBell() {
     </div>
   )
 }
+EOF
+
+# ---------- 3) pwa controls: install only ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'src/components/pwa-controls.tsx'
+let s = fs.readFileSync(p, 'utf8')
+// remove the notification button block
+s = s.replace(/\{'Notification' in window && permission === 'default' && \([\s\S]*?<\/button>\s*\)\}/, '')
+fs.writeFileSync(p, s)
+console.log('✅ pwa-controls: notif button removed')
+NODEEOF
+
+# ---------- 4) mobile spacing + admin stacking ----------
+cat >> src/app/globals.css << 'EOF'
+
+@media (max-width: 640px) {
+  .snap-section { min-height: auto !important; padding-top: 2.5rem !important; padding-bottom: 2.5rem !important; }
+  .grid-cols-2 { gap: 0.75rem !important; }
+  .container-app { padding-left: 0.9rem !important; padding-right: 0.9rem !important; }
+}
+@media (max-width: 1023px) {
+  .admin-page, .admin-page > div { display: grid !important; grid-template-columns: 1fr !important; }
+  .admin-page aside, .admin-page nav { width: 100% !important; }
+}
+EOF
+
+# ---------- 5) tag admin root + print explore source ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'src/app/admin/page.tsx'
+let s = fs.readFileSync(p, 'utf8')
+if (!s.includes('admin-page')) {
+  s = s.replace(/<section/, '<section className="admin-page" ')
+  fs.writeFileSync(p, s)
+  console.log('✅ admin page tagged')
+}
+NODEEOF
+
+echo "----- explore/page.tsx (first 80 lines) -----"
+head -80 src/app/explore/page.tsx
+echo "----------------------------------------------"
+echo "✅ update90 done!"

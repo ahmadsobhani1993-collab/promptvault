@@ -99,9 +99,10 @@ export default async function HomePage() {
         <section data-section className="snap-section flex min-h-[68vh] flex-col justify-center py-8">
           <div className="container-app">
             <Reveal>
-              <h2 className="title-shine text-center font-display text-2xl font-bold tracking-tight md:text-3xl">
-                {t.trending}
-              </h2>
+              <div className="flex items-end justify-between gap-4">
+                <h2 className="title-shine font-display text-2xl font-bold tracking-tight md:text-3xl">{t.trending}</h2>
+                <Link href="/explore" className="btn-secondary whitespace-nowrap text-xs">{L(locale, 'مشاهده همه', 'View all')}</Link>
+              </div>
             </Reveal>
 
             <div className="mt-10 grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-5">
