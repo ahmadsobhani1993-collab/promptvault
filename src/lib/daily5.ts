@@ -26,7 +26,7 @@ export async function buildDaily5(test = false) {
   }
 
   // retire old top-24 queue
-  await prisma.scheduledPost.updateMany({ where: { target: { in: ['telegram', 'instagram'] }, sent: false }, data: { sent: true } }).catch(() => {})
+  await prisma.scheduledPost.deleteMany({ where: { NOT: { target: { in: ['daily5tg', 'daily5ig'] } } } }).catch(() => {})
 
   let sentIds: string[] = []
   try { sentIds = JSON.parse((await getSet('daily5_sent_ids', '[]')) || '[]') } catch {}

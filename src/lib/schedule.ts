@@ -48,6 +48,7 @@ export async function buildDailySchedule() {
 }
 
 export async function sendDueTelegram() {
+  return [] // disabled — daily5 replaced it
   const due = await prisma.scheduledPost.findMany({
     where: { target: 'telegram', sent: false, sendAt: { lte: new Date() } },
     orderBy: { sendAt: 'asc' },
@@ -89,6 +90,7 @@ export async function sendDueTelegram() {
 }
 
 export async function sendDueInstagram() {
+  return [] // disabled — daily5 replaced it
   const due = await prisma.scheduledPost.findMany({
     where: { target: 'instagram', sent: false, sendAt: { lte: new Date() } },
     orderBy: { sendAt: 'asc' },
