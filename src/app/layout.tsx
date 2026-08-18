@@ -10,6 +10,7 @@ import PWAControls from '@/components/pwa-controls'
 import ClientProviders from '@/components/client-providers'
 
 export const metadata: Metadata = {
+  icons: { icon: '/favicon.svg', apple: '/icon.svg' },
   title: 'PromptsFA',
   description: 'هزاران پرامپت حرفه‌ای هوش مصنوعی',
 }

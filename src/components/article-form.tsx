@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
-import MarkdownEditor from '@/components/markdown-editor'
+import RichTextEditor from '@/components/rich-text-editor'
 
 export default function ArticleForm() {
   const router = useRouter()
@@ -54,8 +54,8 @@ export default function ArticleForm() {
         </div>
       </div>
       <div>
-        <label className="mb-1 block text-xs text-ink-muted">متن مقاله (هر خط = یک پاراگراف؛ ## برای زیرعنوان)</label>
-        <MarkdownEditor name="contentFa" />
+        <label className="mb-1 block text-xs text-ink-muted">متن مقاله (می‌توانید از ورد کپی کنید — فرمت حفظ می‌شود)</label>
+        <RichTextEditor name="contentFa" />
       </div>
       {msg && <p className="text-xs text-red-400">{msg}</p>}
       <button disabled={busy} className="btn-primary w-full justify-center">{busy ? 'در حال انتشار...' : ' انتشار مقاله'}</button>
