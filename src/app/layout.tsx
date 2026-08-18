@@ -4,6 +4,8 @@ import { type Locale } from '@/lib/i18n'
 import './globals.css'
 import Header from '@/components/layout/header'
 import Footer from '@/components/layout/footer'
+import RouteLoader from '@/components/route-loader'
+import PWAControls from '@/components/pwa-controls'
 import ClientProviders from '@/components/client-providers'
 
 export const metadata: Metadata = {
