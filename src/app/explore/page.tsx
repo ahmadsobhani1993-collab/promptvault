@@ -95,7 +95,7 @@ export default async function ExplorePage({ searchParams }: { searchParams: Prom
       )}
 
       <div className="mt-10">
-        <ExploreGrid initial={rows} qs={(o) => qs(o as any)} locale={locale} />
+        <ExploreGrid initial={rows} params={params as Record<string, string>} locale={locale} />
       </div>
     </section>
   )

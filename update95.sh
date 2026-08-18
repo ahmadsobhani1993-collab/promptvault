@@ -1,3 +1,8 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) explore-grid: receive params object, build query internally ----------
+cat > src/components/explore-grid.tsx << 'EOF'
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
@@ -79,3 +84,22 @@ export default function ExploreGrid({
     </>
   )
 }
+EOF
+echo "✅ explore-grid: params object instead of function"
+
+# ---------- 2) explore page: pass params object ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'src/app/explore/page.tsx'
+let s = fs.readFileSync(p, 'utf8')
+
+s = s.replace(
+  /<ExploreGrid initial=\{rows\} qs=\{\(o\) => qs\(o as any\)\} locale=\{locale\} \/>/,
+  '<ExploreGrid initial={rows} params={params as Record<string, string>} locale={locale} />'
+)
+
+fs.writeFileSync(p, s)
+console.log('✅ explore page: passes params object')
+NODEEOF
+
+echo "✅ update95 done!"
