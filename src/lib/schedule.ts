@@ -47,63 +47,9 @@ export async function buildDailySchedule() {
   return { built: true, count: pool.length }
 }
 
-export async function sendDueTelegram() {
-  return [] // disabled — daily5 replaced it
-  const due = await prisma.scheduledPost.findMany({
-    where: { target: 'telegram', sent: false, sendAt: { lte: new Date() } },
-    orderBy: { sendAt: 'asc' },
-    take: 1,
-  })
-  const sentSlugs: string[] = []
-  for (const d of due) {
-    const p = await prisma.prompt.findUnique({ where: { id: d.promptId } })
-    if (!p) {
-      await prisma.scheduledPost.update({ where: { id: d.id }, data: { sent: true } })
-      continue
-    }
-    // direct photo url (telegram-hosted) for reliable sending
-    let photo = p.img
-    try {
-      const row = await prisma.promptImage.findUnique({ where: { promptId: p.id } })
-      if (row?.type === 'tg') {
-        const token = process.env.TELEGRAM_READ_TOKEN || process.env.TELEGRAM_BOT_TOKEN
-        const g = await (await fetch('https://api.telegram.org/bot' + token + '/getFile?file_id=' + encodeURIComponent(row.data), { signal: AbortSignal.timeout(8000) })).json()
-        if (g?.result?.file_path) photo = 'https://api.telegram.org/file/bot' + token + '/' + g.result.file_path
-      }
-    } catch {}
-    const out = process.env.TELEGRAM_OUTPUT
-    if (out) {
-      const tagLine = (p.tagsFa ?? []).map((t) => '#' + t.replace(/\s+/g, '_')).join(' ')
-      const usageFa = (p.usageFa ?? '').trim()
-      const full = '✨ ' + p.titleFa + '\n\n📘 ' + usageFa + '\n\n📝 ' + p.prompt + '\n\n' + tagLine + '\n\n@Prompts_fa'
-      const short = '✨ ' + p.titleFa + '\n\n📘 ' + usageFa + '\n\n' + tagLine + '\n\n@Prompts_fa'
-      if (full.length <= 1024) await tgSendPhoto(out, photo, full)
-      else {
-        await tgSendPhoto(out, photo, short)
-        await tgSendCode(out, p.prompt, '\n\n@Prompts_fa')
-      }
-    }
-    await prisma.scheduledPost.update({ where: { id: d.id }, data: { sent: true } })
-    sentSlugs.push(p.slug)
-  }
-  return sentSlugs
-}
+export async function sendDueTelegram() { return [] }
 
-export async function sendDueInstagram() {
-  return [] // disabled — daily5 replaced it
-  const due = await prisma.scheduledPost.findMany({
-    where: { target: 'instagram', sent: false, sendAt: { lte: new Date() } },
-    orderBy: { sendAt: 'asc' },
-    take: 1,
-  })
-  const results: any[] = []
-  for (const d of due) {
-    const p = await prisma.prompt.findUnique({ where: { id: d.promptId } })
-    results.push(await sendToInstagram(p))
-    await prisma.scheduledPost.update({ where: { id: d.id }, data: { sent: true } })
-  }
-  return results
-}
+export async function sendDueInstagram() { return [] }
 
 async function getSet(k: string, d: string) {
   return (await prisma.setting.findUnique({ where: { key: k } }))?.value ?? d
