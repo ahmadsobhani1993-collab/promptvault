@@ -96,7 +96,7 @@ export async function GET(req: Request) {
   const force = searchParams.get('force') === '1'
 
   if (step === '1') {
-    const schedule = await buildDaily5().catch(() => null)
+    const schedule = await buildDaily5(searchParams.get('test') === '1').catch(() => null)
     const todayStart = new Date(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tehran' }).format(new Date()) + 'T00:00:00+03:30')
     const todayCount = await prisma.article.count({ where: { createdAt: { gte: todayStart } } })
     if (!force && todayCount > 0) return NextResponse.json({ ok: true, skipped: 'article exists today', schedule })
@@ -171,12 +171,7 @@ export async function GET(req: Request) {
 
   if (!article) return NextResponse.json({ ok: false, error: 'article create failed', prismaError: lastErr.slice(-600), imageVia: image.via }, { status: 500 })
 
-  const hour = parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tehran', hour: 'numeric', hour12: false }).format(new Date()), 10)
-  let tg: any = null
-  const out = process.env.TELEGRAM_OUTPUT
-  if (out && hour >= 12 && hour <= 23) {
-    tg = await tgSendText(out, '📚 ' + titleFa + '\n\n🔑 ' + keywordFa + '\n\n🔗 ' + APP() + '/blog/' + slug).catch(() => null)
-  }
+    const tg = null
 
   return NextResponse.json({ ok: true, slug, imageVia: image.via, keywords: a.keywordsFa ?? [], tg })
 }

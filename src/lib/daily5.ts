@@ -16,10 +16,14 @@ async function setSet(k: string, v: string) {
 }
 
 // runs once per day: pick 5 random never-sent prompts, spread across the day
-export async function buildDaily5() {
+export async function buildDaily5(test = false) {
   const today = tehranDate(0)
-  const existing = await prisma.scheduledPost.count({ where: { day: today, target: 'daily5tg' } })
-  if (existing > 0) return { built: false, existing }
+  if (test) {
+    await prisma.scheduledPost.deleteMany({ where: { day: today, target: { in: ['daily5tg', 'daily5ig'] }, sent: false } }).catch(() => {})
+  } else {
+    const existing = await prisma.scheduledPost.count({ where: { day: today, target: 'daily5tg' } })
+    if (existing > 0) return { built: false, existing }
+  }
 
   // retire old top-24 queue
   await prisma.scheduledPost.updateMany({ where: { target: { in: ['telegram', 'instagram'] }, sent: false }, data: { sent: true } }).catch(() => {})
@@ -42,7 +46,7 @@ export async function buildDaily5() {
 
   const data: any[] = []
   picked.forEach((p, i) => {
-    const dt = new Date(Date.now() + (i * 4 + 1) * 3600000)
+    const dt = test ? new Date(Date.now() + i * 120000) : new Date(Date.now() + (i * 4 + 1) * 3600000)
     data.push({ promptId: p.id, sendAt: dt, day: today, target: 'daily5tg' })
     data.push({ promptId: p.id, sendAt: dt, day: today, target: 'daily5ig' })
   })

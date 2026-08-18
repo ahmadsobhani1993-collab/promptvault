@@ -48,9 +48,7 @@ export async function POST(req: Request) {
   }
   if (action === 'publish') {
     const a = await prisma.article.update({ where: { id }, data: { status: 'PUBLISHED' } })
-    const out = process.env.TELEGRAM_OUTPUT
-    if (out) await tgSendText(out, '📚 ' + a.titleFa + '\n\n🔗 ' + (process.env.NEXT_PUBLIC_APP_URL ?? 'https://promptsfa.ir') + '/blog/' + a.slug).catch(() => {})
-    return NextResponse.json({ ok: true })
+        return NextResponse.json({ ok: true })
   }
   if (action === 'unpublish') {
     await prisma.article.update({ where: { id }, data: { status: 'PENDING' } })
