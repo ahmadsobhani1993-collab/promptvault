@@ -139,8 +139,8 @@ export async function GET(req: Request) {
         dateEn,
         readFa,
         readEn,
-        contentFa,
-        contentEn,
+        contentFa: contentFa.split(/\n{1,2}/).map((x: string) => x.trim()).filter(Boolean),
+        contentEn: contentEn.split(/\n{1,2}/).map((x: string) => x.trim()).filter(Boolean),
       },
     })
   } catch (e: any) {
