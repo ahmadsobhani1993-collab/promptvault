@@ -251,3 +251,12 @@ model ScheduledPost {
   sent     Boolean  @default(false)
   day      String
 }
+
+model PageView {
+  id        String   @id @default(cuid())
+  path      String
+  referrer  String?
+  ua        String?
+  ip        String?
+  createdAt DateTime @default(now())
+}
