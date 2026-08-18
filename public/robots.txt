@@ -2,5 +2,8 @@ User-agent: *
 Allow: /
 Disallow: /admin
 Disallow: /api
+Disallow: /login
+Disallow: /submit
 
+Host: https://promptsfa.ir
 Sitemap: https://promptsfa.ir/sitemap.xml

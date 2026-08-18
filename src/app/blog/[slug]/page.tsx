@@ -27,6 +27,23 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export const dynamic = 'force-dynamic'
 
+
+function ArticleJsonLd({ article }: { article: any }) {
+  const data = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": article.titleFa,
+    "description": article.descFa,
+    "image": article.img,
+    "datePublished": article.createdAt,
+    "dateModified": article.createdAt,
+    "author": { "@type": "Organization", "name": "PromptsFA" },
+    "publisher": { "@type": "Organization", "name": "PromptsFA", "url": "https://promptsfa.ir" },
+    "mainEntityOfPage": { "@type": "WebPage", "@id": "https://promptsfa.ir/blog/" + article.slug }
+  }
+  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }} />
+}
+
 export default async function BlogDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const cookieStore = await cookies()
