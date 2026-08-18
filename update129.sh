@@ -1,3 +1,66 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) PWA button: smaller, bottom-right, doesn't block ----------
+cat > src/components/pwa-controls.tsx << 'EOF'
+'use client'
+
+import { useEffect, useState } from 'react'
+
+export default function PWAControls() {
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
+  const [isInstalled, setIsInstalled] = useState(false)
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (window.matchMedia('(display-mode: standalone)').matches) {
+        setIsInstalled(true)
+        return
+      }
+
+      const handler = (e: any) => {
+        e.preventDefault()
+        setDeferredPrompt(e)
+      }
+
+      window.addEventListener('beforeinstallprompt', handler)
+      return () => window.removeEventListener('beforeinstallprompt', handler)
+    }
+  }, [])
+
+  const handleInstall = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt()
+      const { outcome } = await deferredPrompt.userChoice
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null)
+        setIsInstalled(true)
+      }
+    } else {
+      alert(' برای نصب:\n\n• Chrome موبایل: منوی سه‌نقطه → "Add to Home Screen"\n• Safari iOS: Share → "Add to Home Screen"\n• Chrome دسکتاپ: آیکون install در نوار آدرس')
+    }
+  }
+
+  if (isInstalled || !deferredPrompt) return null
+
+  return (
+    <button
+      onClick={handleInstall}
+      className="fixed bottom-4 right-4 z-40 flex items-center gap-1 rounded-full bg-gold/90 px-3 py-1.5 text-[10px] font-bold text-black shadow-lg transition-all hover:scale-105 active:scale-95 md:bottom-6 md:right-6 md:px-4 md:py-2 md:text-xs"
+      title="نصب اپلیکیشن"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-3 w-3 md:h-4 md:w-4">
+        <path d="M12 19V5M5 12l7-7 7 7" />
+      </svg>
+      <span className="hidden sm:inline">نصب اپ</span>
+    </button>
+  )
+}
+EOF
+echo "✅ PWA button: smaller, bottom-right"
+
+# ---------- 2) Rich text editor: fix Word paste + form submission ----------
+cat > src/components/rich-text-editor.tsx << 'EOF'
 'use client'
 
 import { useRef, useState, useEffect } from 'react'
@@ -145,3 +208,37 @@ export default function RichTextEditor({ name, initialValue = '' }: { name: stri
     </div>
   )
 }
+EOF
+echo "✅ Rich text editor: Word paste + form sync fixed"
+
+# ---------- 3) Article form: ensure textarea sync before submit ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'src/components/article-form.tsx'
+let s = fs.readFileSync(p, 'utf8')
+
+// Add ref to form and sync before submit
+if (!s.includes('formRef')) {
+  s = s.replace(
+    "const [msg, setMsg] = useState('')",
+    "const [msg, setMsg] = useState('')\n  const formRef = useRef<HTMLFormElement>(null)"
+  )
+  
+  s = s.replace(
+    'const fd = new FormData(e.target)',
+    "// Sync rich text editor content before submission\n    const editor = formRef.current?.querySelector('[contenteditable]') as HTMLDivElement\n    const textarea = formRef.current?.querySelector('textarea[name=\"contentFa\"]') as HTMLTextAreaElement\n    if (editor && textarea) textarea.value = editor.innerHTML\n    const fd = new FormData(e.target)"
+  )
+  
+  s = s.replace(
+    '<form onSubmit={submit}',
+    '<form ref={formRef} onSubmit={submit}'
+  )
+  
+  fs.writeFileSync(p, s)
+  console.log('✅ Article form: sync before submit')
+} else {
+  console.log('⚠️ Already has formRef')
+}
+NODEEOF
+
+echo "✅ update129 done!"

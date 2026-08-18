@@ -10,6 +10,7 @@ export default function PWAControls() {
     if (typeof window !== 'undefined') {
       if (window.matchMedia('(display-mode: standalone)').matches) {
         setIsInstalled(true)
+        return
       }
 
       const handler = (e: any) => {
@@ -31,30 +32,22 @@ export default function PWAControls() {
         setIsInstalled(true)
       }
     } else {
-      // Fallback: show manual install instructions
-      alert('برای نصب اپلیکیشن:\n\n' +
-        '📱 در موبایل:\n' +
-        '• Chrome: منوی سه‌نقطه → "Add to Home Screen"\n' +
-        '• Safari: دکمه Share → "Add to Home Screen"\n\n' +
-        '💻 در دسکتاپ:\n' +
-        '• Chrome: آیکون نصب در نوار آدرس\n' +
-        '• Edge: منوی سه‌نقطه → "Apps" → "Install this site"')
+      alert(' برای نصب:\n\n• Chrome موبایل: منوی سه‌نقطه → "Add to Home Screen"\n• Safari iOS: Share → "Add to Home Screen"\n• Chrome دسکتاپ: آیکون install در نوار آدرس')
     }
   }
 
-  if (isInstalled) return null
+  if (isInstalled || !deferredPrompt) return null
 
   return (
-    <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
-      <button
-        onClick={handleInstall}
-        className="flex items-center gap-2 rounded-full bg-gold px-6 py-3 font-bold text-black shadow-2xl shadow-gold/20 transition-all hover:scale-105 active:scale-95"
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-5 w-5">
-          <path d="M12 19V5M5 12l7-7 7 7" />
-        </svg>
-        نصب اپلیکیشن
-      </button>
-    </div>
+    <button
+      onClick={handleInstall}
+      className="fixed bottom-4 right-4 z-40 flex items-center gap-1 rounded-full bg-gold/90 px-3 py-1.5 text-[10px] font-bold text-black shadow-lg transition-all hover:scale-105 active:scale-95 md:bottom-6 md:right-6 md:px-4 md:py-2 md:text-xs"
+      title="نصب اپلیکیشن"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-3 w-3 md:h-4 md:w-4">
+        <path d="M12 19V5M5 12l7-7 7 7" />
+      </svg>
+      <span className="hidden sm:inline">نصب اپ</span>
+    </button>
   )
 }

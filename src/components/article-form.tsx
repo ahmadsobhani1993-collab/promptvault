@@ -8,10 +8,15 @@ export default function ArticleForm() {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
+  const formRef = useRef<HTMLFormElement>(null)
 
   const submit = async (e: any) => {
     e.preventDefault()
     setBusy(true)
+    // Sync rich text editor content before submission
+    const editor = formRef.current?.querySelector('[contenteditable]') as HTMLDivElement
+    const textarea = formRef.current?.querySelector('textarea[name="contentFa"]') as HTMLTextAreaElement
+    if (editor && textarea) textarea.value = editor.innerHTML
     const fd = new FormData(e.target)
     const res = await fetch('/api/admin/articles', {
       method: 'POST',
@@ -34,7 +39,7 @@ export default function ArticleForm() {
   }
 
   return (
-    <form onSubmit={submit} className="card space-y-4 p-6">
+    <form ref={formRef} onSubmit={submit} className="card space-y-4 p-6">
       <div>
         <label className="mb-1 block text-xs text-ink-muted">عنوان *</label>
         <input name="titleFa" required className="input text-sm" placeholder="عنوان مقاله" />
