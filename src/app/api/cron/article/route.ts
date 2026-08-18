@@ -114,11 +114,16 @@ export async function GET(req: Request) {
   try { a = m ? JSON.parse(m[0]) : {} } catch { return NextResponse.json({ ok: false, error: 'bad json', raw: raw.slice(0, 300) }, { status: 500 }) }
 
   const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tehran' }).format(new Date())
-  const slug = String(a.slugEn || 'ai-education').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + date
+  const dateFa = new Intl.DateTimeFormat('fa-IR-u-nu-latn', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'long', day: 'numeric' }).format(new Date())
+  const dateEn = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'long', day: 'numeric' }).format(new Date())
+  const slugBase = String(a.slugEn || 'ai-education').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  const slug = slugBase + '-' + date + '-' + Math.random().toString(36).slice(2, 6)
   const titleFa = String(a.titleFa || 'آموزش هوش مصنوعی')
   const metaDescFa = String(a.metaDescFa || a.descFa || titleFa)
   const contentFa = String(a.contentFa || '')
   const keywordFa = String(a.keywordFa || 'هوش مصنوعی')
+  const readTimeFa = '۵ دقیقه مطالعه'
+  const readTimeEn = '5 min read'
 
   const image = await genImageFast(String(a.imagePromptEn || 'futuristic artificial intelligence education concept, golden dark theme'))
 
@@ -133,6 +138,8 @@ export async function GET(req: Request) {
         contentFa, contentEn: contentFa,
         img: image.url,
         tagFa: keywordFa, tagEn: keywordFa,
+        dateFa, dateEn,
+        readFa: readTimeFa, readEn: readTimeEn,
         slug,
       },
     })
