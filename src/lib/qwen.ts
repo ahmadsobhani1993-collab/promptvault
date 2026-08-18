@@ -15,7 +15,10 @@ export async function qwenSingle(model: string, instruction: string, timeoutMs =
 
   if (res.status === 503 || res.status === 429) throw new Error('busy: ' + model)
   if (res.status === 404) throw new Error('notfound: ' + model)
-  if (!res.ok) throw new Error('qwen HTTP ' + res.status)
+  if (!res.ok) {
+    const t = await res.text().catch(() => '')
+    throw new Error('qwen HTTP ' + res.status + ' :: ' + t.slice(0, 300))
+  }
   const j = await res.json()
   const text: string = j?.choices?.[0]?.message?.content ?? ''
   if (!text) throw new Error('empty: ' + model)
