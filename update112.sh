@@ -1,3 +1,7 @@
+#!/bin/bash
+set -e
+
+cat > src/app/api/cron/article/route.ts << 'EOF'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { isCronAuthorized } from '@/lib/cron-auth'
@@ -158,3 +162,6 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ ok: true, slug, imageVia: image.via, keywords: a.keywordsFa ?? [], tg })
 }
+EOF
+
+echo "✅ article route: full rewrite with all required fields"
