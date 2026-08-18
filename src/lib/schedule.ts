@@ -60,15 +60,25 @@ export async function sendDueTelegram() {
       await prisma.scheduledPost.update({ where: { id: d.id }, data: { sent: true } })
       continue
     }
+    // direct photo url (telegram-hosted) for reliable sending
+    let photo = p.img
+    try {
+      const row = await prisma.promptImage.findUnique({ where: { promptId: p.id } })
+      if (row?.type === 'tg') {
+        const token = process.env.TELEGRAM_READ_TOKEN || process.env.TELEGRAM_BOT_TOKEN
+        const g = await (await fetch('https://api.telegram.org/bot' + token + '/getFile?file_id=' + encodeURIComponent(row.data), { signal: AbortSignal.timeout(8000) })).json()
+        if (g?.result?.file_path) photo = 'https://api.telegram.org/file/bot' + token + '/' + g.result.file_path
+      }
+    } catch {}
     const out = process.env.TELEGRAM_OUTPUT
     if (out) {
       const tagLine = (p.tagsFa ?? []).map((t) => '#' + t.replace(/\s+/g, '_')).join(' ')
       const usageFa = (p.usageFa ?? '').trim()
       const full = '✨ ' + p.titleFa + '\n\n📘 ' + usageFa + '\n\n📝 ' + p.prompt + '\n\n' + tagLine + '\n\n@Prompts_fa'
       const short = '✨ ' + p.titleFa + '\n\n📘 ' + usageFa + '\n\n' + tagLine + '\n\n@Prompts_fa'
-      if (full.length <= 1024) await tgSendPhoto(out, p.img, full)
+      if (full.length <= 1024) await tgSendPhoto(out, photo, full)
       else {
-        await tgSendPhoto(out, p.img, short)
+        await tgSendPhoto(out, photo, short)
         await tgSendCode(out, p.prompt, '\n\n@Prompts_fa')
       }
     }

@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import MarkdownEditor from '@/components/markdown-editor'
 
 export default function ArticleForm() {
   const router = useRouter()
@@ -54,7 +55,7 @@ export default function ArticleForm() {
       </div>
       <div>
         <label className="mb-1 block text-xs text-ink-muted">متن مقاله (هر خط = یک پاراگراف؛ ## برای زیرعنوان)</label>
-        <textarea name="contentFa" required rows={14} className="input w-full text-sm leading-7" placeholder={'## مقدمه\nمتن...'} />
+        <MarkdownEditor name="contentFa" />
       </div>
       {msg && <p className="text-xs text-red-400">{msg}</p>}
       <button disabled={busy} className="btn-primary w-full justify-center">{busy ? 'در حال انتشار...' : ' انتشار مقاله'}</button>

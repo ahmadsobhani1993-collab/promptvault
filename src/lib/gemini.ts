@@ -39,6 +39,8 @@ export type GeminiResult = {
   promptEn: string
 }
 
+const cleanTitle = (t: string) => t.replace(/^([\u0600-\u06FF\w]+)\s+\1/, '$1')
+
 // strongest -> weakest (no Gemma)
 export const MODEL_CHAIN = [
   'gemini-3.1-pro',
@@ -84,8 +86,7 @@ export async function generateText(opts: {
       const json = JSON.parse(body)
       const raw: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
       if (!raw) { lastError = model + ': empty'; continue }
-      const cleanTitle = (t: string) => t.replace(/^([\u0600-\u06FF\w]+)\s+\1/, '$1')
-  return { text: raw, model }
+      return { text: raw, model }
     } catch (e: any) {
       lastError = model + ': ' + String(e?.message ?? e)
       continue
@@ -104,24 +105,26 @@ export async function analyzeWithGemini(opts: {
     'You are an AI prompt curator. Read the given AI prompt (and image if provided). ' +
     'Return ONLY a valid JSON object (no markdown) with exactly these keys:\n' +
     '"titleFa","titleEn","descFa","descEn","usageFa","usageEn","categorySlug","tagsFa","tagsEn","promptEn"\n' +
-    '- titleFa/titleEn: short catchy title (fa/en).\n' +
+    '- titleFa/titleEn: short catchy title (fa/en). NEVER repeat a word twice at the start.\n' +
     '- descFa/descEn: ONE short sentence describing what this prompt does (fa/en).\n' +
     '- usageFa/usageEn: 2-3 sentences explaining HOW to use this prompt (which tool/model, where to paste, tips) (fa/en).\n' +
     '- promptEn: the FULL prompt text translated to English. Keep every detail and parameter. If it is already English, return it unchanged. A few Persian words inside are OK.\n' +
     '- categorySlug: choose ONE from: ' +
     opts.categories.map((c) => c.slug).join(', ') +
-    '\n- tagsFa: choose MAX 4 ONLY from: ' +
+    '\n- tagsFa: JSON ARRAY of MAX 4 items ONLY from: ' +
     TAG_VOCAB.map((t) => t.fa).join('، ') +
-    '\n- tagsEn: English equivalents of chosen tagsFa in same order.' +
+    '\n- tagsEn: JSON ARRAY, English equivalents of chosen tagsFa in same order.' +
     '\n\nTHE PROMPT TEXT:\n' + (opts.text || '(no text, look at image)')
 
   const { text: raw } = await generateText({ instruction, imgBase64: opts.imgBase64, imgMime: opts.imgMime })
 
   const m = raw.match(/\{[\s\S]*\}/)
-  const parsed = m ? JSON.parse(m[0]) : {}
+  let parsed: any = {}
+  try { parsed = m ? JSON.parse(m[0]) : {} } catch { parsed = {} }
 
-  const tagsFa: string[] = (parsed.tagsFa ?? []).slice(0, 4)
-  const tagsEn: string[] = tagsFa.map((fa: string) => {
+  const rawTags = Array.isArray(parsed.tagsFa) ? parsed.tagsFa : String(parsed.tagsFa ?? '').split(/[،,]/)
+  const tagsFa: string[] = rawTags.map((t: any) => String(t).trim()).filter(Boolean).slice(0, 4)
+  const tagsEn: string[] = tagsFa.map((fa) => {
     const v = TAG_VOCAB.find((t) => t.fa === fa)
     return v ? v.en : fa
   })
@@ -130,13 +133,13 @@ export async function analyzeWithGemini(opts: {
   return {
     titleFa: cleanTitle(String(parsed.titleFa || 'پرامپت هوش مصنوعی')),
     titleEn: cleanTitle(String(parsed.titleEn || 'AI Prompt')),
-    descFa: parsed.descFa || '',
-    descEn: parsed.descEn || '',
-    usageFa: parsed.usageFa || '',
-    usageEn: parsed.usageEn || '',
+    descFa: String(parsed.descFa || ''),
+    descEn: String(parsed.descEn || ''),
+    usageFa: String(parsed.usageFa || ''),
+    usageEn: String(parsed.usageEn || ''),
     categorySlug: catOk ? parsed.categorySlug : opts.categories[0]?.slug ?? 'image',
     tagsFa,
     tagsEn,
-    promptEn: parsed.promptEn || '',
+    promptEn: String(parsed.promptEn || ''),
   }
 }
