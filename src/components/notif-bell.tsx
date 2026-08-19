@@ -29,7 +29,7 @@ export default function NotifBell() {
     } catch {}
   }
 
-  useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t) }, [])
+  useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t) }, [])
 
   useEffect(() => {
     if (!open) return
