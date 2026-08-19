@@ -1,3 +1,8 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) Fix db-usage route: remove pg_tables query ----------
+cat > src/app/api/debug/db-usage/route.ts << 'EOF'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { isCronAuthorized } from '@/lib/cron-auth'
@@ -48,3 +53,7 @@ export async function GET(req: Request) {
     note: 'با ۲۸ pageView، مصرف network بسیار کم است. آن 3.34GB احتمالاً از import اولیه داده‌ها یا cron jobs است.',
   })
 }
+EOF
+echo "✅ DB usage route: simplified"
+
+echo "✅ update182 done!"
