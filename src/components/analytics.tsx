@@ -7,12 +7,26 @@ export default function Analytics() {
   const pathname = usePathname()
 
   useEffect(() => {
-    fetch('/api/track', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: pathname, referrer: document.referrer }),
-      keepalive: true,
-    }).catch(() => {})
+    // Skip admin and API routes
+    if (pathname.startsWith('/admin') || pathname.startsWith('/api')) return
+
+    const send = async () => {
+      try {
+        await fetch('/api/track', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            path: pathname, 
+            referrer: typeof document !== 'undefined' ? document.referrer : '' 
+          }),
+          keepalive: true,
+        })
+      } catch (err) {
+        // Silently fail
+      }
+    }
+
+    send()
   }, [pathname])
 
   return null
