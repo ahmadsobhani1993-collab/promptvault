@@ -5,7 +5,7 @@ import './globals.css'
 import Header from '@/components/layout/header'
 import Footer from '@/components/layout/footer'
 import JsonLd from '@/components/json-ld'
-import Analytics from '@/components/analytics'
+// import Analytics from '@/components/analytics' // DISABLED FOR DEBUG
 import RouteLoader from '@/components/route-loader'
 import PWAControls from '@/components/pwa-controls'
 import ClientProviders from '@/components/client-providers'

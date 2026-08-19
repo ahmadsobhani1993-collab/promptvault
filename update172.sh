@@ -1,3 +1,8 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) Ultra-simple analytics page ----------
+cat > src/app/admin/analytics/page.tsx << 'EOF'
 import Link from 'next/link'
 import { auth } from '@/auth'
 import { redirect } from 'next/navigation'
@@ -69,3 +74,27 @@ export default async function AnalyticsPage() {
     </section>
   )
 }
+EOF
+echo "✅ Ultra-simple analytics page"
+
+# ---------- 2) Remove Analytics component from layout temporarily ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'src/app/layout.tsx'
+let s = fs.readFileSync(p, 'utf8')
+
+// Comment out Analytics
+s = s.replace(
+  "import Analytics from '@/components/analytics'",
+  "// import Analytics from '@/components/analytics' // DISABLED FOR DEBUG"
+)
+s = s.replace(
+  '<Analytics />',
+  '{/* <Analytics /> */} // DISABLED'
+)
+
+fs.writeFileSync(p, s)
+console.log('✅ Analytics component disabled in layout')
+NODEEOF
+
+echo "✅ update172 done!"
