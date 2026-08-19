@@ -1,3 +1,28 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) Re-enable Analytics component ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'src/app/layout.tsx'
+let s = fs.readFileSync(p, 'utf8')
+
+// Re-enable Analytics
+s = s.replace(
+  "// import Analytics from '@/components/analytics' // DISABLED FOR DEBUG",
+  "import Analytics from '@/components/analytics'"
+)
+s = s.replace(
+  '{/* <Analytics /> */} // DISABLED',
+  '<Analytics />'
+)
+
+fs.writeFileSync(p, s)
+console.log('✅ Analytics re-enabled in layout')
+NODEEOF
+
+# ---------- 2) Full analytics panel with raw SQL ----------
+cat > src/app/admin/analytics/page.tsx << 'EOF'
 import Link from 'next/link'
 import { auth } from '@/auth'
 import { redirect } from 'next/navigation'
@@ -171,3 +196,7 @@ export default async function AnalyticsPage() {
     </section>
   )
 }
+EOF
+echo "✅ Full analytics panel with chart + top paths + referrers"
+
+echo "✅ update175 done!"
