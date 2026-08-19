@@ -1,3 +1,8 @@
+#!/bin/bash
+set -e
+
+# ---------- Simplified account page with error handling ----------
+cat > src/app/account/page.tsx << 'EOF'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { auth } from '@/auth'
@@ -235,3 +240,6 @@ export default async function AccountPage() {
     </section>
   )
 }
+EOF
+
+echo "✅ Account page: simplified with error handling"
