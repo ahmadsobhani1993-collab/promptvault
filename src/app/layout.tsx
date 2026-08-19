@@ -26,6 +26,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <Header locale={locale} />
         <main>{children}</main>
         <Footer locale={locale} />
+        <Analytics />
+        <PWAControls />
         <ClientProviders />
       </body>
     </html>

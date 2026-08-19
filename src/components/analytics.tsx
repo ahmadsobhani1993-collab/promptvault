@@ -7,7 +7,6 @@ export default function Analytics() {
   const pathname = usePathname()
 
   useEffect(() => {
-    // Skip admin, API, and static routes
     if (pathname.startsWith('/admin') || 
         pathname.startsWith('/api') || 
         pathname.startsWith('/_next') ||
@@ -15,7 +14,8 @@ export default function Analytics() {
       return
     }
 
-    // Send pageview
+    console.log('[Analytics] Tracking pageview:', pathname)
+
     fetch('/api/track', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -24,7 +24,10 @@ export default function Analytics() {
         referrer: typeof document !== 'undefined' ? document.referrer : '' 
       }),
       keepalive: true,
-    }).catch(() => {})
+    })
+    .then(res => res.json())
+    .then(data => console.log('[Analytics] Tracked successfully:', data))
+    .catch(err => console.error('[Analytics] Track failed:', err))
   }, [pathname])
 
   return null
