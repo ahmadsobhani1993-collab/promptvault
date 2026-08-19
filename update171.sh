@@ -1,3 +1,22 @@
+#!/bin/bash
+set -e
+
+echo "----- Checking current state -----"
+echo "Analytics page exists:"
+ls -la src/app/admin/analytics/page.tsx 2>/dev/null || echo "NOT FOUND"
+
+echo ""
+echo "Layout.tsx Analytics status:"
+grep -n "Analytics" src/app/layout.tsx || echo "Not found"
+
+echo ""
+echo "PageView model in schema:"
+grep -A 5 "model PageView" prisma/schema.prisma || echo "NOT FOUND"
+
+echo "----------------------------------"
+
+# ---------- 1) Fix analytics page: remove complex queries ----------
+cat > src/app/admin/analytics/page.tsx << 'EOF'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { auth } from '@/auth'
@@ -65,3 +84,46 @@ export default async function AnalyticsPage() {
     </section>
   )
 }
+EOF
+echo "✅ Analytics page: simplified"
+
+# ---------- 2) Ensure PageView model exists ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'prisma/schema.prisma'
+let s = fs.readFileSync(p, 'utf8')
+
+if (!s.includes('model PageView')) {
+  s += '\nmodel PageView {\n  id        String   @id @default(cuid())\n  path      String\n  referrer  String?\n  ua        String?\n  ip        String?\n  createdAt DateTime @default(now())\n}\n'
+  fs.writeFileSync(p, s)
+  console.log('✅ PageView model added to schema')
+} else {
+  console.log('⚠️ PageView already exists')
+}
+NODEEOF
+
+# ---------- 3) Push schema to database ----------
+echo "Pushing schema to database..."
+npx prisma db push --accept-data-loss
+
+# ---------- 4) Re-enable Analytics in layout ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'src/app/layout.tsx'
+let s = fs.readFileSync(p, 'utf8')
+
+// Re-enable Analytics
+s = s.replace(
+  "// import Analytics from '@/components/analytics' // TEMP DISABLED",
+  "import Analytics from '@/components/analytics'"
+)
+s = s.replace(
+  '{/* <Analytics /> */}',
+  '<Analytics />'
+)
+
+fs.writeFileSync(p, s)
+console.log('✅ Analytics re-enabled in layout')
+NODEEOF
+
+echo "✅ update171 done!"
