@@ -1,3 +1,7 @@
+#!/bin/bash
+set -e
+
+cat > src/app/api/debug/full-check/route.ts << 'EOF'
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
@@ -68,3 +72,6 @@ export async function GET() {
     }, { status: 500 })
   }
 }
+EOF
+
+echo "✅ Full-check API rewritten with correct syntax"
