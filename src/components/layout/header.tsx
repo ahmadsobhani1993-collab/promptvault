@@ -71,6 +71,7 @@ export default async function Header() {
           <LocaleSwitcher />
           {session?.user ? (
             <>
+              <Link href="/account" className="btn-secondary hidden md:inline-flex">👤 {L(locale, 'حساب', 'Account')}</Link>
               {isAdmin && (
                 <Link href="/admin" className="btn-secondary hidden md:inline-flex">🛠 {L(locale, 'مدیریت', 'Admin')}</Link>
               )}

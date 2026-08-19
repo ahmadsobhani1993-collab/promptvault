@@ -31,8 +31,6 @@ export default function PWAControls() {
         setDeferredPrompt(null)
         setIsInstalled(true)
       }
-    } else {
-      alert('📲 برای نصب:\n\n• Chrome موبایل: منوی سه‌نقطه → "Add to Home Screen"\n• Safari iOS: Share → "Add to Home Screen"')
     }
   }
 
@@ -41,13 +39,12 @@ export default function PWAControls() {
   return (
     <button
       onClick={handleInstall}
-      className="fixed bottom-4 right-4 z-40 flex items-center gap-1 rounded-full bg-gold/90 px-3 py-1.5 text-[10px] font-bold text-black shadow-lg transition-all hover:scale-105 active:scale-95"
+      className="fixed bottom-4 right-4 z-40 flex h-10 w-10 items-center justify-center rounded-full bg-gold/90 text-black shadow-lg transition-all hover:scale-110 active:scale-95 md:bottom-6 md:right-6"
       title="نصب اپلیکیشن"
     >
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-3 w-3">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-5 w-5">
         <path d="M12 19V5M5 12l7-7 7 7" />
       </svg>
-      <span className="hidden sm:inline">نصب اپ</span>
     </button>
   )
 }
