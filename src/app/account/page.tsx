@@ -38,7 +38,6 @@ export default async function AccountPage() {
     const likes = await prisma.like.findMany({
       where: { userId: session.user.id },
       include: { prompt: { include: { category: true } } },
-      orderBy: { createdAt: 'desc' },
       take: 20,
     })
     likedPrompts = likes.map(l => l.prompt).filter(Boolean)

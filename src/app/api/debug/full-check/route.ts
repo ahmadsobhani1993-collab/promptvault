@@ -23,9 +23,8 @@ export async function GET() {
       prisma.like.findMany({ 
         where: { userId }, 
         include: { prompt: { select: { titleFa: true, slug: true } } },
-        orderBy: { createdAt: 'desc' },
         take: 10
-      }),
+      })),
       prisma.save.findMany({ 
         where: { userId }, 
         include: { prompt: { select: { titleFa: true, slug: true } } },
