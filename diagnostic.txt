@@ -1,3 +1,6 @@
+===== بررسی ساختار فعلی =====
+
+1. محتوای mobile-menu.tsx:
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
@@ -6,11 +9,9 @@ import Link from 'next/link'
 export default function MobileMenu({
   links,
   admin,
-  isLoggedIn,
 }: {
   links: { href: string; label: string }[]
   admin: boolean
-  isLoggedIn: boolean
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -38,22 +39,51 @@ export default function MobileMenu({
             {admin && (
               <Link href="/admin" onClick={() => setOpen(false)} className="text-sm font-bold text-gold-bright">🛠 مدیریت</Link>
             )}
-            
-            {/* Logout / Submit buttons */}
-            <div className="mt-2 flex gap-2 border-t border-line pt-4">
-              {isLoggedIn ? (
-                <Link href="/api/auth/signout" onClick={() => setOpen(false)} className="btn-secondary flex-1 text-center text-xs">
-                  خروج
-                </Link>
-              ) : (
-                <Link href="/submit" onClick={() => setOpen(false)} className="btn-primary flex-1 text-center text-xs">
-                  ارسال پرامپت
-                </Link>
-              )}
-            </div>
           </div>
         </div>
       )}
     </div>
   )
 }
+
+2. مدل‌های Like و Bookmark در schema:
+model Like {
+  id       String @id @default(cuid())
+  userId   String
+  promptId String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prompt   Prompt @relation(fields: [promptId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, promptId])
+}
+
+model Save {
+---
+model Bookmark {
+  id        String   @id @default(cuid())
+  userId    String
+  promptId  String
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prompt Prompt @relation(fields: [promptId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, promptId])
+}
+
+3. کوئری‌های account page:
+    const likes = await prisma.like.findMany({
+      where: { userId: session.user.id },
+      include: { prompt: { include: { category: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    })
+---
+    const bookmarks = await prisma.bookmark.findMany({
+      where: { userId: session.user.id },
+      include: { prompt: { include: { category: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    })
+
+===== پایان بررسی =====

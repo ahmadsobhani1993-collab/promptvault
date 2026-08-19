@@ -31,7 +31,7 @@ export default async function Header() {
     <header className="sticky top-0 z-40 border-b border-line/60 bg-[#070503]/85 backdrop-blur">
       <div className="container-app flex h-16 items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <MobileMenu links={mobileLinks} admin={!!isAdmin} />
+          <MobileMenu links={mobileLinks} admin={!!isAdmin} isLoggedIn={!!session?.user} />
           <Link href="/" className="font-display text-lg font-extrabold tracking-tight">
             Prompts<span className="text-gold-bright">FA</span>
           </Link>

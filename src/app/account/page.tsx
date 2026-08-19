@@ -21,6 +21,7 @@ export default async function AccountPage() {
   // Get user's submitted prompts
   let myPrompts: any[] = []
   try {
+    console.log('DEBUG: Account page loaded for user', session.user.id)
     myPrompts = await prisma.prompt.findMany({
       where: { userId: session.user.id },
       include: { category: true },
@@ -41,6 +42,7 @@ export default async function AccountPage() {
       take: 20,
     })
     likedPrompts = likes.map(l => l.prompt).filter(Boolean)
+    console.log('DEBUG: Found', likes.length, 'likes for user', session.user.id)
   } catch (err) {
     console.log('Likes not available')
   }
@@ -55,6 +57,7 @@ export default async function AccountPage() {
       take: 20,
     })
     savedPrompts = bookmarks.map(b => b.prompt).filter(Boolean)
+    console.log('DEBUG: Found', bookmarks.length, 'bookmarks for user', session.user.id)
   } catch (err) {
     console.log('Bookmarks not available')
   }
@@ -62,6 +65,7 @@ export default async function AccountPage() {
   // Try to get comments
   let myComments: any[] = []
   try {
+    console.log('DEBUG: Fetching comments for user', session.user.id)
     myComments = await prisma.comment.findMany({
       where: { userId: session.user.id },
       include: { prompt: true },
