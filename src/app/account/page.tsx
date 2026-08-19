@@ -22,25 +22,25 @@ export default async function AccountPage() {
     prisma.like.findMany({
       where: { userId },
       include: { prompt: { include: { category: true } } },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { id: "desc" },
       take: 20,
     }),
     prisma.bookmark.findMany({
       where: { userId },
       include: { prompt: { include: { category: true } } },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { id: "desc" },
       take: 20,
     }),
     prisma.prompt.findMany({
       where: { userId },
       include: { category: true },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { id: "desc" },
       take: 20,
     }),
     prisma.comment.findMany({
       where: { userId },
       include: { prompt: true },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { id: "desc" },
       take: 20,
     }),
   ])
