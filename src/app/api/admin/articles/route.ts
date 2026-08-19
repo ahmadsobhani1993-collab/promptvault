@@ -42,6 +42,30 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, slug: a.slug })
   }
 
+    if (action === 'update') {
+    const titleFa = String(j.titleFa ?? '').trim()
+    if (!titleFa) return NextResponse.json({ error: 'title required' }, { status: 400 })
+    
+    const contentRaw = String(j.contentFa ?? '')
+    const img = String(j.img ?? '').trim() || article.img
+    
+    await prisma.article.update({
+      where: { id },
+      data: {
+        titleFa,
+        titleEn: titleFa,
+        descFa: String(j.descFa ?? titleFa).trim(),
+        descEn: String(j.descFa ?? titleFa).trim(),
+        img,
+        tagFa: String(j.tagFa ?? 'هوش مصنوعی').trim(),
+        tagEn: String(j.tagFa ?? 'هوش مصنوعی').trim(),
+        contentFa: contentRaw.split(/\n|<br\s*\/?>/i).map((x: string) => x.trim()).filter(Boolean),
+        contentEn: contentRaw.split(/\n|<br\s*\/?>/i).map((x: string) => x.trim()).filter(Boolean),
+      },
+    })
+    return NextResponse.json({ ok: true })
+  }
+
   if (action === 'delete') {
     await prisma.article.delete({ where: { id } })
     return NextResponse.json({ ok: true })
