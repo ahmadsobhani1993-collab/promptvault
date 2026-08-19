@@ -33,7 +33,9 @@ export async function GET(req: Request) {
       } else if (res.ok) {
         result.gemini.status = 'ok'
       } else {
-        result.gemini.status = `error_${res.status}`
+        const errData = await res.json().catch(() => ({}))
+        result.gemini.status = 'error_' + res.status
+        result.gemini.message = errData.error?.message || 'Unknown error'
       }
     } catch (err: any) {
       result.gemini.status = 'error'
