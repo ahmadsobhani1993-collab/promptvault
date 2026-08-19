@@ -1,3 +1,29 @@
+#!/bin/bash
+set -e
+
+echo "🛑 Step 1: Stopping any active import-loop immediately..."
+# Force stop import by making cursor equal to stop
+node << 'NODEEOF'
+const { PrismaClient } = require('@prisma/client')
+const prisma = new PrismaClient()
+;(async () => {
+  const stop = await prisma.setting.findUnique({ where: { key: 'import_stop' } })
+  const stopVal = stop ? parseInt(stop.value) : 3660
+  await prisma.setting.upsert({
+    where: { key: 'import_cursor' },
+    update: { value: String(stopVal) },
+    create: { key: 'import_cursor', value: String(stopVal) }
+  })
+  await prisma.scheduledPost.deleteMany({ where: { target: { contains: 'import' } } }).catch(() => {})
+  console.log('✅ Import loop forcefully stopped.')
+  await prisma.$disconnect()
+})()
+NODEEOF
+
+echo ""
+echo "🛠️ Step 2: Completely rewriting import-loop.ts (Guaranteed no base64)..."
+
+cat > src/app/api/import-loop/route.ts << 'EOF'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { analyzeWithGemini } from '@/lib/gemini'
@@ -158,3 +184,14 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ ok: true, cursor, stop, results, chained, debug })
 }
+EOF
+
+echo "✅ File completely rewritten. Base64 download is 100% removed."
+echo "✅ Gemini image upload is 100% removed."
+echo "✅ Database base64 storage is 100% removed."
+
+echo ""
+echo "=========================================="
+echo "NEXT STEP: Commit and Deploy this fix"
+echo "git add . && git commit -m 'force rewrite import-loop without base64' && git push"
+echo "=========================================="
