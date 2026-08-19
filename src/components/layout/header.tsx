@@ -23,6 +23,11 @@ export default async function Header() {
     { href: '/categories', label: L(locale, 'دسته‌بندی‌ها', 'Categories') },
     { href: '/blog', label: L(locale, 'وبلاگ', 'Blog') },
     { href: '/submit', label: L(locale, 'ارسال پرامپت', 'Submit') },
+  
+  if (session?.user) {
+    mobileLinks.push({ href: '/account', label: L(locale, 'حساب', 'Account') })
+  }
+
   ]
 
   return (
