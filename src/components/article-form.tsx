@@ -8,6 +8,7 @@ export default function ArticleForm({ initialData }: { initialData?: any }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
+  const [uploading, setUploading] = useState(false)
   const formRef = useRef<HTMLFormElement>(null)
 
   const isEdit = !!initialData?.id
@@ -24,6 +25,38 @@ export default function ArticleForm({ initialData }: { initialData?: any }) {
       }
     }
   }, [isEdit, initialData])
+
+  
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploading(true)
+    const formData = new FormData()
+    formData.append('image', file)
+
+    try {
+      const res = await fetch('/api/upload-to-telegram', {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await res.json()
+      if (data.ok) {
+        // Update the img input field with the Telegram URL
+        const imgInput = document.querySelector('input[name="img"]') as HTMLInputElement
+        if (imgInput) {
+          imgInput.value = data.fileUrl
+        }
+        setMsg('✅ عکس با موفقیت آپلود شد')
+      } else {
+        setMsg('خطا در آپلود: ' + (data.error || 'نامشخص'))
+      }
+    } catch (err) {
+      setMsg('خطا در ارتباط با سرور')
+    } finally {
+      setUploading(false)
+    }
+  }
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -84,13 +117,27 @@ export default function ArticleForm({ initialData }: { initialData?: any }) {
         <div>
           <label className="mb-1 block text-xs text-ink-muted">آدرس تصویر کاور (قابل ویرایش)</label>
           <input name="img" defaultValue={initialData?.img || ''} className="input text-sm" dir="ltr" placeholder="https://..." />
+        <div className="mt-2">
+          <label className="block text-xs text-ink-muted mb-1">یا آپلود مستقیم از کامپیوتر:</label>
+          <input 
+            type="file" 
+            accept="image/*" 
+            onChange={handleImageUpload}
+            disabled={uploading}
+            className="input text-xs py-1.5"
+          />
+          {uploading && <p className="mt-1 text-xs text-gold-bright">در حال آپلود به تلگرام...</p>}
+        </div>
         </div>
       </div>
       <div>
         <label className="mb-1 block text-xs text-ink-muted">متن مقاله (فرمت سئو حفظ می‌شود)</label>
         <RichTextEditor name="contentFa" initialValue={Array.isArray(initialData?.contentFa) ? initialData.contentFa.join('\n') : (initialData?.contentFa || '')} />
       </div>
-      {msg && <p className="text-xs text-red-400">{msg}</p>}
+      {msg && (
+      <p className="text-xs ' + (msg.includes('✅') ? 'text-green-400' : 'text-red-400') + '">' + '{msg}' + '</p>' +
+      (setTimeout(() => setMsg(''), 3000) && '')
+    )}
       <button disabled={busy} className="btn-primary w-full justify-center">
         {busy ? 'در حال ذخیره...' : (isEdit ? '💾 ذخیره تغییرات' : '📤 انتشار مقاله')}
       </button>
