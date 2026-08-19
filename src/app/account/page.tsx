@@ -50,16 +50,16 @@ export default async function AccountPage() {
   // Try to get bookmarks
   let savedPrompts: any[] = []
   try {
-    const bookmarks = await prisma.bookmark.findMany({
+    const saves = await prisma.save.findMany({
       where: { userId: session.user.id },
       include: { prompt: { include: { category: true } } },
       orderBy: { createdAt: 'desc' },
       take: 20,
     })
-    savedPrompts = bookmarks.map(b => b.prompt).filter(Boolean)
-    console.log('DEBUG: Found', bookmarks.length, 'bookmarks for user', session.user.id)
+    savedPrompts = saves.map(s => s.prompt).filter(Boolean)
+    console.log('✅ Fetched saves:', saves.length, 'for user', session.user.id)
   } catch (err) {
-    console.log('Bookmarks not available')
+    console.log('Saves not available')
   }
 
   // Try to get comments

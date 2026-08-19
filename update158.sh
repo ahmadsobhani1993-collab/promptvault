@@ -1,3 +1,43 @@
+#!/bin/bash
+set -e
+
+echo "===== مشکل پیدا شد! ====="
+echo "سیستم از مدل 'Save' استفاده می‌کند نه 'Bookmark'"
+echo ""
+
+# ---------- 1) Fix account page: use Save instead of Bookmark ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'src/app/account/page.tsx'
+let s = fs.readFileSync(p, 'utf8')
+
+// Replace bookmark with save
+s = s.replace(
+  /const bookmarks = await prisma\.bookmark\.findMany/g,
+  'const saves = await prisma.save.findMany'
+)
+
+s = s.replace(
+  /savedPrompts = bookmarks\.map\(b => b\.prompt\)\.filter\(Boolean\)/,
+  'savedPrompts = saves.map(s => s.prompt).filter(Boolean)'
+)
+
+s = s.replace(
+  /console\.log\('DEBUG: Found', bookmarks\.length, 'bookmarks for user', session\.user\.id\)/,
+  "console.log('✅ Fetched saves:', saves.length, 'for user', session.user.id)"
+)
+
+s = s.replace(
+  /Bookmarks not available/,
+  'Saves not available'
+)
+
+fs.writeFileSync(p, s)
+console.log('✅ Account page: changed Bookmark to Save')
+NODEEOF
+
+# ---------- 2) Fix full-check API: handle Save model ----------
+cat > src/app/api/debug/full-check/route.ts << 'EOF'
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
@@ -64,3 +104,13 @@ export async function GET() {
     }, { status: 500 })
   }
 }
+EOF
+echo "✅ Full-check API fixed"
+
+# ---------- 3) Remove unused Bookmark model (optional) ----------
+echo ""
+echo "نکته: مدل Bookmark در schema وجود دارد اما استفاده نمی‌شود."
+echo "می‌توانی آن را حذف کنی یا نگه داری."
+
+echo ""
+echo "✅ update158 done!"
