@@ -43,7 +43,7 @@ export default async function HomePage() {
   const [categories, prompts, articles] = await Promise.all([
     getCategories(),
     getPrompts({ take: 12 }),
-    getArticles(),
+    getArticles({ take: 6 }),
   ])
 
   const imgPrompts = prompts.filter((p) => (p as any).type === 'IMAGE')

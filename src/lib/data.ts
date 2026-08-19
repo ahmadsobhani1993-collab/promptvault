@@ -78,8 +78,8 @@ export async function getRelatedPrompts(categoryId: string, excludeSlug: string)
   })
 }
 
-export async function getArticles() {
-  return prisma.article.findMany({ orderBy: { createdAt: 'desc' } })
+export async function getArticles(opts?: { take?: number }) {
+  return prisma.article.findMany({ take: opts?.take ?? 50,  orderBy: { createdAt: 'desc' } })
 }
 
 export async function getArticleBySlug(slug: string) {

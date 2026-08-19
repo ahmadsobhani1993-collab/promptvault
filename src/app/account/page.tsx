@@ -22,7 +22,7 @@ export default async function AccountPage() {
   let myPrompts: any[] = []
   try {
     myPrompts = await prisma.prompt.findMany({
-      where: { user: { email: userEmail } },
+      where: { userId: session.user.id },
       include: { category: true },
       orderBy: { createdAt: 'desc' },
       take: 20,
@@ -35,7 +35,7 @@ export default async function AccountPage() {
   let likedPrompts: any[] = []
   try {
     const likes = await prisma.like.findMany({
-      where: { user: { email: userEmail } },
+      where: { userId: session.user.id },
       include: { prompt: { include: { category: true } } },
       orderBy: { createdAt: 'desc' },
       take: 20,
@@ -49,7 +49,7 @@ export default async function AccountPage() {
   let savedPrompts: any[] = []
   try {
     const bookmarks = await prisma.bookmark.findMany({
-      where: { user: { email: userEmail } },
+      where: { userId: session.user.id },
       include: { prompt: { include: { category: true } } },
       orderBy: { createdAt: 'desc' },
       take: 20,
@@ -63,7 +63,7 @@ export default async function AccountPage() {
   let myComments: any[] = []
   try {
     myComments = await prisma.comment.findMany({
-      where: { user: { email: userEmail } },
+      where: { userId: session.user.id },
       include: { prompt: true },
       orderBy: { createdAt: 'desc' },
       take: 20,
