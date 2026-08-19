@@ -1,3 +1,23 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) Create analytics buffer table ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'prisma/schema.prisma'
+let s = fs.readFileSync(p, 'utf8')
+
+if (!s.includes('model AnalyticsBuffer')) {
+  s += '\nmodel AnalyticsBuffer {\n  id        String   @id @default(cuid())\n  path      String\n  referrer  String?\n  ua        String?\n  ip        String?\n  createdAt DateTime @default(now())\n}\n'
+  fs.writeFileSync(p, s)
+  console.log('✅ AnalyticsBuffer table added')
+} else {
+  console.log('️ already exists')
+}
+NODEEOF
+
+# ---------- 2) Buffer-based tracking ----------
+cat > src/components/analytics.tsx << 'EOF'
 'use client'
 
 import { usePathname } from 'next/navigation'
@@ -71,3 +91,38 @@ export default function Analytics() {
 
   return null
 }
+EOF
+echo "✅ Analytics: batch tracking"
+
+# ---------- 3) Batch tracking API ----------
+mkdir -p src/app/api/track/batch
+cat > src/app/api/track/batch/route.ts << 'EOF'
+import { NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
+
+export async function POST(req: Request) {
+  try {
+    const batch = await req.json()
+    if (!Array.isArray(batch) || batch.length === 0) {
+      return NextResponse.json({ ok: true, inserted: 0 })
+    }
+
+    // Insert all at once
+    const data = batch.map((item: any) => ({
+      path: String(item.path ?? '/').slice(0, 300),
+      referrer: String(item.referrer ?? '').slice(0, 500) || null,
+      ua: '',
+      ip: '',
+    }))
+
+    await prisma.pageView.createMany({ data })
+    return NextResponse.json({ ok: true, inserted: data.length })
+  } catch (err) {
+    console.error('Batch track error:', err)
+    return NextResponse.json({ error: 'failed' }, { status: 500 })
+  }
+}
+EOF
+echo "✅ Batch tracking API"
+
+echo "✅ update180 done!"
