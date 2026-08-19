@@ -44,20 +44,20 @@ const cleanTitle = (t: string) => t.replace(/^([\u0600-\u06FF\w]+)\s+\1/, '$1')
 
 // strongest -> weakest (no Gemma)
 export const MODEL_CHAIN = [
-  'gemini-3.1-pro',
-  'gemini-2.5-pro',
-  'gemini-3.7-flash',
-  'gemini-3.6-flash',
-  'gemini-3.5-flash',
-  'gemini-3-flash',
-  'gemini-2.5-flash',
-  'gemini-3.1-flash-lite',
-  'gemini-2.5-flash-lite',
-  'gemini-3.5-flash-lite',
-  'gemini-2.0-flash',
-  'gemini-2.0-flash-lite',
-  'gemini-1.5-flash',
-  'gemini-1.5-flash-8b',
+  // ===== قوی‌ترین‌ها (اولویت اول) =====
+  'gemini-2.5-pro',             // قوی‌ترین مدل رایگان - استدلال پیشرفته
+  'gemini-2.5-flash',           // سریع و بسیار قوی - تعادل عالی
+  
+  // ===== مدل‌های قدرتمند (اولویت دوم) =====
+  'gemini-2.0-flash',           // مدل قبلی قوی - هنوز عالی
+  'gemini-2.0-flash-lite',      // سبک و سریع
+  
+  // ===== مدل‌های حرفه‌ای (اولویت سوم) =====
+  'gemini-1.5-pro',             // حرفه‌ای با context 1M tokens
+  'gemini-1.5-flash',           // سریع با context 1M tokens
+  
+  // ===== Fallback نهایی =====
+  'gemini-1.5-flash-8b',        // سبک‌ترین - آخرین گزینه
 ]
 
 export async function generateText(opts: {
