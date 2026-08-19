@@ -1,3 +1,57 @@
+#!/bin/bash
+set -e
+
+echo "===== Checking API routes ====="
+echo "1. Admin articles route:"
+if [ -f "src/app/api/admin/articles/route.ts" ]; then
+  echo "   ✅ Exists"
+  echo "   Checking for 'article' variable issue..."
+  grep -n "article is not defined\|const article" src/app/api/admin/articles/route.ts || echo "   No obvious issue found"
+else
+  echo "   ❌ NOT FOUND"
+fi
+
+echo ""
+echo "2. Upload to telegram route:"
+if [ -f "src/app/api/upload-to-telegram/route.ts" ]; then
+  echo "   ✅ Exists"
+else
+  echo "   ❌ NOT FOUND"
+fi
+echo "================================="
+
+# ---------- 1) Fix admin/articles route: article not defined ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'src/app/api/admin/articles/route.ts'
+let s = fs.readFileSync(p, 'utf8')
+
+// Fix: article variable not defined in update action
+if (s.includes("action === 'update'") && !s.includes("const article = await prisma.article.findUnique")) {
+  // Add article fetch before update
+  s = s.replace(
+    "if (action === 'update') {",
+    `if (action === 'update') {
+    const article = await prisma.article.findUnique({ where: { id } })
+    if (!article) return NextResponse.json({ error: 'not found' }, { status: 404 })`
+  )
+  console.log('✅ Fixed: article variable in update action')
+}
+
+// Ensure j and id are properly defined
+if (!s.includes('const j = await req.json()')) {
+  s = s.replace(
+    'const { id, action } = await req.json()',
+    'const j = await req.json()\n  const { id, action } = j'
+  )
+  console.log('✅ Fixed: j variable definition')
+}
+
+fs.writeFileSync(p, s)
+NODEEOF
+
+# ---------- 2) Fix upload-to-telegram route ----------
+cat > src/app/api/upload-to-telegram/route.ts << 'EOF'
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 
@@ -102,3 +156,21 @@ export async function POST(req: Request) {
     }, { status: 500 })
   }
 }
+EOF
+echo "✅ Upload route: rewritten with better error handling"
+
+# ---------- 3) Add missing env var info ----------
+echo ""
+echo "===== IMPORTANT: Environment Variables ====="
+echo "Make sure these are set in Vercel:"
+echo "  TELEGRAM_READ_TOKEN=your_bot_token"
+echo "  TELEGRAM_BOT_TOKEN=your_bot_token"
+echo "  TELEGRAM_PRIVATE_CHAT=your_private_chat_id (optional)"
+echo "==========================================="
+echo ""
+echo "To get PRIVATE_CHAT_ID:"
+echo "  1. Send /start to your bot in Telegram"
+echo "  2. Visit: https://promptsfa.ir/api/debug/chat-id?key=pv-cron-8x2m1q"
+echo ""
+
+echo "✅ update192 done!"

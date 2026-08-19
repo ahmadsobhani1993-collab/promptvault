@@ -43,6 +43,8 @@ export async function POST(req: Request) {
   }
 
     if (action === 'update') {
+    const article = await prisma.article.findUnique({ where: { id } })
+    if (!article) return NextResponse.json({ error: 'not found' }, { status: 404 })
     const titleFa = String(j.titleFa ?? '').trim()
     if (!titleFa) return NextResponse.json({ error: 'title required' }, { status: 400 })
     
