@@ -9,7 +9,12 @@ export async function POST(req: Request) {
     const ua = (req.headers.get('user-agent') ?? '').slice(0, 300) || null
     const fwd = req.headers.get('x-forwarded-for') ?? ''
     const ip = fwd.split(',')[0]?.trim() || null
-    await prisma.pageView.create({ data: { path, referrer, ua, ip } })
-  } catch {}
+    
+    await prisma.pageView.create({ 
+      data: { path, referrer, ua, ip } 
+    })
+  } catch (err) {
+    console.error('Track error:', err)
+  }
   return NextResponse.json({ ok: true })
 }
