@@ -8,11 +8,8 @@ export async function GET(req: Request) {
 
   // Check Gemini API quota (if using Gemini)
   const geminiKey = process.env.GEMINI_API_KEY
-  const openaiKey = process.env.OPENAI_API_KEY
-  
   const result: any = {
     gemini: { configured: !!geminiKey, keyLength: geminiKey?.length || 0 },
-    openai: { configured: !!openaiKey, keyLength: openaiKey?.length || 0 },
     timestamp: new Date().toISOString(),
   }
 
