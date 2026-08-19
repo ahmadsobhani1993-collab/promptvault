@@ -21,15 +21,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
 
   return (
-    <div className="container-app flex flex-col-reverse gap-8 py-10 md:flex-row">
-      <aside className="w-full shrink-0 md:w-52">
+    <div className="container-app flex flex-col gap-6 py-10">
+      <aside className="w-full shrink-0">
         <p className="gold-badge mb-4">Admin</p>
-        <nav className="flex flex-row flex-wrap gap-2 md:flex-col">
+        <nav className="flex flex-row flex-wrap gap-2">
           {items.map((i) => (
             <Link
               key={i.href}
               href={i.href}
-              className="rounded-xl border border-line bg-elevated px-4 py-2.5 text-sm text-ink-muted transition-colors hover:border-gold/50 hover:text-gold-bright"
+              className="rounded-xl border border-line bg-elevated px-3 py-2 text-xs text-ink-muted transition-colors hover:border-gold/50 hover:text-gold-bright"
             >
               {locale === 'fa' ? i.fa : i.en}
             </Link>

@@ -141,5 +141,6 @@ export async function analyzeWithGemini(opts: {
     tagsFa,
     tagsEn,
     promptEn: String(parsed.promptEn || ''),
+    promptFa: String(parsed.promptFa || parsed.promptEn || ''),
   }
 }

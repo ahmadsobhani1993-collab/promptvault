@@ -18,32 +18,15 @@ export default async function AccountPage() {
 
   const userId = session.user.id!
 
-  const [likedPrompts, savedPrompts, myPrompts, myComments] = await Promise.all([
-    prisma.like.findMany({
-      where: { userId },
-      include: { prompt: { include: { category: true } } },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-    }),
-    prisma.bookmark.findMany({
-      where: { userId },
-      include: { prompt: { include: { category: true } } },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-    }),
-    prisma.prompt.findMany({
-      where: { userId },
-      include: { category: true },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-    }),
-    prisma.comment.findMany({
-      where: { userId },
-      include: { prompt: true },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-    }),
-  ])
+  const likedPrompts = []
+  const savedPrompts = []
+  const myPrompts = await prisma.prompt.findMany({
+    where: { userId },
+    include: { category: true },
+    orderBy: { createdAt: 'desc' },
+    take: 20,
+  })
+  const myComments = []
 
   const chip = (active: boolean) =>
     'rounded-full border px-4 py-1.5 text-xs transition-colors ' +
