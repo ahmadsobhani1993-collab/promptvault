@@ -1,3 +1,8 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) Clean rewrite of article-form.tsx ----------
+cat > src/components/article-form.tsx << 'EOF'
 'use client'
 
 import { useRouter } from 'next/navigation'
@@ -142,3 +147,7 @@ export default function ArticleForm({ initialData }: { initialData?: any }) {
     </form>
   )
 }
+EOF
+echo "✅ Article form: clean rewrite with upload button"
+
+echo "✅ update191 done!"
