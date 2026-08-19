@@ -33,32 +33,10 @@ export default async function AccountPage() {
     console.error('Error fetching prompts:', err)
   }
 
-  // Try to get likes (might not exist)
-  let likedPrompts: any[] = []
-  try {
-    const likes = await prisma.like.findMany({
-      where: { user: { email: userEmail } },
-      include: { prompt: { include: { category: true } } },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-    })
-    likedPrompts = likes.map(l => l.prompt).filter(Boolean)
-  } catch (err) {
-    console.log('Likes not available')
+  const likedPrompts = []
   }
 
-  // Try to get bookmarks (might not exist)
-  let savedPrompts: any[] = []
-  try {
-    const bookmarks = await prisma.bookmark.findMany({
-      where: { user: { email: userEmail } },
-      include: { prompt: { include: { category: true } } },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-    })
-    savedPrompts = bookmarks.map(b => b.prompt).filter(Boolean)
-  } catch (err) {
-    console.log('Bookmarks not available')
+  const savedPrompts = []
   }
 
   // Try to get comments (might not exist)

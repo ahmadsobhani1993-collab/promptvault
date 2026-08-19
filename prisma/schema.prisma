@@ -27,21 +27,22 @@ enum PromptStatus {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  role          Role      @default(USER)
-  createdAt     DateTime  @default(now())
-  accounts      Account[]
-  sessions      Session[]
-  comments      Comment[]
-  likes         Like[]
-  saves         Save[]
-  prompts       Prompt[]
+  id                String             @id @default(cuid())
+  name              String?
+  email             String?            @unique
+  emailVerified     DateTime?
+  image             String?
+  role              Role               @default(USER)
+  createdAt         DateTime           @default(now())
+  accounts          Account[]
+  sessions          Session[]
+  comments          Comment[]
+  likes             Like[]
+  saves             Save[]
+  prompts           Prompt[]
   pushSubscriptions PushSubscription[]
-  notifications   Notification[]
+  notifications     Notification[]
+  bookmarks         Bookmark[]
 }
 
 model Account {
@@ -150,11 +151,12 @@ model Prompt {
   userSaves  Save[]
   imgData    String?
   imgType    String?
-  image    PromptImage?
+  image      PromptImage?
+  bookmarks  Bookmark[]
 }
 
 model Article {
-  status    String   @default("PUBLISHED")
+  status    String    @default("PUBLISHED")
   id        String    @id @default(cuid())
   slug      String    @unique
   titleFa   String
@@ -173,7 +175,6 @@ model Article {
   createdAt DateTime  @default(now())
   comments  Comment[]
 }
-
 
 model Like {
   id       String @id @default(cuid())
@@ -232,15 +233,15 @@ model Comment {
 }
 
 model PromptImage {
-  promptId String @id
+  promptId String  @id
   data     String
   type     String?
-  prompt   Prompt @relation(fields: [promptId], references: [id], onDelete: Cascade)
+  prompt   Prompt  @relation(fields: [promptId], references: [id], onDelete: Cascade)
 }
 
 model UploadImage {
-  id     String @id @default(cuid())
-  fileId String
+  id        String   @id @default(cuid())
+  fileId    String
   createdAt DateTime @default(now())
 }
 
@@ -260,4 +261,16 @@ model PageView {
   ua        String?
   ip        String?
   createdAt DateTime @default(now())
+}
+
+model Bookmark {
+  id        String   @id @default(cuid())
+  userId    String
+  promptId  String
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prompt Prompt @relation(fields: [promptId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, promptId])
 }
