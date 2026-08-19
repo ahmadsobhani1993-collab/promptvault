@@ -1,3 +1,7 @@
+#!/bin/bash
+set -e
+
+cat > src/components/layout/header.tsx << 'EOF'
 import Link from 'next/link'
 import { auth } from '@/auth'
 import { cookies } from 'next/headers'
@@ -95,3 +99,6 @@ function CategoryIcon({ name }: { name: string }) {
   }
   return icons[name] || icons.image
 }
+EOF
+
+echo "✅ Header restored with all features"
