@@ -1,3 +1,8 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) Enhanced analytics with unique visitors + "View More" ----------
+cat > src/app/admin/analytics/page.tsx << 'EOF'
 import Link from 'next/link'
 import { auth } from '@/auth'
 import { redirect } from 'next/navigation'
@@ -221,3 +226,7 @@ export default async function AnalyticsPage() {
     </section>
   )
 }
+EOF
+echo "✅ Analytics: unique visitors + view more for all sections"
+
+echo "✅ update178 done!"
