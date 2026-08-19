@@ -36,6 +36,7 @@ export default async function AdminArticles() {
                 <span className={'rounded-full px-2 py-0.5 text-[9px] ' + (a.status === 'PUBLISHED' ? 'bg-green-500/15 text-green-400' : 'bg-yellow-500/15 text-yellow-400')}>
                   {a.status === 'PUBLISHED' ? 'منتشر' : 'در انتظار'}
                 </span>
+                <Link href={'/admin/articles/' + a.id + '/edit'} className="rounded-full bg-blue-500/15 px-3 py-1 text-[10px] text-blue-400 transition-colors hover:bg-blue-500/25">✏️ ویرایش</Link>
                 <ArticleActions id={a.id} status={a.status} />
               </div>
             </div>
