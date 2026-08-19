@@ -1,3 +1,8 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) Fix account page: proper queries for likes, comments, bookmarks ----------
+cat > src/app/account/page.tsx << 'EOF'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { auth } from '@/auth'
@@ -209,3 +214,221 @@ export default async function AccountPage() {
     </section>
   )
 }
+EOF
+echo "✅ Account page: fixed queries"
+
+# ---------- 2) Edit profile page (change name) ----------
+mkdir -p src/app/account/edit
+
+cat > src/app/account/edit/page.tsx << 'EOF'
+import { redirect } from 'next/navigation'
+import { auth } from '@/auth'
+import { prisma } from '@/lib/db'
+import { L } from '@/lib/data'
+import { cookies } from 'next/headers'
+import { type Locale } from '@/lib/i18n'
+
+export const dynamic = 'force-dynamic'
+export const metadata = { title: 'ویرایش پروفایل | PromptsFA' }
+
+export default async function EditProfilePage() {
+  const session = await auth()
+  if (!session?.user) redirect('/login')
+
+  const cookieStore = await cookies()
+  const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
+
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { name: true, email: true },
+  })
+
+  return (
+    <section className="container-app py-10">
+      <div className="mx-auto max-w-md">
+        <h1 className="font-display text-2xl font-extrabold text-center">
+          {L(locale, 'ویرایش پروفایل', 'Edit Profile')}
+        </h1>
+        
+        <form
+          action={async (formData) => {
+            'use server'
+            const name = formData.get('name') as string
+            if (name && name.trim()) {
+              await prisma.user.update({
+                where: { id: session.user.id },
+                data: { name: name.trim() },
+              })
+            }
+            redirect('/account')
+          }}
+          className="card mt-6 space-y-4 p-6"
+        >
+          <div>
+            <label className="mb-1 block text-xs text-ink-muted">
+              {L(locale, 'نام', 'Name')}
+            </label>
+            <input
+              name="name"
+              type="text"
+              defaultValue={user?.name || ''}
+              placeholder={L(locale, 'نام شما', 'Your name')}
+              className="input text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs text-ink-muted">
+              {L(locale, 'ایمیل', 'Email')}
+            </label>
+            <input
+              type="email"
+              value={user?.email || ''}
+              disabled
+              className="input text-sm opacity-50"
+            />
+            <p className="mt-1 text-[10px] text-ink-faint">
+              {L(locale, 'ایمیل قابل تغییر نیست', 'Email cannot be changed')}
+            </p>
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button type="submit" className="btn-primary flex-1">
+              {L(locale, 'ذخیره تغییرات', 'Save Changes')}
+            </button>
+            <a href="/account" className="btn-secondary flex-1 text-center">
+              {L(locale, 'انصراف', 'Cancel')}
+            </a>
+          </div>
+        </form>
+      </div>
+    </section>
+  )
+}
+EOF
+echo "✅ Edit profile page created"
+
+# ---------- 3) PWA button: higher z-index + ensure visible ----------
+cat > src/components/pwa-controls.tsx << 'EOF'
+'use client'
+
+import { useEffect, useState } from 'react'
+
+export default function PWAControls() {
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
+  const [isInstalled, setIsInstalled] = useState(false)
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (window.matchMedia('(display-mode: standalone)').matches) {
+        setIsInstalled(true)
+        return
+      }
+
+      const handler = (e: any) => {
+        e.preventDefault()
+        setDeferredPrompt(e)
+      }
+
+      window.addEventListener('beforeinstallprompt', handler)
+      return () => window.removeEventListener('beforeinstallprompt', handler)
+    }
+  }, [])
+
+  const handleInstall = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt()
+      const { outcome } = await deferredPrompt.userChoice
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null)
+        setIsInstalled(true)
+      }
+    }
+  }
+
+  if (isInstalled || !deferredPrompt) return null
+
+  return (
+    <button
+      onClick={handleInstall}
+      className="fixed bottom-4 right-4 z-[9999] flex h-12 w-12 items-center justify-center rounded-full bg-gold/90 text-black shadow-2xl transition-all hover:scale-110 active:scale-95 md:bottom-6 md:right-6"
+      title="نصب اپلیکیشن"
+      style={{ pointerEvents: 'auto' }}
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-6 w-6">
+        <path d="M12 19V5M5 12l7-7 7 7" />
+      </svg>
+    </button>
+  )
+}
+EOF
+echo "✅ PWA button: higher z-index"
+
+# ---------- 4) Ensure prompt translation is saved to DB ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'src/lib/gemini.ts'
+let s = fs.readFileSync(p, 'utf8')
+
+// Check if promptFa is in the return type
+if (!s.includes('promptFa: string')) {
+  s = s.replace(
+    /export type GeminiResult = \{[\s\S]*?\}/,
+    `export type GeminiResult = {
+  titleFa: string
+  titleEn: string
+  descFa: string
+  descEn: string
+  usageFa: string
+  usageEn: string
+  categorySlug: string
+  tagsFa: string[]
+  tagsEn: string[]
+  promptEn: string
+  promptFa: string
+}`
+  )
+  console.log('✅ GeminiResult: promptFa added')
+} else {
+  console.log('️ promptFa already in type')
+}
+
+// Ensure promptFa is returned
+if (!s.includes('promptFa: String(parsed.promptFa')) {
+  s = s.replace(
+    /promptEn: String\(parsed\.promptEn \|\| ''\),[\s\S]*?promptFa: String\(parsed\.promptFa \|\| parsed\.promptEn \|\| ''\),/,
+    `promptEn: String(parsed.promptEn || ''),
+    promptFa: String(parsed.promptFa || parsed.promptEn || ''),`
+  )
+  console.log('✅ promptFa return fixed')
+}
+
+fs.writeFileSync(p, s)
+NODEEOF
+
+# Update the prompt processing to save promptFa
+node << 'NODEEOF'
+const fs = require('fs')
+const files = [
+  'src/app/api/import/route.ts',
+  'src/lib/schedule.ts'
+]
+
+for (const file of files) {
+  if (!fs.existsSync(file)) continue
+  let s = fs.readFileSync(file, 'utf8')
+  
+  // Add promptFa to create/update
+  if (s.includes('prompt: result.promptEn') && !s.includes('promptFa:')) {
+    s = s.replace(
+      'prompt: result.promptEn',
+      `prompt: result.promptEn,
+        promptFa: result.promptFa`
+    )
+    fs.writeFileSync(file, s)
+    console.log('✅ ' + file + ': promptFa added')
+  }
+}
+NODEEOF
+
+echo "✅ update138 done!"

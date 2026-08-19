@@ -37,6 +37,7 @@ export type GeminiResult = {
   tagsFa: string[]
   tagsEn: string[]
   promptEn: string
+  promptFa: string
 }
 
 const cleanTitle = (t: string) => t.replace(/^([\u0600-\u06FF\w]+)\s+\1/, '$1')
