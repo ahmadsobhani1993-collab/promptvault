@@ -49,6 +49,15 @@ export async function GET(req: Request) {
     await setSetting('tg_private_chat', priv)
   }
 
+  
+  // Track network usage for this import session
+  const networkStart = {
+    timestamp: new Date().toISOString(),
+    cursor: cursor,
+    estimatedNetworkMB: 0,
+  }
+  let bytesTransferred = 0
+
   const debug: string[] = []
   const results: any[] = []
   const categories = await prisma.category.findMany()
@@ -59,6 +68,7 @@ export async function GET(req: Request) {
     if (cursor >= stop) break
     debug.push('try cursor=' + cursor)
 
+    bytesTransferred += 500 // estimate for forwardMessage
     const f1 = await (await fetch(api('forwardMessage', { chat_id: priv, from_chat_id: chatId, message_id: String(cursor) }), { signal: AbortSignal.timeout(10000) })).json()
     if (!f1.ok) {
       debug.push('  forward fail: ' + (f1.description ?? 'unknown'))
@@ -106,6 +116,7 @@ export async function GET(req: Request) {
     }
 
     let imgUrl: string | null = null
+    bytesTransferred += 200 // estimate for getFile
     const fr = await (await fetch(api('getFile', { file_id: fileId }), { signal: AbortSignal.timeout(10000) })).json()
     if (fr.result?.file_path) {
       imgUrl = 'https://api.telegram.org/file/bot' + token + '/' + fr.result.file_path
@@ -163,5 +174,18 @@ export async function GET(req: Request) {
     fetch(nextUrl, { signal: AbortSignal.timeout(8000) }).catch(() => {})
   }
 
-  return NextResponse.json({ ok: true, cursor, stop, results, chained, debug })
+  return NextResponse.json({ 
+      ok: true, 
+      cursor, 
+      stop, 
+      results, 
+      chained, 
+      debug,
+      networkUsage: {
+        estimatedBytes: bytesTransferred,
+        estimatedMB: (bytesTransferred / 1024 / 1024).toFixed(2),
+        importsCompleted: results.length,
+        hint: 'هر import ~1-2MB مصرف می‌کند'
+      }
+    })
 }
