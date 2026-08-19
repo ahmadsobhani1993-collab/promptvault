@@ -1,3 +1,8 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) Complete rewrite of account page ----------
+cat > src/app/account/page.tsx << 'EOF'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { auth } from '@/auth'
@@ -233,3 +238,29 @@ export default async function AccountPage() {
     </section>
   )
 }
+EOF
+echo "✅ Account page rewritten"
+
+# ---------- 2) Fix header.tsx - move if statement outside array ----------
+node << 'NODEEOF'
+const fs = require('fs')
+const p = 'src/components/layout/header.tsx'
+let s = fs.readFileSync(p, 'utf8')
+
+// Remove the misplaced if statement
+s = s.replace(/\s*\/\/ Add account link for logged-in users\s*if \(session\?\.user\) \{\s*mobileLinks\.push\(\{ href: '\/account', label: L\(locale, 'حساب', 'Account'\) \}\)\s*\}/, '')
+
+// Add it properly before the return statement
+if (!s.includes("mobileLinks.push({ href: '/account'")) {
+  s = s.replace(
+    /(\]\n\n  return \()/,
+    "\n  // Add account link for logged-in users\n  if (session?.user) {\n    mobileLinks.push({ href: '/account', label: L(locale, 'حساب', 'Account') })\n  }\n\n  $1"
+  )
+  fs.writeFileSync(p, s)
+  console.log('✅ Header fixed')
+} else {
+  console.log('⚠️ Already fixed')
+}
+NODEEOF
+
+echo "✅ update145 done!"
