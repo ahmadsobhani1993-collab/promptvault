@@ -1,3 +1,8 @@
+#!/bin/bash
+set -e
+
+# ---------- 1) Unified Upload Route (Exactly like Prompts) ----------
+cat > src/app/api/upload-to-telegram/route.ts << 'EOF'
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
@@ -76,3 +81,60 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: err.message || 'upload failed' }, { status: 500 })
   }
 }
+EOF
+echo "✅ Upload route: Now uses the EXACT same logic as prompt import-loop"
+
+# ---------- 2) Test specific image URL route ----------
+mkdir -p src/app/api/debug/test-image-url
+cat > src/app/api/debug/test-image-url/route.ts << 'EOF'
+import { NextResponse } from 'next/server'
+import { isCronAuthorized } from '@/lib/cron-auth'
+
+export async function GET(req: Request) {
+  if (!isCronAuthorized(req)) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+
+  const { searchParams } = new URL(req.url)
+  const url = searchParams.get('url')
+
+  if (!url) {
+    return NextResponse.json({ error: 'Please provide ?url=...' }, { status: 400 })
+  }
+
+  try {
+    const res = await fetch(url, { 
+      method: 'GET',
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(10000) 
+    })
+    
+    return NextResponse.json({
+      ok: res.ok,
+      status: res.status,
+      contentType: res.headers.get('content-type'),
+      contentLength: res.headers.get('content-length'),
+      hint: res.ok ? 'لینک سالم است و باید در سایت نمایش داده شود.' : 'لینک خراب است یا تلگرام دسترسی را بسته است.'
+    })
+  } catch (err: any) {
+    return NextResponse.json({ ok: false, error: err.message })
+  }
+}
+EOF
+echo "✅ Image URL tester created"
+
+echo ""
+echo "===== WHY THIS WORKS ====="
+echo "This script now does EXACTLY what the prompt import-loop does:"
+echo "1. Sends to @promptsfa1"
+echo "2. Gets file_id"
+echo "3. Gets file_path"
+echo "4. Saves: https://api.telegram.org/file/bot<TOKEN>/<file_path>"
+echo ""
+echo "If a prompt image works with this format, the article image WILL work too."
+echo "===== NEXT STEPS ====="
+echo "1. Deploy this code."
+echo "2. Go to /admin/articles/new or edit an existing article."
+echo "3. Upload a NEW image using the button."
+echo "4. Save and check the website."
+echo "======================================"
+
+echo "✅ update199 done!"
