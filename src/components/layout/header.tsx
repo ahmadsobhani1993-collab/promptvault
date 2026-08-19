@@ -83,7 +83,7 @@ export default async function Header() {
           )}
         <div className="hidden items-center gap-2 lg:flex">
             {session?.user ? (
-              <Link href="#" onClick={(e) => { e.preventDefault(); fetch("/api/auth/signout", { method: "POST" }).then(() => window.location.href = "/") } } className="btn-secondary text-xs">
+              <Link ).then(() => window.location.href = "/") } } className="btn-secondary text-xs">
                 {L(locale, 'خروج', 'Logout')}
               </Link>
             ) : (
