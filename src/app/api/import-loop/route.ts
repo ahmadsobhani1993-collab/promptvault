@@ -105,25 +105,20 @@ export async function GET(req: Request) {
       continue
     }
 
-    let imgBase64: string | null = null
-    const imgType = 'image/jpeg'
+    let imgUrl: string | null = null
     const fr = await (await fetch(api('getFile', { file_id: fileId }), { signal: AbortSignal.timeout(10000) })).json()
     if (fr.result?.file_path) {
-      try {
-        const ir = await fetch('https://api.telegram.org/file/bot' + token + '/' + fr.result.file_path, { signal: AbortSignal.timeout(20000) })
-        const buf = Buffer.from(await ir.arrayBuffer())
-        if (buf.length > 5000 && buf.length < 2_500_000) imgBase64 = buf.toString('base64')
-      } catch {}
+      imgUrl = 'https://api.telegram.org/file/bot' + token + '/' + fr.result.file_path
     }
-    if (!imgBase64) {
-      debug.push('  skip: image download failed')
+    if (!imgUrl) {
+      debug.push('  skip: image file_path not found')
       cursor += advanced
       continue
     }
 
     try {
       let ai
-      try { ai = await analyzeWithGemini({ text, imgBase64, imgMime: imgType, categories }) }
+      try { ai = await analyzeWithGemini({ text, imgBase64: null, categories }) }
       catch { ai = await analyzeWithGemini({ text, imgBase64: null, categories }) }
       const cat = await prisma.category.findUnique({ where: { slug: ai.categorySlug } })
       const finalPrompt = (ai.promptEn || text).trim()
@@ -132,17 +127,17 @@ export async function GET(req: Request) {
           titleFa: ai.titleFa, titleEn: ai.titleEn, descFa: ai.descFa, descEn: ai.descEn,
           usageFa: ai.usageFa, usageEn: ai.usageEn,
           slug: 'tg-' + cursor,
-          img: APP() + '/api/img/tmp-' + cursor,
+          img: imgUrl,
           model: /--v\s?\d|--ar/.test(finalPrompt) ? 'Midjourney' : 'AI',
           type: 'IMAGE', status: 'PUBLISHED',
           categoryId: cat?.id ?? categories[0].id,
           tagsFa: ai.tagsFa, tagsEn: ai.tagsEn, prompt: finalPrompt,
-          imgData: imgBase64, imgType,
+          // imgData removed to save DB network transfer
           views: 1 + Math.floor(Math.random() * 10),
         },
       })
       await prisma.prompt.update({ where: { id: prompt.id }, data: { img: APP() + '/api/img/' + prompt.id } })
-      await prisma.promptImage.create({ data: { promptId: prompt.id, data: imgBase64, type: imgType } }).catch(() => {})
+      await prisma.promptImage.create({ data: { promptId: prompt.id, data: fileId, type: 'tg_file_id' } }).catch(() => {})
       results.push({ id: cursor, slug: prompt.slug })
       found++
     } catch (e: any) {
