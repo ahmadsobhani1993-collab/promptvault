@@ -62,12 +62,15 @@ export default async function Header() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <button type="button" className="hidden rounded-lg border border-line bg-elevated px-3 py-1.5 text-xs text-ink-muted transition-colors hover:border-gold/40 hover:text-gold-bright md:inline-flex">
-            EN
-          </button>
-          <button type="button" className="hidden rounded-lg border border-line bg-elevated px-3 py-1.5 text-xs text-ink-muted transition-colors hover:border-gold/40 hover:text-gold-bright md:inline-flex">
-            فا
-          </button>
+          
+          <div className="hidden md:flex">
+            <Link href="/?locale=fa" className={'rounded-lg border px-3 py-1.5 text-xs transition-colors ' + (locale === 'fa' ? 'border-gold bg-gold/15 text-gold-bright' : 'border-line bg-elevated text-ink-muted hover:border-gold/40')}>
+              فارسی
+            </Link>
+            <Link href="/?locale=en" className={'rounded-lg border px-3 py-1.5 text-xs transition-colors ' + (locale === 'en' ? 'border-gold bg-gold/15 text-gold-bright' : 'border-line bg-elevated text-ink-muted hover:border-gold/40')}>
+              English
+            </Link>
+          </div>
           <NotifBell />
           {session?.user ? (
             <Link href="/account" className="btn-secondary hidden md:inline-flex">
@@ -78,9 +81,20 @@ export default async function Header() {
               {L(locale, 'ورود', 'Login')}
             </Link>
           )}
+        <div className="hidden items-center gap-2 lg:flex">
+            {session?.user ? (
+              <Link href="/logout" className="btn-secondary text-xs">
+                {L(locale, 'خروج', 'Logout')}
+              </Link>
+            ) : (
+              <Link href="/submit" className="btn-primary text-xs">
+                {L(locale, 'ارسال', 'Submit')}
+              </Link>
+            )}
+          </div>
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
   )
 }
 
