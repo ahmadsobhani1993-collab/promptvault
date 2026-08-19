@@ -37,7 +37,6 @@ export default async function AccountPage() {
   }
 
   const savedPrompts = []
-  }
 
   // Try to get comments (might not exist)
   let myComments: any[] = []
