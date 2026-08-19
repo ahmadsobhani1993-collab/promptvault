@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     }
 
     // Channel username (without @)
-    const channelUsername = process.env.TELEGRAM_CHANNEL || 'promptsfa1'
+    const channelUsername = 'promptsfa1' // Fixed channel
     
     // Convert file to buffer
     const bytes = await file.arrayBuffer()
