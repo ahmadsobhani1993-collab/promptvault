@@ -1,0 +1,20 @@
+name: Reset to Commit
+
+on:
+  workflow_dispatch:
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Reset to commit
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git reset --hard 0f6f8f8
+          git push --force origin main
