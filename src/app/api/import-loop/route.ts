@@ -116,7 +116,15 @@ export async function GET(req: Request) {
       const cat = await prisma.category.findUnique({ where: { slug: ai.categorySlug } })
       const finalPrompt = (ai.promptEn || text).trim()
       
-      const prompt = await prisma.prompt.create({
+      // Check if prompt already exists
+    const existingPrompt = await prisma.prompt.findUnique({ where: { slug: 'tg-' + cursor } })
+    if (existingPrompt) {
+      debug.push('  skip: already exists')
+      cursor += advanced
+      continue
+    }
+
+    const prompt = await prisma.prompt.create({
         data: {
           titleFa: ai.titleFa, titleEn: ai.titleEn, descFa: ai.descFa, descEn: ai.descEn,
           usageFa: ai.usageFa, usageEn: ai.usageEn,
@@ -137,11 +145,15 @@ export async function GET(req: Request) {
       found++
     } catch (e: any) {
       const msg = String(e?.message ?? e)
-      if (msg.includes('GEMINI_QUOTA_EXHAUSTED') || msg.includes('429')) {
-        await setSetting('import_cursor', String(cursor))
-        return NextResponse.json({ ok: true, cursor, stop, results, chained: false, stopped: 'quota', debug })
+      
+      // Handle duplicate slug error
+      if (msg.includes('P2002') || msg.includes('Unique constraint')) {
+        debug.push('  skip: duplicate slug (already imported)')
+        cursor += advanced
+        continue
       }
-      debug.push('  error: ' + msg)
+      
+      if (msg.includes('GEMINI_QUOTA_EXHAUSTED') || msg.includes('429')) {
     }
 
     cursor += advanced
