@@ -18,7 +18,7 @@ export async function GET(req: Request) {
     })
 
     if (!response.ok) {
-      return new NextResponse('Failed to fetch', { status: response.status })
+      return new NextResponse('Failed to fetch image', { status: response.status })
     }
 
     const blob = await response.blob()
@@ -31,7 +31,7 @@ export async function GET(req: Request) {
       },
     })
   } catch (error) {
-    console.error('Proxy error:', error)
+    console.error('Image proxy error:', error)
     return new NextResponse('Proxy error', { status: 500 })
   }
 }

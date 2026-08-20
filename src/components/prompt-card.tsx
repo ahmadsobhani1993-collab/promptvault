@@ -1,12 +1,14 @@
-import Link from 'next/link'
 
-const getImageUrl = (url: string | null) => {
-  if (!url) return "/placeholder.jpg";
-  if (url.includes("api.telegram.org")) {
-    return "/api/image-proxy?url=" + encodeURIComponent(url);
+const getImageUrl = (url: string | null | undefined) => {
+  if (!url) return '/placeholder.jpg';
+  if (url.includes('api.telegram.org')) {
+    return '/api/image-proxy?url=' + encodeURIComponent(url);
   }
   return url;
 };
+
+import Link from 'next/link'
+
 import type { Locale } from '@/lib/i18n'
 
   if (!url) return "/placeholder.jpg";
