@@ -13,6 +13,16 @@ async function setSetting(k: string, v: string) {
   await prisma.setting.upsert({ where: { key: k }, update: { value: v }, create: { key: k, value: v } })
 }
 
+
+async function reportToMonitor(apiCalls: number, bytes: number) {
+  try {
+    const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://promptsfa.ir'
+    await fetch(APP_URL + '/api/debug/realtime-monitor?action=update&calls=' + apiCalls + '&bytes=' + bytes, {
+      signal: AbortSignal.timeout(2000)
+    }).catch(() => {})
+  } catch (err) {}
+}
+
 export async function GET(req: Request) {
   if (!isCronAuthorized(req)) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   const token = process.env.TELEGRAM_READ_TOKEN || process.env.TELEGRAM_BOT_TOKEN
@@ -67,6 +77,7 @@ export async function GET(req: Request) {
       continue
     }
 
+    await reportToMonitor(1, 500)
     const f1 = await (await fetch(api('forwardMessage', { chat_id: priv, from_chat_id: chatId, message_id: String(cursor) }), { signal: AbortSignal.timeout(10000) })).json()
     if (!f1.ok) {
       debug.push('  forward fail')
@@ -105,6 +116,7 @@ export async function GET(req: Request) {
 
     // OPTIMIZED: ONLY get file_path, NO downloading, NO base64
     let imgUrl: string | null = null
+    await reportToMonitor(1, 200)
     const fr = await (await fetch(api('getFile', { file_id: fileId }), { signal: AbortSignal.timeout(10000) })).json()
     if (fr.result?.file_path) {
       imgUrl = 'https://api.telegram.org/file/bot' + token + '/' + fr.result.file_path
@@ -132,8 +144,10 @@ export async function GET(req: Request) {
     try {
       // OPTIMIZED: Pass null for image to Gemini
       let ai
-      try { ai = await analyzeWithGemini({ text, imgBase64: null, categories }) }
-      catch { ai = await analyzeWithGemini({ text, imgBase64: null, categories }) }
+      try { await reportToMonitor(1, 150)
+    ai = await analyzeWithGemini({ text, imgBase64: null, categories }) }
+      catch { await reportToMonitor(1, 150)
+    ai = await analyzeWithGemini({ text, imgBase64: null, categories }) }
       
       const cat = await prisma.category.findUnique({ where: { slug: ai.categorySlug } })
       const finalPrompt = (ai.promptEn || text).trim()
