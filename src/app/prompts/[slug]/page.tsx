@@ -1,19 +1,147 @@
 import Link from 'next/link'
+
+const getImageUrl = (url: string | null) => {
+  if (!url) return "/placeholder.jpg";
+  if (url.includes("api.telegram.org")) {
+    return "/api/image-proxy?url=" + encodeURIComponent(url);
+  }
+  return url;
+};
 import { cookies } from 'next/headers'
+
+const getImageUrl = (url: string | null) => {
+  if (!url) return "/placeholder.jpg";
+  if (url.includes("api.telegram.org")) {
+    return "/api/image-proxy?url=" + encodeURIComponent(url);
+  }
+  return url;
+};
 import { notFound } from 'next/navigation'
+
+const getImageUrl = (url: string | null) => {
+  if (!url) return "/placeholder.jpg";
+  if (url.includes("api.telegram.org")) {
+    return "/api/image-proxy?url=" + encodeURIComponent(url);
+  }
+  return url;
+};
 import type { Metadata } from 'next'
+
+const getImageUrl = (url: string | null) => {
+  if (!url) return "/placeholder.jpg";
+  if (url.includes("api.telegram.org")) {
+    return "/api/image-proxy?url=" + encodeURIComponent(url);
+  }
+  return url;
+};
 import { type Locale } from '@/lib/i18n'
+
+const getImageUrl = (url: string | null) => {
+  if (!url) return "/placeholder.jpg";
+  if (url.includes("api.telegram.org")) {
+    return "/api/image-proxy?url=" + encodeURIComponent(url);
+  }
+  return url;
+};
 import { getPromptBySlug, getRelatedPrompts, getPromptTypeLabel, L } from '@/lib/data'
+
+const getImageUrl = (url: string | null) => {
+  if (!url) return "/placeholder.jpg";
+  if (url.includes("api.telegram.org")) {
+    return "/api/image-proxy?url=" + encodeURIComponent(url);
+  }
+  return url;
+};
 import { prisma } from '@/lib/db'
+
+const getImageUrl = (url: string | null) => {
+  if (!url) return "/placeholder.jpg";
+  if (url.includes("api.telegram.org")) {
+    return "/api/image-proxy?url=" + encodeURIComponent(url);
+  }
+  return url;
+};
 import { auth } from '@/auth'
+
+const getImageUrl = (url: string | null) => {
+  if (!url) return "/placeholder.jpg";
+  if (url.includes("api.telegram.org")) {
+    return "/api/image-proxy?url=" + encodeURIComponent(url);
+  }
+  return url;
+};
 import PromptCard from '@/components/prompt-card'
+
+const getImageUrl = (url: string | null) => {
+  if (!url) return "/placeholder.jpg";
+  if (url.includes("api.telegram.org")) {
+    return "/api/image-proxy?url=" + encodeURIComponent(url);
+  }
+  return url;
+};
 import CopyButton from '@/components/copy-button'
+
+const getImageUrl = (url: string | null) => {
+  if (!url) return "/placeholder.jpg";
+  if (url.includes("api.telegram.org")) {
+    return "/api/image-proxy?url=" + encodeURIComponent(url);
+  }
+  return url;
+};
 import RealLikeButton from '@/components/real-like-button'
+
+const getImageUrl = (url: string | null) => {
+  if (!url) return "/placeholder.jpg";
+  if (url.includes("api.telegram.org")) {
+    return "/api/image-proxy?url=" + encodeURIComponent(url);
+  }
+  return url;
+};
 import SaveButton from '@/components/save-button'
+
+const getImageUrl = (url: string | null) => {
+  if (!url) return "/placeholder.jpg";
+  if (url.includes("api.telegram.org")) {
+    return "/api/image-proxy?url=" + encodeURIComponent(url);
+  }
+  return url;
+};
 import SafeImg from '@/components/safe-img'
+
+const getImageUrl = (url: string | null) => {
+  if (!url) return "/placeholder.jpg";
+  if (url.includes("api.telegram.org")) {
+    return "/api/image-proxy?url=" + encodeURIComponent(url);
+  }
+  return url;
+};
 import PromptReveal from '@/components/prompt-reveal'
+
+const getImageUrl = (url: string | null) => {
+  if (!url) return "/placeholder.jpg";
+  if (url.includes("api.telegram.org")) {
+    return "/api/image-proxy?url=" + encodeURIComponent(url);
+  }
+  return url;
+};
 import ShareButtons from '@/components/share-buttons'
+
+const getImageUrl = (url: string | null) => {
+  if (!url) return "/placeholder.jpg";
+  if (url.includes("api.telegram.org")) {
+    return "/api/image-proxy?url=" + encodeURIComponent(url);
+  }
+  return url;
+};
 import RealCommentBox from '@/components/real-comment-box'
+
+const getImageUrl = (url: string | null) => {
+  if (!url) return "/placeholder.jpg";
+  if (url.includes("api.telegram.org")) {
+    return "/api/image-proxy?url=" + encodeURIComponent(url);
+  }
+  return url;
+};
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params

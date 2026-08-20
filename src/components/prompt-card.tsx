@@ -1,7 +1,39 @@
 import Link from 'next/link'
+
+const getImageUrl = (url: string | null) => {
+  if (!url) return "/placeholder.jpg";
+  if (url.includes("api.telegram.org")) {
+    return "/api/image-proxy?url=" + encodeURIComponent(url);
+  }
+  return url;
+};
 import type { Locale } from '@/lib/i18n'
+
+const getImageUrl = (url: string | null) => {
+  if (!url) return "/placeholder.jpg";
+  if (url.includes("api.telegram.org")) {
+    return "/api/image-proxy?url=" + encodeURIComponent(url);
+  }
+  return url;
+};
 import { L, getPromptTypeLabel } from '@/lib/data'
+
+const getImageUrl = (url: string | null) => {
+  if (!url) return "/placeholder.jpg";
+  if (url.includes("api.telegram.org")) {
+    return "/api/image-proxy?url=" + encodeURIComponent(url);
+  }
+  return url;
+};
 import SafeImg from '@/components/safe-img'
+
+const getImageUrl = (url: string | null) => {
+  if (!url) return "/placeholder.jpg";
+  if (url.includes("api.telegram.org")) {
+    return "/api/image-proxy?url=" + encodeURIComponent(url);
+  }
+  return url;
+};
 
 type PromptItem = {
   slug: string
