@@ -1,20 +1,39 @@
-import Link from 'next/link'
-import { cookies } from 'next/headers'
-import { notFound } from 'next/navigation'
-import type { Metadata } from 'next'
-import { type Locale } from '@/lib/i18n'
-import { getPromptBySlug, getRelatedPrompts, getPromptTypeLabel, L } from '@/lib/data'
-import { prisma } from '@/lib/db'
-import { auth } from '@/auth'
-import PromptCard from '@/components/prompt-card'
-import CopyButton from '@/components/copy-button'
-import RealLikeButton from '@/components/real-like-button'
-import SaveButton from '@/components/save-button'
-import SafeImg from '@/components/safe-img'
-import PromptReveal from '@/components/prompt-reveal'
-import ShareButtons from '@/components/share-buttons'
-import RealCommentBox from '@/components/real-comment-box'
 
+
+import Link from 'next/link'
+import { getImageUrl } from '@/lib/image-utils';
+
+import { cookies } from 'next/headers'
+
+  import { notFound } from 'next/navigation'
+
+  import type { Metadata } from 'next'
+
+  import { type Locale } from '@/lib/i18n'
+
+  import { getPromptBySlug, getRelatedPrompts, getPromptTypeLabel, L } from '@/lib/data'
+
+  import { prisma } from '@/lib/db'
+
+  import { auth } from '@/auth'
+
+  import PromptCard from '@/components/prompt-card'
+
+  import CopyButton from '@/components/copy-button'
+
+  import RealLikeButton from '@/components/real-like-button'
+
+  import SaveButton from '@/components/save-button'
+
+  import SafeImg from '@/components/safe-img'
+
+  import PromptReveal from '@/components/prompt-reveal'
+
+  import ShareButtons from '@/components/share-buttons'
+
+  import RealCommentBox from '@/components/real-comment-box'
+
+  
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
   const item = await getPromptBySlug(slug)

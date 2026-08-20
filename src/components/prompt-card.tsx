@@ -1,8 +1,15 @@
-import Link from 'next/link'
-import type { Locale } from '@/lib/i18n'
-import { L, getPromptTypeLabel } from '@/lib/data'
-import SafeImg from '@/components/safe-img'
 
+
+import Link from 'next/link'
+import { getImageUrl } from '@/lib/image-utils';
+
+import type { Locale } from '@/lib/i18n'
+
+  import { L, getPromptTypeLabel } from '@/lib/data'
+
+  import SafeImg from '@/components/safe-img'
+
+  
 type PromptItem = {
   slug: string
   titleFa: string
@@ -39,7 +46,7 @@ export default function PromptCard({
     <article className="card-cream glow-gold p-3 transition-transform hover:-translate-y-1">
       <Link href={'/prompts/' + item.slug} className="block">
         <div className="relative">
-          <SafeImg src={item.img} alt={L(locale, item.titleFa, item.titleEn)} className="aspect-square w-full rounded-lg object-cover" />
+          <SafeImg src={getImageUrl(item.img)} alt={L(locale, item.titleFa, item.titleEn)} className="aspect-square w-full rounded-lg object-cover" />
           <span className="absolute right-2 top-2 rounded-full bg-gold px-2.5 py-0.5 text-[10px] font-bold text-[#171512]">
             {getPromptTypeLabel(item.type, locale)}
           </span>
