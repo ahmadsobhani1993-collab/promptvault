@@ -9,7 +9,6 @@ const getImageUrl = (url: string | null) => {
 };
 import { cookies } from 'next/headers'
 
-const getImageUrl = (url: string | null) => {
   if (!url) return "/placeholder.jpg";
   if (url.includes("api.telegram.org")) {
     return "/api/image-proxy?url=" + encodeURIComponent(url);
@@ -18,7 +17,6 @@ const getImageUrl = (url: string | null) => {
 };
 import { notFound } from 'next/navigation'
 
-const getImageUrl = (url: string | null) => {
   if (!url) return "/placeholder.jpg";
   if (url.includes("api.telegram.org")) {
     return "/api/image-proxy?url=" + encodeURIComponent(url);
@@ -27,7 +25,6 @@ const getImageUrl = (url: string | null) => {
 };
 import type { Metadata } from 'next'
 
-const getImageUrl = (url: string | null) => {
   if (!url) return "/placeholder.jpg";
   if (url.includes("api.telegram.org")) {
     return "/api/image-proxy?url=" + encodeURIComponent(url);
@@ -36,7 +33,6 @@ const getImageUrl = (url: string | null) => {
 };
 import { type Locale } from '@/lib/i18n'
 
-const getImageUrl = (url: string | null) => {
   if (!url) return "/placeholder.jpg";
   if (url.includes("api.telegram.org")) {
     return "/api/image-proxy?url=" + encodeURIComponent(url);
@@ -45,7 +41,6 @@ const getImageUrl = (url: string | null) => {
 };
 import { getPromptBySlug, getRelatedPrompts, getPromptTypeLabel, L } from '@/lib/data'
 
-const getImageUrl = (url: string | null) => {
   if (!url) return "/placeholder.jpg";
   if (url.includes("api.telegram.org")) {
     return "/api/image-proxy?url=" + encodeURIComponent(url);
@@ -54,7 +49,6 @@ const getImageUrl = (url: string | null) => {
 };
 import { prisma } from '@/lib/db'
 
-const getImageUrl = (url: string | null) => {
   if (!url) return "/placeholder.jpg";
   if (url.includes("api.telegram.org")) {
     return "/api/image-proxy?url=" + encodeURIComponent(url);
@@ -63,7 +57,6 @@ const getImageUrl = (url: string | null) => {
 };
 import { auth } from '@/auth'
 
-const getImageUrl = (url: string | null) => {
   if (!url) return "/placeholder.jpg";
   if (url.includes("api.telegram.org")) {
     return "/api/image-proxy?url=" + encodeURIComponent(url);
@@ -72,7 +65,6 @@ const getImageUrl = (url: string | null) => {
 };
 import PromptCard from '@/components/prompt-card'
 
-const getImageUrl = (url: string | null) => {
   if (!url) return "/placeholder.jpg";
   if (url.includes("api.telegram.org")) {
     return "/api/image-proxy?url=" + encodeURIComponent(url);
@@ -81,7 +73,6 @@ const getImageUrl = (url: string | null) => {
 };
 import CopyButton from '@/components/copy-button'
 
-const getImageUrl = (url: string | null) => {
   if (!url) return "/placeholder.jpg";
   if (url.includes("api.telegram.org")) {
     return "/api/image-proxy?url=" + encodeURIComponent(url);
@@ -90,7 +81,6 @@ const getImageUrl = (url: string | null) => {
 };
 import RealLikeButton from '@/components/real-like-button'
 
-const getImageUrl = (url: string | null) => {
   if (!url) return "/placeholder.jpg";
   if (url.includes("api.telegram.org")) {
     return "/api/image-proxy?url=" + encodeURIComponent(url);
@@ -99,7 +89,6 @@ const getImageUrl = (url: string | null) => {
 };
 import SaveButton from '@/components/save-button'
 
-const getImageUrl = (url: string | null) => {
   if (!url) return "/placeholder.jpg";
   if (url.includes("api.telegram.org")) {
     return "/api/image-proxy?url=" + encodeURIComponent(url);
@@ -108,7 +97,6 @@ const getImageUrl = (url: string | null) => {
 };
 import SafeImg from '@/components/safe-img'
 
-const getImageUrl = (url: string | null) => {
   if (!url) return "/placeholder.jpg";
   if (url.includes("api.telegram.org")) {
     return "/api/image-proxy?url=" + encodeURIComponent(url);
@@ -117,7 +105,6 @@ const getImageUrl = (url: string | null) => {
 };
 import PromptReveal from '@/components/prompt-reveal'
 
-const getImageUrl = (url: string | null) => {
   if (!url) return "/placeholder.jpg";
   if (url.includes("api.telegram.org")) {
     return "/api/image-proxy?url=" + encodeURIComponent(url);
@@ -126,7 +113,6 @@ const getImageUrl = (url: string | null) => {
 };
 import ShareButtons from '@/components/share-buttons'
 
-const getImageUrl = (url: string | null) => {
   if (!url) return "/placeholder.jpg";
   if (url.includes("api.telegram.org")) {
     return "/api/image-proxy?url=" + encodeURIComponent(url);
@@ -135,7 +121,6 @@ const getImageUrl = (url: string | null) => {
 };
 import RealCommentBox from '@/components/real-comment-box'
 
-const getImageUrl = (url: string | null) => {
   if (!url) return "/placeholder.jpg";
   if (url.includes("api.telegram.org")) {
     return "/api/image-proxy?url=" + encodeURIComponent(url);

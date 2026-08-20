@@ -9,7 +9,6 @@ const getImageUrl = (url: string | null) => {
 };
 import type { Locale } from '@/lib/i18n'
 
-const getImageUrl = (url: string | null) => {
   if (!url) return "/placeholder.jpg";
   if (url.includes("api.telegram.org")) {
     return "/api/image-proxy?url=" + encodeURIComponent(url);
@@ -18,7 +17,6 @@ const getImageUrl = (url: string | null) => {
 };
 import { L, getPromptTypeLabel } from '@/lib/data'
 
-const getImageUrl = (url: string | null) => {
   if (!url) return "/placeholder.jpg";
   if (url.includes("api.telegram.org")) {
     return "/api/image-proxy?url=" + encodeURIComponent(url);
@@ -27,7 +25,6 @@ const getImageUrl = (url: string | null) => {
 };
 import SafeImg from '@/components/safe-img'
 
-const getImageUrl = (url: string | null) => {
   if (!url) return "/placeholder.jpg";
   if (url.includes("api.telegram.org")) {
     return "/api/image-proxy?url=" + encodeURIComponent(url);
