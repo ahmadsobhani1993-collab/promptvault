@@ -80,7 +80,7 @@ export async function GET(req: Request) {
     let advanced = 1
 
     if (fileId && text.length < 60) {
-      for (let off = 1; off <= 3; off++) {
+      for (let off = 1; off <= 5; off++) {
         const f2 = await (await fetch(api('forwardMessage', { chat_id: priv, from_chat_id: chatId, message_id: String(cursor + off) }), { signal: AbortSignal.timeout(10000) })).json()
         if (f2.ok) {
           const t2 = (f2.result.text || f2.result.caption || '').trim()
@@ -110,9 +110,23 @@ export async function GET(req: Request) {
       imgUrl = 'https://api.telegram.org/file/bot' + token + '/' + fr.result.file_path
     }
     if (!imgUrl) {
-      debug.push('  skip: file_path not found')
-      cursor += advanced
-      continue
+      
+    // Check if this is a reply to a previous message with photo
+    if (!fileId && m1.reply_to_message?.photo?.length) {
+      const replyPhoto = m1.reply_to_message.photo[m1.reply_to_message.photo.length - 1]
+      const replyFileRes = await (await fetch(api('getFile', { file_id: replyPhoto.file_id }), { signal: AbortSignal.timeout(10000) })).json()
+      if (replyFileRes.result?.file_path) {
+        imgUrl = 'https://api.telegram.org/file/bot' + token + '/' + replyFileRes.result.file_path
+        fileId = replyPhoto.file_id
+        debug.push('  using reply photo')
+      }
+    }
+
+      if (!imgUrl) {
+        debug.push('  skip: file_path not found')
+        cursor += advanced
+        continue
+      }
     }
 
     try {
