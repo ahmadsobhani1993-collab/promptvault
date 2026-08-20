@@ -1,3 +1,44 @@
+#!/bin/bash
+set -e
+
+echo "===== FINAL CLEAN IMPORT SETUP ====="
+
+# ---------- 1) Route to manually set the private channel numeric ID ----------
+mkdir -p src/app/api/debug/set-private-channel
+cat > src/app/api/debug/set-private-channel/route.ts << 'EOF'
+import { NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
+import { isCronAuthorized } from '@/lib/cron-auth'
+
+export async function GET(req: Request) {
+  if (!isCronAuthorized(req)) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+
+  const { searchParams } = new URL(req.url)
+  const channelId = searchParams.get('id') // e.g., -1001234567890
+
+  if (!channelId || !channelId.startsWith('-100')) {
+    return NextResponse.json({ 
+      error: 'Invalid ID', 
+      hint: 'Please provide a valid numeric channel ID starting with -100 (e.g., ?id=-1001234567890)' 
+    }, { status: 400 })
+  }
+
+  await prisma.setting.upsert({
+    where: { key: 'tg_chat_id' },
+    update: { value: channelId },
+    create: { key: 'tg_chat_id', value: channelId },
+  })
+
+  return NextResponse.json({
+    ok: true,
+    message: `Channel ID ${channelId} saved successfully. Import loop will now use this private channel.`,
+  })
+}
+EOF
+echo "✅ Private channel ID setter created"
+
+# ---------- 2) COMPLETELY REWRITE import-loop to ONLY save Telegram URL ----------
+cat > src/app/api/import-loop/route.ts << 'ENDOFFILE'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { analyzeWithGemini } from '@/lib/gemini'
@@ -166,3 +207,23 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ ok: true, cursor, stop, results, chained, debug })
 }
+ENDOFFILE
+echo "✅ Import loop rewritten: 100% no local storage, only direct Telegram URLs."
+
+echo ""
+echo "===== NEXT STEPS (DO THIS EXACTLY) ====="
+echo ""
+echo "1. Deploy this code:"
+echo "   git add . && git commit -m 'final clean import: direct telegram urls only' && git push"
+echo ""
+echo "2. After deploy, set your private channel numeric ID (Replace -100... with your actual channel ID):"
+echo "   https://promptsfa.ir/api/debug/set-private-channel?key=pv-cron-8x2m1q&id=-100YOUR_CHANNEL_ID_HERE"
+echo ""
+echo "3. Test import 5 prompts:"
+echo "   https://promptsfa.ir/api/import-loop?key=pv-cron-8x2m1q&count=5"
+echo ""
+echo "4. Check database to confirm it saved Telegram links:"
+echo "   https://promptsfa.ir/api/debug/check-db-images?key=pv-cron-8x2m1q"
+echo "========================================"
+
+echo "✅ update223 done!"
