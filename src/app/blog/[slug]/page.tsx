@@ -5,6 +5,7 @@ import { type Locale } from '@/lib/i18n'
 import { getArticleBySlug, L } from '@/lib/data'
 import ShareButtons from '@/components/share-buttons'
 import SafeImg from '@/components/safe-img'
+import { getImageUrl } from '@/lib/image-utils';
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
@@ -63,7 +64,7 @@ export default async function BlogDetailPage({ params }: { params: Promise<{ slu
       <p className="mt-4 text-sm leading-8 text-ink-muted">{L(locale, a.descFa, a.descEn)}</p>
 
       <div className="mt-8">
-        <SafeImg src={a.img} alt={L(locale, a.titleFa, a.titleEn)} className="glow-gold w-full rounded-2xl object-cover" loading="eager" />
+        <SafeImg src={getImageUrl(a.img)} alt={L(locale, a.titleFa, a.titleEn)} className="glow-gold w-full rounded-2xl object-cover" loading="eager" />
       </div>
 
       <div
