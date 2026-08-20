@@ -1,135 +1,39 @@
 
-const getImageUrl = (url: string | null | undefined) => {
-  if (!url) return '/placeholder.jpg';
-  if (url.includes('api.telegram.org')) {
-    return '/api/image-proxy?url=' + encodeURIComponent(url);
-  }
-  return url;
-};
 
 import Link from 'next/link'
+import { getImageUrl } from '@/lib/image-utils';
 
 import { cookies } from 'next/headers'
 
-  if (!url) return "/placeholder.jpg";
-  if (url.includes("api.telegram.org")) {
-    return "/api/image-proxy?url=" + encodeURIComponent(url);
-  }
-  return url;
-};
-import { notFound } from 'next/navigation'
+  import { notFound } from 'next/navigation'
 
-  if (!url) return "/placeholder.jpg";
-  if (url.includes("api.telegram.org")) {
-    return "/api/image-proxy?url=" + encodeURIComponent(url);
-  }
-  return url;
-};
-import type { Metadata } from 'next'
+  import type { Metadata } from 'next'
 
-  if (!url) return "/placeholder.jpg";
-  if (url.includes("api.telegram.org")) {
-    return "/api/image-proxy?url=" + encodeURIComponent(url);
-  }
-  return url;
-};
-import { type Locale } from '@/lib/i18n'
+  import { type Locale } from '@/lib/i18n'
 
-  if (!url) return "/placeholder.jpg";
-  if (url.includes("api.telegram.org")) {
-    return "/api/image-proxy?url=" + encodeURIComponent(url);
-  }
-  return url;
-};
-import { getPromptBySlug, getRelatedPrompts, getPromptTypeLabel, L } from '@/lib/data'
+  import { getPromptBySlug, getRelatedPrompts, getPromptTypeLabel, L } from '@/lib/data'
 
-  if (!url) return "/placeholder.jpg";
-  if (url.includes("api.telegram.org")) {
-    return "/api/image-proxy?url=" + encodeURIComponent(url);
-  }
-  return url;
-};
-import { prisma } from '@/lib/db'
+  import { prisma } from '@/lib/db'
 
-  if (!url) return "/placeholder.jpg";
-  if (url.includes("api.telegram.org")) {
-    return "/api/image-proxy?url=" + encodeURIComponent(url);
-  }
-  return url;
-};
-import { auth } from '@/auth'
+  import { auth } from '@/auth'
 
-  if (!url) return "/placeholder.jpg";
-  if (url.includes("api.telegram.org")) {
-    return "/api/image-proxy?url=" + encodeURIComponent(url);
-  }
-  return url;
-};
-import PromptCard from '@/components/prompt-card'
+  import PromptCard from '@/components/prompt-card'
 
-  if (!url) return "/placeholder.jpg";
-  if (url.includes("api.telegram.org")) {
-    return "/api/image-proxy?url=" + encodeURIComponent(url);
-  }
-  return url;
-};
-import CopyButton from '@/components/copy-button'
+  import CopyButton from '@/components/copy-button'
 
-  if (!url) return "/placeholder.jpg";
-  if (url.includes("api.telegram.org")) {
-    return "/api/image-proxy?url=" + encodeURIComponent(url);
-  }
-  return url;
-};
-import RealLikeButton from '@/components/real-like-button'
+  import RealLikeButton from '@/components/real-like-button'
 
-  if (!url) return "/placeholder.jpg";
-  if (url.includes("api.telegram.org")) {
-    return "/api/image-proxy?url=" + encodeURIComponent(url);
-  }
-  return url;
-};
-import SaveButton from '@/components/save-button'
+  import SaveButton from '@/components/save-button'
 
-  if (!url) return "/placeholder.jpg";
-  if (url.includes("api.telegram.org")) {
-    return "/api/image-proxy?url=" + encodeURIComponent(url);
-  }
-  return url;
-};
-import SafeImg from '@/components/safe-img'
+  import SafeImg from '@/components/safe-img'
 
-  if (!url) return "/placeholder.jpg";
-  if (url.includes("api.telegram.org")) {
-    return "/api/image-proxy?url=" + encodeURIComponent(url);
-  }
-  return url;
-};
-import PromptReveal from '@/components/prompt-reveal'
+  import PromptReveal from '@/components/prompt-reveal'
 
-  if (!url) return "/placeholder.jpg";
-  if (url.includes("api.telegram.org")) {
-    return "/api/image-proxy?url=" + encodeURIComponent(url);
-  }
-  return url;
-};
-import ShareButtons from '@/components/share-buttons'
+  import ShareButtons from '@/components/share-buttons'
 
-  if (!url) return "/placeholder.jpg";
-  if (url.includes("api.telegram.org")) {
-    return "/api/image-proxy?url=" + encodeURIComponent(url);
-  }
-  return url;
-};
-import RealCommentBox from '@/components/real-comment-box'
+  import RealCommentBox from '@/components/real-comment-box'
 
-  if (!url) return "/placeholder.jpg";
-  if (url.includes("api.telegram.org")) {
-    return "/api/image-proxy?url=" + encodeURIComponent(url);
-  }
-  return url;
-};
-
+  
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
   const item = await getPromptBySlug(slug)

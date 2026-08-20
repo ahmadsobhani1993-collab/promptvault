@@ -1,39 +1,15 @@
 
-const getImageUrl = (url: string | null | undefined) => {
-  if (!url) return '/placeholder.jpg';
-  if (url.includes('api.telegram.org')) {
-    return '/api/image-proxy?url=' + encodeURIComponent(url);
-  }
-  return url;
-};
 
 import Link from 'next/link'
+import { getImageUrl } from '@/lib/image-utils';
 
 import type { Locale } from '@/lib/i18n'
 
-  if (!url) return "/placeholder.jpg";
-  if (url.includes("api.telegram.org")) {
-    return "/api/image-proxy?url=" + encodeURIComponent(url);
-  }
-  return url;
-};
-import { L, getPromptTypeLabel } from '@/lib/data'
+  import { L, getPromptTypeLabel } from '@/lib/data'
 
-  if (!url) return "/placeholder.jpg";
-  if (url.includes("api.telegram.org")) {
-    return "/api/image-proxy?url=" + encodeURIComponent(url);
-  }
-  return url;
-};
-import SafeImg from '@/components/safe-img'
+  import SafeImg from '@/components/safe-img'
 
-  if (!url) return "/placeholder.jpg";
-  if (url.includes("api.telegram.org")) {
-    return "/api/image-proxy?url=" + encodeURIComponent(url);
-  }
-  return url;
-};
-
+  
 type PromptItem = {
   slug: string
   titleFa: string
