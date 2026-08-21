@@ -25,8 +25,8 @@ export default async function Header() {
           Prompts<span className="text-gold-bright">FA</span>
         </Link>
 
-        {/* Desktop Navigation - با اسکرول افقی در صفحه‌های کوچک */}
-        <nav className="hidden lg:flex items-center gap-4 xl:gap-6 text-sm text-ink-muted overflow-x-auto">
+        {/* Desktop Navigation */}
+        <nav className="hidden lg:flex items-center gap-4 xl:gap-6 text-sm text-ink-muted">
           <Link href="/explore" className="transition-colors hover:text-gold-bright whitespace-nowrap">{L(locale, 'کاوش', 'Explore')}</Link>
 
           <div className="group relative">
@@ -61,14 +61,14 @@ export default async function Header() {
           </div>
 
           <Link href="/blog" className="transition-colors hover:text-gold-bright whitespace-nowrap">{L(locale, 'مقالات', 'Blog')}</Link>
-          
-          {/* لینک ارسال پرامپت - همیشه نمایش داده می‌شود */}
-          <Link href="/submit" className="rounded-lg bg-primary/10 px-3 py-1.5 text-sm font-bold text-primary transition-colors hover:bg-primary/20 whitespace-nowrap">
-            ✨ {L(locale, 'ارسال پرامپت', 'Submit')}
-          </Link>
         </nav>
 
         <div className="flex items-center gap-2 md:gap-3">
+          {/* دکمه ارسال پرامپت - همیشه نمایش داده می‌شود */}
+          <Link href="/submit" className="hidden md:inline-flex rounded-lg bg-gold-bright/20 border border-gold-bright/40 px-3 py-1.5 text-sm font-bold text-gold-bright transition-colors hover:bg-gold-bright/30 whitespace-nowrap">
+            ✨ {L(locale, 'ارسال پرامپت', 'Submit')}
+          </Link>
+
           <LocaleSwitcher />
           {session?.user ? (
             <>
