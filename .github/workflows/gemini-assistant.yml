@@ -1,25 +1,29 @@
 name: Gemini AI Assistant
 
+# این بخش مجوز نوشتن و پوش کردن را به ربات می‌دهد (رفع خطای 403)
+permissions:
+  contents: write
+
 on:
   workflow_dispatch:
     inputs:
       task:
-        description: 'What should Gemini do?'
+        description: 'What should Gemini do? (e.g., Fix header submit button)'
         required: true
-        default: 'Add submit button to header'
+        default: 'Add submit button to header in desktop view'
 
 jobs:
   ai-coding:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
@@ -36,9 +40,12 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TASK: ${{ github.event.inputs.task }}
         run: |
-          aider --model gemini/gemini-3.0-flash \
+          # استفاده از مدل صحیح و پایدار (gemini-2.0-flash)
+          # اگر مدل دیگری مد نظرت است، نام دقیق آن را از سایت openrouter.ai/models کپی کن
+          aider --model gemini/gemini-2.0-flash \
                 --yes-always \
                 --message "$TASK" \
                 --commit
           
+          # پوش کردن تغییرات به گیت‌هاب
           git push origin main
