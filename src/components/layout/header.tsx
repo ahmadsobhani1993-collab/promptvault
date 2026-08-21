@@ -1,11 +1,10 @@
 import Link from 'next/link'
 import { auth } from '@/auth'
 import { cookies } from 'next/headers'
-import { L } from '@/lib/data'
+import { L, getCategories } from '@/lib/data'
 import { type Locale } from '@/lib/i18n'
 import MobileMenu from '@/components/mobile-menu'
 import NotifBell from '@/components/notif-bell'
-import { getCategories } from '@/lib/data'
 
 export default async function Header() {
   const cookieStore = await cookies()
@@ -22,7 +21,6 @@ export default async function Header() {
     { href: '/submit', label: L(locale, 'ارسال پرامپت', 'Submit') },
   ]
 
-  // Add account link for logged-in users
   if (session?.user) {
     mobileLinks.push({ href: '/account', label: L(locale, 'حساب', 'Account') })
   }
@@ -30,18 +28,23 @@ export default async function Header() {
   return (
     <header className="sticky top-0 z-40 border-b border-line/60 bg-[#070503]/85 backdrop-blur">
       <div className="container-app flex h-16 items-center justify-between gap-4">
+        
+        {/* Logo & Mobile Menu */}
         <div className="flex items-center gap-3">
           <MobileMenu links={mobileLinks} admin={!!isAdmin} isLoggedIn={!!session?.user} />
-          <Link href="/" className="font-display text-lg font-extrabold tracking-tight">
+          <Link href="/" className="font-display text-lg font-extrabold tracking-tight whitespace-nowrap">
             Prompts<span className="text-gold-bright">FA</span>
           </Link>
         </div>
 
+        {/* Desktop Navigation */}
         <nav className="hidden items-center gap-6 text-sm text-ink-muted lg:flex">
-          <Link href="/explore" className="transition-colors hover:text-gold-bright">{L(locale, 'کاوش', 'Explore')}</Link>
+          <Link href="/explore" className="transition-colors hover:text-gold-bright whitespace-nowrap">
+            {L(locale, 'کاوش', 'Explore')}
+          </Link>
 
           <div className="group relative">
-            <button type="button" className="transition-colors hover:text-gold-bright">
+            <button type="button" className="transition-colors hover:text-gold-bright whitespace-nowrap">
               {L(locale, 'دسته‌بندی‌ها', 'Categories')} ▾
             </button>
             <div className="invisible absolute right-0 top-full z-50 w-[26rem] pt-3 opacity-0 transition-all group-hover:visible group-hover:opacity-100">
@@ -49,7 +52,9 @@ export default async function Header() {
                 {categories.map((c) => (
                   <div key={c.id} className="rounded-xl border border-line/60 bg-elevated/50 p-3 transition-colors hover:border-gold/40">
                     <Link href={'/categories/' + c.slug} className="flex items-center gap-2 text-sm font-bold text-ink transition-colors hover:text-gold-bright">
-                      <span className="text-gold-bright [&_svg]:h-5 [&_svg]:w-5"><CategoryIcon name={c.icon} /></span>
+                      <span className="text-gold-bright [&_svg]:h-5 [&_svg]:w-5">
+                        <CategoryIcon name={c.icon} />
+                      </span>
                       {L(locale, c.nameFa, c.nameEn)}
                     </Link>
                   </div>
@@ -58,20 +63,27 @@ export default async function Header() {
             </div>
           </div>
 
-          <Link href="/blog" className="transition-colors hover:text-gold-bright">{L(locale, 'وبلاگ', 'Blog')}</Link>
+          <Link href="/blog" className="transition-colors hover:text-gold-bright whitespace-nowrap">
+            {L(locale, 'وبلاگ', 'Blog')}
+          </Link>
         </nav>
 
+        {/* Right Side Actions (Fixed Structure) */}
         <div className="flex items-center gap-2">
           
+          {/* Language Switcher */}
           <div className="hidden md:flex">
-            <Link href="/?locale=fa" className={'rounded-lg border px-3 py-1.5 text-xs transition-colors ' + (locale === 'fa' ? 'border-gold bg-gold/15 text-gold-bright' : 'border-line bg-elevated text-ink-muted hover:border-gold/40')}>
+            <Link href="/?locale=fa" className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${locale === 'fa' ? 'border-gold bg-gold/15 text-gold-bright' : 'border-line bg-elevated text-ink-muted hover:border-gold/40'}`}>
               فارسی
             </Link>
-            <Link href="/?locale=en" className={'rounded-lg border px-3 py-1.5 text-xs transition-colors ' + (locale === 'en' ? 'border-gold bg-gold/15 text-gold-bright' : 'border-line bg-elevated text-ink-muted hover:border-gold/40')}>
+            <Link href="/?locale=en" className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${locale === 'en' ? 'border-gold bg-gold/15 text-gold-bright' : 'border-line bg-elevated text-ink-muted hover:border-gold/40'}`}>
               English
             </Link>
           </div>
+          
           <NotifBell />
+          
+          {/* Account / Login */}
           {session?.user ? (
             <Link href="/account" className="btn-secondary hidden md:inline-flex">
               👤 {L(locale, 'حساب', 'Account')}
@@ -81,20 +93,15 @@ export default async function Header() {
               {L(locale, 'ورود', 'Login')}
             </Link>
           )}
-        <div className="hidden items-center gap-2 lg:flex">
-            {session?.user ? (
-              <Link href="/account" className="btn-secondary text-xs">
-                {L(locale, 'خروج', 'Logout')}
-              </Link>
-            ) : (
-              <Link href="/submit" className="btn-primary text-xs">
-                {L(locale, 'ارسال', 'Submit')}
-              </Link>
-            )}
-          </div>
-          </div>
+
+          {/* Submit Prompt Button - ALWAYS visible on desktop (lg+) */}
+          <Link href="/submit" className="btn-primary hidden lg:inline-flex text-xs whitespace-nowrap">
+            ✨ {L(locale, 'ارسال پرامپت', 'Submit')}
+          </Link>
+          
         </div>
-      </header>
+      </div>
+    </header>
   )
 }
 
