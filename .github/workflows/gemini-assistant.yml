@@ -1,0 +1,41 @@
+name: Gemini AI Assistant
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'What should Gemini do?'
+        required: true
+        default: 'Add submit button to header'
+
+jobs:
+  ai-coding:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Aider
+        run: pip install aider-chat
+
+      - name: Run Gemini AI
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TASK: ${{ github.event.inputs.task }}
+        run: |
+          git config user.name "Gemini AI Bot"
+          git config user.email "gemini@github.com"
+          
+          aider --model gemini/gemini-3.0-flash-exp \
+                --yes-always \
+                --message "$TASK" \
+                --commit \
+                --push
