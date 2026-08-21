@@ -4,12 +4,20 @@ import { auth } from '@/auth'
 import { type Locale } from '@/lib/i18n'
 import { getCategories, L } from '@/lib/data'
 import LocaleSwitcher from '@/components/locale-switcher'
+import MobileMenu from '@/components/mobile-menu'
 
 export default async function Header() {
   const cookieStore = await cookies()
   const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
   const session = await auth()
   const categories = await getCategories()
+
+  // لینک‌های منوی موبایل
+  const mobileLinks = [
+    { href: '/explore', label: L(locale, 'کاوش', 'Explore') },
+    { href: '/blog', label: L(locale, 'مقالات', 'Blog') },
+    { href: '/submit', label: L(locale, 'ارسال پرامپت', 'Submit') },
+  ]
 
   return (
     <header className="sticky top-0 z-40 border-b border-line/60 bg-[#070503]/85 backdrop-blur">
@@ -72,6 +80,13 @@ export default async function Header() {
           ) : (
             <Link href="/login" className="btn-primary">{L(locale, 'ورود', 'Login')}</Link>
           )}
+
+          {/* منوی موبایل */}
+          <MobileMenu
+            links={mobileLinks}
+            admin={session?.user?.role === 'ADMIN'}
+            isLoggedIn={!!session?.user}
+          />
         </div>
       </div>
     </header>
