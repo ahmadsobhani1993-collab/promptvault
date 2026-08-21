@@ -68,7 +68,7 @@ export default async function Header() {
           </Link>
         </nav>
 
-        {/* Right Side Actions (Fixed Structure) */}
+        {/* Right Side Actions */}
         <div className="flex items-center gap-2">
           
           {/* Language Switcher */}
@@ -94,10 +94,17 @@ export default async function Header() {
             </Link>
           )}
 
-          {/* Submit Prompt Button - ALWAYS visible on desktop (lg+) */}
-          <Link href="/submit" className="btn-primary hidden lg:inline-flex text-xs whitespace-nowrap">
+          {/* Submit Prompt Button - Always visible on desktop */}
+          <Link href="/submit" className="btn-primary hidden md:inline-flex text-xs whitespace-nowrap">
             ✨ {L(locale, 'ارسال پرامپت', 'Submit')}
           </Link>
+
+          {/* Logout Button - Only if logged in */}
+          {session?.user && (
+            <Link href="/api/auth/signout" className="btn-secondary hidden lg:inline-flex text-xs">
+              {L(locale, 'خروج', 'Logout')}
+            </Link>
+          )}
           
         </div>
       </div>
