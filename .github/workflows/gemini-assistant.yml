@@ -26,16 +26,19 @@ jobs:
       - name: Install Aider
         run: pip install aider-chat
 
-      - name: Run Gemini AI
+      - name: Configure Git
+        run: |
+          git config user.name "Gemini AI Bot"
+          git config user.email "gemini@github.com"
+
+      - name: Run Gemini AI and Commit
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TASK: ${{ github.event.inputs.task }}
         run: |
-          git config user.name "Gemini AI Bot"
-          git config user.email "gemini@github.com"
-          
-          aider --model gemini/gemini-3.0-flash-exp \
+          aider --model gemini/gemini-3.0-flash \
                 --yes-always \
                 --message "$TASK" \
-                --commit \
-                --push
+                --commit
+          
+          git push origin main
