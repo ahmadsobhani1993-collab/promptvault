@@ -12,7 +12,6 @@ export default async function Header() {
   const session = await auth()
   const categories = await getCategories()
 
-  // لینک‌های منوی موبایل
   const mobileLinks = [
     { href: '/explore', label: L(locale, 'کاوش', 'Explore') },
     { href: '/blog', label: L(locale, 'مقالات', 'Blog') },
@@ -21,16 +20,17 @@ export default async function Header() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-line/60 bg-[#070503]/85 backdrop-blur">
-      <div className="container-app flex h-16 items-center justify-between gap-4">
-        <Link href="/" className="font-display text-lg font-extrabold tracking-tight">
+      <div className="container-app flex h-16 items-center justify-between gap-2 md:gap-4">
+        <Link href="/" className="font-display text-lg font-extrabold tracking-tight whitespace-nowrap">
           Prompts<span className="text-gold-bright">FA</span>
         </Link>
 
-        <nav className="hidden items-center gap-6 text-sm text-ink-muted lg:flex">
-          <Link href="/explore" className="transition-colors hover:text-gold-bright">{L(locale, 'کاوش', 'Explore')}</Link>
+        {/* Desktop Navigation - با اسکرول افقی در صفحه‌های کوچک */}
+        <nav className="hidden lg:flex items-center gap-4 xl:gap-6 text-sm text-ink-muted overflow-x-auto">
+          <Link href="/explore" className="transition-colors hover:text-gold-bright whitespace-nowrap">{L(locale, 'کاوش', 'Explore')}</Link>
 
           <div className="group relative">
-            <button type="button" className="transition-colors hover:text-gold-bright">
+            <button type="button" className="transition-colors hover:text-gold-bright whitespace-nowrap">
               {L(locale, 'دسته‌بندی‌ها', 'Categories')} ▾
             </button>
             <div className="invisible absolute left-1/2 top-full z-50 w-80 -translate-x-1/2 pt-3 opacity-0 transition-all group-hover:visible group-hover:opacity-100">
@@ -60,28 +60,27 @@ export default async function Header() {
             </div>
           </div>
 
-          <Link href="/blog" className="transition-colors hover:text-gold-bright">{L(locale, 'مقالات', 'Blog')}</Link>
-          <span className="cursor-default text-ink-faint">
-            {L(locale, 'سازندگان', 'Creators')}{' '}
-            <span className="rounded-full border border-line px-1.5 py-0.5 text-[9px]">{L(locale, 'به‌زودی', 'soon')}</span>
-          </span>
-          <Link href="/submit" className="transition-colors hover:text-gold-bright">{L(locale, 'ارسال پرامپت', 'Submit')}</Link>
+          <Link href="/blog" className="transition-colors hover:text-gold-bright whitespace-nowrap">{L(locale, 'مقالات', 'Blog')}</Link>
+          
+          {/* لینک ارسال پرامپت - همیشه نمایش داده می‌شود */}
+          <Link href="/submit" className="rounded-lg bg-primary/10 px-3 py-1.5 text-sm font-bold text-primary transition-colors hover:bg-primary/20 whitespace-nowrap">
+            ✨ {L(locale, 'ارسال پرامپت', 'Submit')}
+          </Link>
         </nav>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 md:gap-3">
           <LocaleSwitcher />
           {session?.user ? (
             <>
               {session.user.role === 'ADMIN' && (
-                <Link href="/admin" className="btn-secondary">Admin</Link>
+                <Link href="/admin" className="btn-secondary text-xs md:text-sm">Admin</Link>
               )}
               <span className="hidden max-w-28 truncate text-xs text-ink-muted sm:block">{session.user.name}</span>
             </>
           ) : (
-            <Link href="/login" className="btn-primary">{L(locale, 'ورود', 'Login')}</Link>
+            <Link href="/login" className="btn-primary text-xs md:text-sm">{L(locale, 'ورود', 'Login')}</Link>
           )}
 
-          {/* منوی موبایل */}
           <MobileMenu
             links={mobileLinks}
             admin={session?.user?.role === 'ADMIN'}
