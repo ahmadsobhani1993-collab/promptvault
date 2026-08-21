@@ -1,0 +1,41 @@
+name: AI Code Assistant
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'What should I do?'
+        required: true
+        default: 'Fix the header to show submit button'
+
+jobs:
+  ai-coding:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Aider
+        run: pip install aider-chat
+
+      - name: Run AI Assistant
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          TASK: ${{ github.event.inputs.task }}
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          
+          aider --model openrouter/qwen/qwen-2.5-coder-32b-instruct \
+                --yes-always \
+                --message "$TASK" \
+                --commit \
+                --push
