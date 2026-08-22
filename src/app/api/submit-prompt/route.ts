@@ -42,6 +42,33 @@ export async function POST(req: Request) {
       },
     })
 
+    // ارسال پیام به کانال تلگرام
+    const botToken = process.env.TELEGRAM_BOT_TOKEN
+    const channelId = process.env.TELEGRAM_CHANNEL_ID
+
+    if (botToken && channelId) {
+      try {
+        const messageText = `🆕 *پرامپت جدید ارسال شد*\n\n` +
+          `*عنوان:* ${title}\n` +
+          `*ایمیل فرستنده:* ${email || 'ثبت نشده'}\n\n` +
+          `*متن پرامپت:*\n\`\`\`\n${prompt}\n\`\`\``
+
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            chat_id: channelId,
+            text: messageText,
+            parse_mode: 'Markdown',
+          }),
+        })
+      } catch (tgError) {
+        console.error('Telegram notification failed:', tgError)
+      }
+    }
+
     return NextResponse.json({ ok: true, message: 'پرامپت با موفقیت ارسال شد' })
   } catch (error) {
     console.error('Submit prompt error:', error)
