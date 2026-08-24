@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
         { 
-          error: حجم فایل نباید بیشتر از 3 مگابایت باشد. حجم فعلی: \ MB 
+          error: 'حجم فایل نباید بیشتر از 3 مگابایت باشد. حجم فعلی: ' + (file.size / 1024 / 1024).toFixed(2) + ' MB'
         }, 
         { status: 400 }
       )
