@@ -18,7 +18,7 @@ import RealCommentBox from '@/components/real-comment-box'
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
-  const item = await getPromptBySlug(slug)
+  const item = await getPromptBySlug(slug, true)
   if (!item) return {}
   return {
     title: item.titleFa,
@@ -43,11 +43,12 @@ export default async function PromptDetailPage({ params }: { params: Promise<{ s
   const cookieStore = await cookies()
   const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
   const session = await auth()
+  const isAdmin = session?.user?.role === 'ADMIN'
 
   // شمارش بازدید
   await prisma.prompt.updateMany({ where: { slug }, data: { views: { increment: 1 } } })
 
-  const item = await getPromptBySlug(slug)
+  const item = await getPromptBySlug(slug, isAdmin)
   if (!item) notFound()
 
   const related = await getRelatedPrompts(item.categoryId, slug)
