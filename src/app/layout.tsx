@@ -9,6 +9,7 @@ import Analytics from '@/components/analytics'
 import RouteLoader from '@/components/route-loader'
 import PWAControls from '@/components/pwa-controls'
 import ClientProviders from '@/components/client-providers'
+import MouseTrail from '@/components/mouse-trail'
 
 export const metadata: Metadata = {
   icons: { icon: '/favicon.svg', apple: '/icon.svg' },
@@ -29,6 +30,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <Analytics />
         <PWAControls />
         <ClientProviders />
+        <MouseTrail />
       </body>
     </html>
   )
