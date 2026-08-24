@@ -27,11 +27,12 @@ export default function SubmitForm({ categories, locale }: Props) {
     const file = e.target.files?.[0]
     if (!file) return
 
-    if (file.size > 1024 * 1024) {
+    // ✅ تغییر محدودیت از 1MB به 3MB
+    if (file.size > 3 * 1024 * 1024) {
       setError(
         locale === 'fa'
-          ? 'حجم تصویر باید کمتر از ۱ مگابایت باشد'
-          : 'Image must be under 1MB'
+          ? 'حجم تصویر باید کمتر از ۳ مگابایت باشد'
+          : 'Image must be under 3MB'
       )
       if (fileInputRef.current) fileInputRef.current.value = ''
       return
@@ -89,7 +90,8 @@ export default function SubmitForm({ categories, locale }: Props) {
     <form action={submitPromptAction} className="card mt-8 space-y-5 p-6">
       <div>
         <label className="block text-sm font-medium mb-2">
-          {L(locale, 'آپلود تصویر (حداکثر ۱ مگابایت)', 'Upload image (max 1MB)')}
+          {/* ✅ تغییر متن لیبل به ۳ مگابایت */}
+          {L(locale, 'آپلود تصویر (حداکثر ۳ مگابایت)', 'Upload image (max 3MB)')}
         </label>
         <input
           type="file"

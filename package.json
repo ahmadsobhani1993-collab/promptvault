@@ -11,9 +11,12 @@
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
     "@prisma/client": "^6.19.3",
+    "cloudinary": "^2.10.1",
     "clsx": "^2.1.1",
+    "multer": "^2.2.0",
     "next": "^15.1.0",
     "next-auth": "^5.0.0-beta.25",
+    "next-connect": "^1.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^2.6.0",

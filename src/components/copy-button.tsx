@@ -2,41 +2,34 @@
 
 import { useState } from 'react'
 
-export default function CopyButton({
-  text,
-  label,
-  copiedLabel,
-  isLoggedIn = false,
-}: {
+export default function CopyButton({ 
+  text, 
+  label, 
+  copiedLabel 
+}: { 
   text: string
   label: string
   copiedLabel: string
-  isLoggedIn?: boolean
 }) {
   const [copied, setCopied] = useState(false)
-  const [showWarning, setShowWarning] = useState(false)
 
-  const handleClick = async () => {
-    if (!isLoggedIn) {
-      setShowWarning(true)
-      setTimeout(() => setShowWarning(false), 2000)
-      return
-    }
-
+  const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(text)
-    } catch {}
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      console.error('Failed to copy text: ', err)
+    }
   }
 
   return (
     <button
       type="button"
-      onClick={handleClick}
-      className="btn-primary"
+      onClick={handleCopy}
+      className={`btn-primary transition-all ${copied ? 'bg-green-600 hover:bg-green-700' : ''}`}
     >
-      {showWarning ? 'برای کپی باید وارد شوید' : copied ? copiedLabel : label}
+      {copied ? copiedLabel : label}
     </button>
   )
 }

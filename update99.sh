@@ -14,7 +14,7 @@ const APP = () => process.env.NEXT_PUBLIC_APP_URL ?? 'https://promptsfa.ir'
 
 const IMAGE_MODELS = [
   process.env.TOKENROUTER_IMAGE_MODEL || '',
-  'google/gemini-2.5-flash-image-preview-free',
+  'gemini/gemini-2.5-flash-image-preview-free',
   'qwen/qwen-image-free',
   'black-forest-labs/flux.1-schnell-free',
 ].filter(Boolean)

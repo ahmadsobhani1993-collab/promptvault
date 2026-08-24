@@ -1,34 +1,36 @@
-import { NextResponse } from 'next/server'
-import { auth } from '@/auth'
-import { prisma } from '@/lib/db'
+﻿import { NextResponse } from 'next/server'
 
-export const maxDuration = 30
+const MAX_FILE_SIZE = 3 * 1024 * 1024 // 3MB
 
-export async function POST(req: Request) {
-  const session = await auth()
-  if (!session?.user?.id) return NextResponse.json({ error: 'login required' }, { status: 401 })
+export async function POST(request: Request) {
+  try {
+    const formData = await request.formData()
+    const file = formData.get('file') as File
 
-  const token = process.env.TELEGRAM_READ_TOKEN || process.env.TELEGRAM_BOT_TOKEN
-  const storage = (await prisma.setting.findUnique({ where: { key: 'tg_storage_chat' } }))?.value ?? (await prisma.setting.findUnique({ where: { key: 'tg_private_chat' } }))?.value
-  if (!token || !storage) return NextResponse.json({ error: 'storage not configured' }, { status: 500 })
+    if (!file) {
+      return NextResponse.json({ error: 'فایلی انتخاب نشده است' }, { status: 400 })
+    }
 
-  const { dataUrl } = await req.json()
-  const m = String(dataUrl ?? '').match(/^data:(image\/[a-z+]+);base64,(.+)$/)
-  if (!m) return NextResponse.json({ error: 'bad image' }, { status: 400 })
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { 
+          error: حجم فایل نباید بیشتر از 3 مگابایت باشد. حجم فعلی: \ MB 
+        }, 
+        { status: 400 }
+      )
+    }
 
-  const buf = Buffer.from(m[2], 'base64')
-  if (buf.length > 1_000_000) return NextResponse.json({ error: 'حجم تصویر باید کمتر از ۱ مگابایت باشد', tooBig: true }, { status: 400 })
+    if (!file.type.startsWith('image/')) {
+      return NextResponse.json({ error: 'فایل انتخابی باید تصویر باشد' }, { status: 400 })
+    }
 
-  const form = new FormData()
-  form.append('chat_id', storage)
-  form.append('photo', new Blob([new Uint8Array(buf)], { type: m[1] }), 'upload.jpg')
-  const r = await fetch('https://api.telegram.org/bot' + token + '/sendPhoto', { method: 'POST', body: form, signal: AbortSignal.timeout(20000) })
-  const j = await r.json()
-  const photos = j?.result?.photo
-  if (!j.ok || !photos?.length) return NextResponse.json({ error: 'telegram upload failed: ' + (j.description ?? '') }, { status: 500 })
-
-  const fileId = photos[photos.length - 1].file_id
-  const up = await prisma.uploadImage.create({ data: { fileId } })
-
-  return NextResponse.json({ ok: true, id: up.id, url: (process.env.NEXT_PUBLIC_APP_URL ?? 'https://promptsfa.ir') + '/api/img/' + up.id })
+    return NextResponse.json({ 
+      ok: true, 
+      message: 'فایل معتبر است و آماده آپلود می‌باشد' 
+    })
+    
+  } catch (error) {
+    console.error('Upload validation error:', error)
+    return NextResponse.json({ error: 'خطا در پردازش فایل' }, { status: 500 })
+  }
 }
