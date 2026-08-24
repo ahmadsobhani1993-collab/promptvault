@@ -17,31 +17,50 @@ import ShareButtons from '@/components/share-buttons'
 import RealCommentBox from '@/components/real-comment-box'
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
-  const { slug } = await params
-  const item = await getPromptBySlug(slug, true)
-  if (!item) return {}
-  return {
-    title: item.titleFa,
-    description: (item.descFa ?? item.prompt).slice(0, 150),
-    openGraph: {
-      title: '✨ ' + item.titleFa,
-      description: (item.descFa ?? item.titleFa) + ' — دیدن و کپی پرامپت در PromptsFA',
-      images: [{ url: item.img.replace('output=webp', 'output=jpg'), width: 900, height: 900 }],
-      locale: 'fa_IR',
-      siteName: 'PromptsFA',
-      url: (process.env.NEXT_PUBLIC_APP_URL ?? '') + '/prompts/' + item.slug,
-      type: 'article',
-    },
-    twitter: { card: 'summary_large_image', title: item.titleFa, description: item.descFa ?? '' },
+  try {
+    const resolvedParams = await params
+    const slug = resolvedParams?.slug
+    if (!slug) return {}
+    const item = await getPromptBySlug(slug, true)
+    if (!item) return {}
+    return {
+      title: item.titleFa,
+      description: (item.descFa ?? item.prompt).slice(0, 150),
+      openGraph: {
+        title: '✨ ' + item.titleFa,
+        description: (item.descFa ?? item.titleFa) + ' — دیدن و کپی پرامپت در PromptsFA',
+        images: [{ url: item.img.replace('output=webp', 'output=jpg'), width: 900, height: 900 }],
+        locale: 'fa_IR',
+        siteName: 'PromptsFA',
+        url: (process.env.NEXT_PUBLIC_APP_URL ?? '') + '/prompts/' + item.slug,
+        type: 'article',
+      },
+      twitter: { card: 'summary_large_image', title: item.titleFa, description: item.descFa ?? '' },
+    }
+  } catch {
+    return {}
   }
 }
 
 export const dynamic = 'force-dynamic'
 
 export default async function PromptDetailPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params
+  const resolvedParams = await params
+  const slug = resolvedParams?.slug
+
   const cookieStore = await cookies()
   const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
+
+  if (!slug) {
+    return (
+      <section className="container-app py-16 text-center">
+        <h1 className="text-2xl font-bold text-red-500">{L(locale, 'پرامپت یافت نشد', 'Prompt not found')}</h1>
+        <p className="mt-4 text-ink-muted">{L(locale, 'آدرس وارد شده معتبر نمی‌باشد.', 'The requested URL is invalid.')}</p>
+        <Link href="/explore" className="btn-primary mt-6 inline-flex">{L(locale, 'بازگشت به کاوش', 'Back to Explore')}</Link>
+      </section>
+    )
+  }
+
   const session = await auth()
   const isAdmin = session?.user?.role === 'ADMIN'
 
