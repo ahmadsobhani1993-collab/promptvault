@@ -135,11 +135,13 @@ export default function SubmitForm({ categories, locale, submitAction }: Props) 
       <textarea name="prompt" required rows={5} placeholder={L(locale, 'متن پرامپت', 'Prompt text')} className="input resize-none" />
       <textarea name="desc" rows={2} placeholder={L(locale, 'توضیح کوتاه (اختیاری)', 'Short description (optional)')} className="input resize-none" />
 
-      <select name="category" className="input">
-        {categories.map((c) => (
-          <option key={c.id} value={c.id}>{L(locale, c.nameFa, c.nameEn)}</option>
-        ))}
-      </select>
+      {categories.length > 0 && (
+        <select name="category" className="input">
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>{L(locale, c.nameFa, c.nameEn)}</option>
+          ))}
+        </select>
+      )}
 
       <button
         type="submit"
