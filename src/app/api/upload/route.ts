@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server'
+import { v2 as cloudinary } from 'cloudinary'
 
-const MAX_FILE_SIZE = 3 * 1024 * 1024 // 3MB
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+})
+
+const MAX_FILE_SIZE = 3 * 1024 * 1024
 
 export async function POST(request: Request) {
   try {
@@ -13,24 +20,33 @@ export async function POST(request: Request) {
 
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
-        { 
-          error: 'حجم فایل نباید بیشتر از 3 مگابایت باشد. حجم فعلی: ' + (file.size / 1024 / 1024).toFixed(2) + ' MB'
-        }, 
+        { error: 'حجم فایل نباید بیشتر از 3 مگابایت باشد' },
         { status: 400 }
       )
     }
 
     if (!file.type.startsWith('image/')) {
-      return NextResponse.json({ error: 'فایل انتخابی باید تصویر باشد' }, { status: 400 })
+      return NextResponse.json({ error: 'فایل باید تصویر باشد' }, { status: 400 })
     }
 
-    return NextResponse.json({ 
-      ok: true, 
-      message: 'فایل معتبر است و آماده آپلود می‌باشد' 
+    const bytes = await file.arrayBuffer()
+    const buffer = Buffer.from(bytes)
+
+    const result = await new Promise<any>((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        { folder: 'promptvault', resource_type: 'auto' },
+        (error, result) => {
+          if (error) reject(error)
+          else resolve(result)
+        }
+      )
+      uploadStream.end(buffer)
     })
+
+    return NextResponse.json({ url: result.secure_url, public_id: result.public_id })
     
   } catch (error) {
-    console.error('Upload validation error:', error)
-    return NextResponse.json({ error: 'خطا در پردازش فایل' }, { status: 500 })
+    console.error('Upload error:', error)
+    return NextResponse.json({ error: 'خطا در آپلود' }, { status: 500 })
   }
 }
