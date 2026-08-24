@@ -1,41 +1,35 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useState } from 'react'
 
 export default function MouseTrail() {
-  const ref = useRef<HTMLDivElement>(null)
+  const [trail, setTrail] = useState<{ x: number; y: number; id: number }[]>([])
 
   useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    let last = 0
-
-    const onMove = (e: MouseEvent) => {
-      const now = performance.now()
-      if (now - last < 45) return
-      last = now
-
-      const star = document.createElement('span')
-      star.className = 'trail-star'
-      star.textContent = '✦'
-      star.style.fontSize = 8 + Math.random() * 8 + 'px'
-      star.style.left = e.clientX + 'px'
-      star.style.top = e.clientY + 'px'
-      star.style.setProperty('--dx', Math.random() * 44 - 22 + 'px')
-      star.style.setProperty('--dy', -12 - Math.random() * 30 + 'px')
-
-      el.appendChild(star)
-      setTimeout(() => star.remove(), 800)
+    let id = 0
+    const handleMove = (e: MouseEvent) => {
+      id++
+      setTrail(prev => [...prev.slice(-15), { x: e.clientX, y: e.clientY, id }])
     }
-
-    window.addEventListener('mousemove', onMove, { passive: true })
-    return () => window.removeEventListener('mousemove', onMove)
+    window.addEventListener('mousemove', handleMove)
+    return () => window.removeEventListener('mousemove', handleMove)
   }, [])
 
   return (
-    <div
-      ref={ref}
-      className="pointer-events-none fixed inset-0 z-[70] overflow-hidden"
-    />
+    <div className="pointer-events-none fixed inset-0 z-50">
+      {trail.map((point, i) => (
+        <div
+          key={point.id}
+          className="absolute h-2 w-2 rounded-full bg-gold/60"
+          style={{
+            left: point.x,
+            top: point.y,
+            opacity: (i + 1) / trail.length,
+            transform: `scale(${(i + 1) / trail.length})`,
+            transition: 'opacity 0.3s, transform 0.3s',
+          }}
+        />
+      ))}
+    </div>
   )
 }
