@@ -15,7 +15,6 @@ export default async function Header() {
 
   const mobileLinks = [
     { href: '/explore', label: L(locale, 'کاوش', 'Explore') },
-    { href: '/prompts', label: L(locale, 'پرامپت‌ها', 'Prompts') },
     { href: '/categories', label: L(locale, 'دسته‌بندی‌ها', 'Categories') },
     { href: '/blog', label: L(locale, 'وبلاگ', 'Blog') },
     { href: '/submit', label: L(locale, 'ارسال پرامپت', 'Submit') },

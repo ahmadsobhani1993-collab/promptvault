@@ -1,39 +1,21 @@
-
-
 import Link from 'next/link'
 import { getImageUrl } from '@/lib/image-utils';
-
 import { cookies } from 'next/headers'
+import { notFound } from 'next/navigation'
+import type { Metadata } from 'next'
+import { type Locale } from '@/lib/i18n'
+import { getPromptBySlug, getRelatedPrompts, getPromptTypeLabel, L } from '@/lib/data'
+import { prisma } from '@/lib/db'
+import { auth } from '@/auth'
+import PromptCard from '@/components/prompt-card'
+import CopyButton from '@/components/copy-button'
+import RealLikeButton from '@/components/real-like-button'
+import SaveButton from '@/components/save-button'
+import SafeImg from '@/components/safe-img'
+import PromptReveal from '@/components/prompt-reveal'
+import ShareButtons from '@/components/share-buttons'
+import RealCommentBox from '@/components/real-comment-box'
 
-  import { notFound } from 'next/navigation'
-
-  import type { Metadata } from 'next'
-
-  import { type Locale } from '@/lib/i18n'
-
-  import { getPromptBySlug, getRelatedPrompts, getPromptTypeLabel, L } from '@/lib/data'
-
-  import { prisma } from '@/lib/db'
-
-  import { auth } from '@/auth'
-
-  import PromptCard from '@/components/prompt-card'
-
-  import CopyButton from '@/components/copy-button'
-
-  import RealLikeButton from '@/components/real-like-button'
-
-  import SaveButton from '@/components/save-button'
-
-  import SafeImg from '@/components/safe-img'
-
-  import PromptReveal from '@/components/prompt-reveal'
-
-  import ShareButtons from '@/components/share-buttons'
-
-  import RealCommentBox from '@/components/real-comment-box'
-
-  
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
   const item = await getPromptBySlug(slug)
@@ -144,13 +126,24 @@ export default async function PromptDetailPage({ params }: { params: Promise<{ s
             ))}
           </div>
 
-          <PromptReveal
-            slug={item.slug}
-            revealLabel={L(locale, 'نمایش پرامپت', 'Reveal Prompt')}
-            copyLabel={L(locale, 'کپی پرامپت', 'Copy Prompt')}
-            copiedLabel={L(locale, 'کپی شد!', 'Copied!')}
-            hint={L(locale, 'پرامپت برای محافظت در برابر اسکرپینگ، فقط بعد از کلیک نمایش داده می‌شود.', 'The prompt is revealed on click to protect against scraping.') }
-          />
+          {userId ? (
+            <PromptReveal
+              slug={item.slug}
+              revealLabel={L(locale, 'نمایش پرامپت', 'Reveal Prompt')}
+              copyLabel={L(locale, 'کپی پرامپت', 'Copy Prompt')}
+              copiedLabel={L(locale, 'کپی شد!', 'Copied!')}
+              hint={L(locale, 'پرامپت برای محافظت در برابر اسکرپینگ، فقط بعد از کلیک نمایش داده می‌شود.', 'The prompt is revealed on click to protect against scraping.') }
+            />
+          ) : (
+            <div className="mt-8 rounded-2xl border border-dashed border-gold/40 bg-gold/5 p-6 text-center">
+              <p className="text-sm text-ink-muted">
+                {L(locale, 'برای مشاهده و کپی کردن متن پرامپت، ابتدا باید وارد حساب کاربری خود شوید.', 'To view and copy the prompt text, you must first log in to your account.')}
+              </p>
+              <Link href="/login" className="btn-primary mt-4 inline-flex">
+                {L(locale, 'ورود به حساب کاربری', 'Login to Account')}
+              </Link>
+            </div>
+          )}
 
           {usage && (
             <div className="mt-6 rounded-2xl border border-line bg-elevated p-5">
