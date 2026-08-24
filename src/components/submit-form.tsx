@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react'
 import { L } from '@/lib/data'
 import { type Locale } from '@/lib/i18n'
+import { submitPromptAction } from '@/app/submit/actions'
 
 type Category = {
   id: string
@@ -13,10 +14,9 @@ type Category = {
 type Props = {
   categories: Category[]
   locale: Locale
-  submitAction: (fd: FormData) => Promise<void>
 }
 
-export default function SubmitForm({ categories, locale, submitAction }: Props) {
+export default function SubmitForm({ categories, locale }: Props) {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [imageUrl, setImageUrl] = useState('')
@@ -86,7 +86,7 @@ export default function SubmitForm({ categories, locale, submitAction }: Props) 
   }
 
   return (
-    <form action={submitAction} className="card mt-8 space-y-5 p-6">
+    <form action={submitPromptAction} className="card mt-8 space-y-5 p-6">
       <div>
         <label className="block text-sm font-medium mb-2">
           {L(locale, 'آپلود تصویر (حداکثر ۱ مگابایت)', 'Upload image (max 1MB)')}
