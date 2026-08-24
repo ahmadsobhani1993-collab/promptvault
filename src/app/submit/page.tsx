@@ -4,7 +4,7 @@ import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { getCategories, L } from '@/lib/data'
 import { type Locale } from '@/lib/i18n'
-import UploadInput from '@/components/upload-input'
+import SubmitForm from '@/components/submit-form'
 
 export const metadata = { title: 'ارسال پرامپت | PromptsFA' }
 export const dynamic = 'force-dynamic'
@@ -64,21 +64,7 @@ export default async function SubmitPage() {
       <h1 className="font-display text-2xl font-extrabold">{L(locale, 'ارسال پرامپت', 'Submit prompt')}</h1>
       <p className="mt-2 text-xs text-ink-muted">{L(locale, 'پرامپت تو پس از تأیید ادمین منتشر می‌شود.', 'Your prompt will be published after admin approval.')}</p>
 
-      <form action={submit} className="card mt-8 space-y-5 p-6">
-        <UploadInput label={L(locale, 'آپلود تصویر (حداکثر ۱ مگابایت)', 'Upload image (max 1MB)')} tooBigMsg={L(locale, 'حجم تصویر باید کمتر از ۱ مگابایت باشد', 'Image must be under 1MB')} />
-
-        <input name="title" required placeholder={L(locale, 'عنوان', 'Title')} className="input" />
-        <textarea name="prompt" required rows={5} placeholder={L(locale, 'متن پرامپت', 'Prompt text')} className="input resize-none" />
-        <textarea name="desc" rows={2} placeholder={L(locale, 'توضیح کوتاه (اختیاری)', 'Short description (optional)')} className="input resize-none" />
-
-        <select name="category" className="input">
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>{L(locale, c.nameFa, c.nameEn)}</option>
-          ))}
-        </select>
-
-        <button type="submit" className="btn-primary w-full justify-center">{L(locale, 'ارسال برای بررسی', 'Submit for review')}</button>
-      </form>
+      <SubmitForm categories={categories} locale={locale} submitAction={submit} />
     </section>
   )
 }
