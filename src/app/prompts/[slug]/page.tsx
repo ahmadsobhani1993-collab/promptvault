@@ -16,11 +16,11 @@ import PromptReveal from '@/components/prompt-reveal'
 import ShareButtons from '@/components/share-buttons'
 import RealCommentBox from '@/components/real-comment-box'
 
-export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+export async function generateMetadata({ params }: { params: any }): Promise<Metadata> {
   try {
-    const resolvedParams = await params
-    const slug = resolvedParams?.slug
-    if (!slug) return {}
+    const resolvedParams = params ? (params instanceof Promise ? await params : params) : null
+    const slug = resolvedParams && typeof resolvedParams === 'object' ? (resolvedParams as any).slug : undefined
+    if (!slug || typeof slug !== 'string') return {}
     const item = await getPromptBySlug(slug, true)
     if (!item) return {}
     return {
@@ -44,14 +44,14 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export const dynamic = 'force-dynamic'
 
-export default async function PromptDetailPage({ params }: { params: Promise<{ slug: string }> }) {
-  const resolvedParams = await params
-  const slug = resolvedParams?.slug
+export default async function PromptDetailPage({ params }: { params: any }) {
+  const resolvedParams = params ? (params instanceof Promise ? await params : params) : null
+  const slug = resolvedParams && typeof resolvedParams === 'object' ? (resolvedParams as any).slug : undefined
 
   const cookieStore = await cookies()
   const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
 
-  if (!slug) {
+  if (!slug || typeof slug !== 'string') {
     return (
       <section className="container-app py-16 text-center">
         <h1 className="text-2xl font-bold text-red-500">{L(locale, 'پرامپت یافت نشد', 'Prompt not found')}</h1>
