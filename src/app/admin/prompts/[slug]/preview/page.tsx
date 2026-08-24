@@ -18,7 +18,7 @@ export default async function AdminPromptPreview({ params }: { params: Promise<{
   const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
 
   const prompt = await prisma.prompt.findUnique({
-    where: { slug },
+    where: { id: slug },
     include: { 
       category: true,
       sub: true,
