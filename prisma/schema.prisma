@@ -1,6 +1,7 @@
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 generator client {
@@ -25,6 +26,8 @@ enum PromptStatus {
   PUBLISHED
   REJECTED
 }
+
+// بقیه مدل‌ها (User, Account, Prompt, ...) بدون تغییر باقی می‌مانند
 
 model User {
   id                String             @id @default(cuid())
