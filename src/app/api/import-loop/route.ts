@@ -59,7 +59,6 @@ export async function GET(req: Request) {
   const debug: string[] = []
   const results: any[] = []
   
-  // دریافت chatId
   let chatId = await getSetting('tg_chat_id', '')
   if (!chatId) {
     const chatRes = await fetch(api('getChat', { chat_id: TARGET_CHANNEL }))
@@ -77,16 +76,15 @@ export async function GET(req: Request) {
   let cursor = parseInt(await getSetting('import_cursor_msg_id', '2'), 10)
   const categories = await prisma.category.findMany()
   
-  debug.push(`🔍 Starting from message ID ${cursor}`)
+  debug.push(`🔍 Starting from message ID ${cursor} (target: 10 prompts)`)
 
   let imported = 0
-  const MAX_MESSAGES = 50
+  const MAX_MESSAGES = 30
 
-  for (let offset = 0; offset < MAX_MESSAGES && imported < 3; offset++) {
+  for (let offset = 0; offset < MAX_MESSAGES && imported < 10; offset++) {
     const msgId = cursor + offset
     
     try {
-      // Forward پیام عکس به چت خصوصی
       const fwdRes = await fetch(api('forwardMessage', { 
         chat_id: privChat,
         from_chat_id: chatId, 
@@ -102,9 +100,8 @@ export async function GET(req: Request) {
       if (!fwdData.ok) continue
       
       const msg = fwdData.result
-      const fwdMsgId = msg.message_id // ID پیام forward شده در چت خصوصی
+      const fwdMsgId = msg.message_id
 
-      // بررسی عکس
       if (!msg.photo) {
         debug.push(`⏭️ ${msgId}: Not a photo`)
         await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(fwdMsgId) })).catch(() => {})
@@ -115,12 +112,10 @@ export async function GET(req: Request) {
       let promptText = ''
       let promptMsgId = msgId
 
-      // حالت 1: کپشن معتبر
       if (isValidCaption(caption)) {
         promptText = caption
         debug.push(`✅ ${msgId}: Valid caption (${caption.length} chars)`)
       } else {
-        // حالت 2: بررسی پیام‌های بعدی برای پیدا کردن reply
         debug.push(`🔍 ${msgId}: Checking for replies...`)
         
         for (let r = 1; r <= 5; r++) {
@@ -139,11 +134,9 @@ export async function GET(req: Request) {
           const replyMsg = replyFwdData.result
           const replyFwdMsgId = replyMsg.message_id
           
-          // ✅ نکته کلیدی: بررسی reply_to_message در پیام forward شده
-          // reply_to_message.message_id باید برابر با fwdMsgId (نه msgId) باشد
-          const isReplyToOurPhoto = replyMsg.reply_to_message?.message_id === fwdMsgId
+          const isReplyToOurPhoto = replyMsg.reply_to_message?.message_id === msgId
           
-          debug.push(`  Checking ${replyMsgId}: isReply=${isReplyToOurPhoto}, hasText=${!!(replyMsg.text || replyMsg.caption)}`)
+          debug.push(`  Checking ${replyMsgId}: isReply=${isReplyToOurPhoto}, textLen=${(replyMsg.text || replyMsg.caption || '').length}`)
           
           if (isReplyToOurPhoto) {
             const replyText = (replyMsg.text || replyMsg.caption || '').trim()
@@ -152,18 +145,15 @@ export async function GET(req: Request) {
               promptMsgId = replyMsgId
               debug.push(`✅ ${msgId}: Found REPLY at ${replyMsgId} (${replyText.length} chars)`)
               
-              // پاک کردن پیام reply
               await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(replyFwdMsgId) })).catch(() => {})
               break
             }
           }
           
-          // پاک کردن پیامی که reply نبود
           await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(replyFwdMsgId) })).catch(() => {})
         }
       }
 
-      // پاک کردن پیام عکس
       await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(fwdMsgId) })).catch(() => {})
 
       if (!promptText) {
@@ -171,7 +161,6 @@ export async function GET(req: Request) {
         continue
       }
 
-      // گرفتن لینک عکس
       const fileId = msg.photo[msg.photo.length - 1].file_id
       const fileRes = await fetch(api('getFile', { file_id: fileId }))
       const fileData = await fileRes.json()
@@ -184,7 +173,6 @@ export async function GET(req: Request) {
       const telegramUrl = `https://api.telegram.org/file/bot${token}/${fileData.result.file_path}`
       const proxyUrl = `${APP_URL}/api/image-proxy?url=${encodeURIComponent(telegramUrl)}`
 
-      // چک تکراری
       const existing = await prisma.prompt.findUnique({ where: { slug: `tg-${msgId}` } })
       if (existing) {
         debug.push(`⏭️ ${msgId}: Already exists`)
@@ -192,7 +180,6 @@ export async function GET(req: Request) {
         continue
       }
 
-      // پردازش با جمینای
       const finalPrompt = extractPrompt(promptText)
       const ai = await analyzeWithGemini({ text: finalPrompt, categories })
       const cat = await prisma.category.findUnique({ where: { slug: ai.categorySlug } })
@@ -220,7 +207,7 @@ export async function GET(req: Request) {
 
       results.push({ id: msgId, slug: `tg-${msgId}`, title: ai.titleFa })
       imported++
-      debug.push(`✅ Imported ${msgId}: ${ai.titleFa}`)
+      debug.push(`✅ Imported ${msgId}: ${ai.titleFa} (${imported}/10)`)
       
       cursor = msgId + 1
 
@@ -233,7 +220,7 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ 
     ok: true, 
-    summary: { imported, next_cursor: cursor },
+    summary: { imported, next_cursor: cursor, target: 10 },
     results, 
     debug 
   })
