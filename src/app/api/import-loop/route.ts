@@ -21,6 +21,32 @@ async function setSetting(k: string, v: string) {
   })
 }
 
+// استخراج پرامپت از JSON یا متن ساده
+function extractPromptFromText(text: string): { prompt: string, title?: string, desc?: string } {
+  try {
+    // اگر JSON بود
+    if (text.trim().startsWith('{')) {
+      const json = JSON.parse(text)
+      
+      // ساختارهای مختلف JSON را چک کن
+      if (json.prompt) return { prompt: json.prompt, title: json.title, desc: json.description }
+      if (json.text) return { prompt: json.text, title: json.title, desc: json.description }
+      if (json.content) return { prompt: json.content, title: json.title, desc: json.description }
+      
+      // ساختار تو در تو
+      if (json.description?.prompt) return { prompt: json.description.prompt }
+      if (json.data?.prompt) return { prompt: json.data.prompt }
+      
+      // اگر هیچکدام نبود، کل JSON را stringify کن
+      return { prompt: JSON.stringify(json, null, 2) }
+    }
+  } catch (e) {
+    // اگر JSON نبود، متن ساده را برگردان
+  }
+  
+  return { prompt: text }
+}
+
 export async function GET(req: Request) {
   if (!isCronAuthorized(req)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -34,46 +60,33 @@ export async function GET(req: Request) {
 
   const debug: string[] = []
   const results: any[] = []
-  // همیشه از @promptsfa1 استفاده کن، صرف‌نظر از تنظیمات قبلی
-const TARGET_CHANNEL = '@promptsfa1'
-let chatId = await getSetting('tg_chat_id', '')
-
-if (!chatId || chatId === 'auto') {
-  debug.push('Resolving channel ID for ' + TARGET_CHANNEL + '...')
+  
+  // ریست کردن کانال به @promptsfa1
   const chatRes = await fetch(api('getChat', { chat_id: TARGET_CHANNEL }))
   const chatData = await chatRes.json()
-  if (chatData.ok) {
-    chatId = String(chatData.result.id)
-    await setSetting('tg_chat_id', chatId)
-    debug.push('✅ Channel ID resolved: ' + chatId)
-  } else {
-    return NextResponse.json({ 
-      error: 'Bot must be admin in ' + TARGET_CHANNEL,
-      details: chatData.description 
-    }, { status: 400 })
+  if (!chatData.ok) {
+    return NextResponse.json({ error: 'Bot must be admin in ' + TARGET_CHANNEL, details: chatData.description }, { status: 400 })
   }
-} else {
-  // اگر chatId قبلاً تنظیم شده، بررسی کن که آیا همان کانال جدید است
-  debug.push('Using existing chatId: ' + chatId + ' (Verify it\'s @promptsfa1)')
-}
+  const chatId = String(chatData.result.id)
+  await setSetting('tg_chat_id', chatId)
 
   let privChat = await getSetting('tg_private_chat', '')
   if (!privChat) {
     return NextResponse.json({ error: 'Please send /start to the bot in private chat first.' }, { status: 400 })
   }
 
-  let cursor = parseInt(await getSetting('import_cursor_msg_id', '2'), 10) // شروع از ۲
+  let cursor = parseInt(await getSetting('import_cursor_msg_id', '2'), 10)
   let consecutiveFailures = parseInt(await getSetting('import_failures', '0'), 10)
   let successCount = 0
   let currentRetry = 0
 
   const categories = await prisma.category.findMany()
-  debug.push(`🚀 Starting import from message ID: ${cursor}`)
+  debug.push(`🚀 Starting import from ${TARGET_CHANNEL} (ID: ${chatId}), cursor: ${cursor}`)
 
   while (successCount < MAX_PHOTOS_PER_RUN && consecutiveFailures < MAX_CONSECUTIVE_FAILURES) {
     debug.push(`\n--- Checking Message ID: ${cursor} ---`)
 
-    // 1. Forward پیام جاری
+    // Forward پیام جاری (عکس)
     const fwdRes = await fetch(api('forwardMessage', { chat_id: privChat, from_chat_id: chatId, message_id: String(cursor) }))
     const fwdData = await fwdRes.json()
 
@@ -92,54 +105,56 @@ if (!chatId || chatId === 'auto') {
     const fwdMsgId = msg.message_id
     const msgsToDelete: number[] = [fwdMsgId]
 
-    let photoMsgId = cursor
-    let textMsgId = cursor
-    let text = (msg.caption || msg.text || '').trim()
-    let hasPhoto = !!msg.photo
+    // بررسی اینکه آیا این پیام عکس دارد
+    if (!msg.photo) {
+      debug.push(`️ Skip: Not a photo`)
+      await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(fwdMsgId) })).catch(() => {})
+      cursor++
+      continue
+    }
 
-    // 2. منطق هوشمند پیدا کردن جفت عکس و متن
-    if (hasPhoto && !text) {
-      // حالت الف: عکس هست، متن نیست. چک کردن پیام بعدی (N+1)
-      debug.push(`🔍 Photo found, no caption. Checking next message (${cursor + 1})...`)
+    // بررسی کپشن - اگر کپشن فقط راهنما بود، نادیده بگیر
+    const caption = (msg.caption || '').trim()
+    const isPlaceholderCaption = /new prompt|پرامپت جدید|prompt in the next message|پرامپت در پیام بعد/i.test(caption)
+    
+    let promptText = ''
+    let promptMsgId = cursor
+
+    // اگر کپشن معتبر بود (نه راهنما)
+    if (caption && !isPlaceholderCaption && caption.length > 30) {
+      promptText = caption
+      debug.push(`✅ Using caption from message ${cursor}`)
+    } else {
+      // جستجوی پرامپت در پیام بعدی (ریپلای)
+      debug.push(`🔍 Caption is placeholder or short. Checking next message (${cursor + 1})...`)
+      
       const nextRes = await fetch(api('forwardMessage', { chat_id: privChat, from_chat_id: chatId, message_id: String(cursor + 1) }))
       const nextData = await nextRes.json()
       
       if (nextData.ok) {
         const nextMsg = nextData.result
         msgsToDelete.push(nextMsg.message_id)
+        
         const nextText = (nextMsg.text || nextMsg.caption || '').trim()
         
-        // اگر پیام بعدی متن داشت و عکس نداشت، احتمالاً پرامپت همین عکس است
-        if (nextText.length > 20 && !nextMsg.photo) {
-          text = nextText
-          textMsgId = cursor + 1
-          debug.push(`✅ Found text in next message (ID: ${cursor + 1})`)
+        // بررسی اینکه آیا پیام بعدی ریپلای به این عکس است
+        const isReply = nextMsg.reply_to_message?.message_id === cursor
+        
+        if (isReply && nextText.length > 50) {
+          promptText = nextText
+          promptMsgId = cursor + 1
+          debug.push(`✅ Found reply text in message ${cursor + 1} (length: ${nextText.length})`)
+        } else if (nextText.length > 100) {
+          // حتی اگر ریپلای رسمی نبود، اگر متن طولانی بود
+          promptText = nextText
+          promptMsgId = cursor + 1
+          debug.push(`✅ Found long text in message ${cursor + 1} (length: ${nextText.length})`)
         }
-      }
-    } else if (!hasPhoto && text && text.length > 20) {
-      // حالت ب: متن هست، عکس نیست. چک کردن پیام بعدی (N+1) برای عکس
-      debug.push(`🔍 Text found, no photo. Checking next message (${cursor + 1}) for photo...`)
-      const nextRes = await fetch(api('forwardMessage', { chat_id: privChat, from_chat_id: chatId, message_id: String(cursor + 1) }))
-      const nextData = await nextRes.json()
-      
-      if (nextData.ok && nextData.result.photo) {
-        hasPhoto = true
-        photoMsgId = cursor + 1
-        // ما پیام عکس را هم forward کردیم، پس باید آن را هم پاک کنیم
-        // اما صبر کنید، ما فقط متن را forward کردیم. برای گرفتن file_id عکس، باید پیام عکس را هم forward کنیم
-        // پس یک forward دیگر برای عکس می‌زنیم
-        const photoRes = await fetch(api('forwardMessage', { chat_id: privChat, from_chat_id: chatId, message_id: String(cursor + 1) }))
-        const photoData = await photoRes.json()
-        if (photoData.ok) {
-           msgsToDelete.push(photoData.result.message_id)
-        }
-        debug.push(`✅ Found photo in next message (ID: ${cursor + 1})`)
       }
     }
 
-    // اگر هنوز عکس یا متن پیدا نشد، رد شو
-    if (!hasPhoto || !text) {
-      debug.push(`⏭️ Skip: No valid photo+text pair found at ID ${cursor}`)
+    if (!promptText) {
+      debug.push(`⏭️ Skip: No valid prompt text found`)
       for (const id of msgsToDelete) {
         await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(id) })).catch(() => {})
       }
@@ -147,65 +162,57 @@ if (!chatId || chatId === 'auto') {
       continue
     }
 
-    // 3. گرفتن عکس از پیامی که واقعاً عکس دارد (photoMsgId)
-    const photoFwdRes = await fetch(api('forwardMessage', { chat_id: privChat, from_chat_id: chatId, message_id: String(photoMsgId) }))
-    const photoFwdData = await photoFwdRes.json()
-    
-    if (!photoFwdData.ok || !photoFwdData.result.photo) {
-      debug.push(`❌ Could not get photo from ID ${photoMsgId}`)
-      for (const id of msgsToDelete) {
-        await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(id) })).catch(() => {})
-      }
-      cursor = Math.max(cursor + 1, photoMsgId + 1)
-      continue
-    }
-    
-    msgsToDelete.push(photoFwdData.result.message_id)
-    const fileId = photoFwdData.result.photo[photoFwdData.result.photo.length - 1].file_id
-    
+    // استخراج پرامپت از JSON یا متن
+    const extracted = extractPromptFromText(promptText)
+    const finalPrompt = extracted.prompt
+
+    // گرفتن لینک عکس
+    const fileId = msg.photo[msg.photo.length - 1].file_id
     const fileRes = await fetch(api('getFile', { file_id: fileId }))
     const fileData = await fileRes.json()
-    
-    // پاکسازی پیام‌های فوروارد شده از چت خصوصی
+
     for (const id of msgsToDelete) {
       await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(id) })).catch(() => {})
     }
 
     if (!fileData.ok || !fileData.result?.file_path) {
       debug.push(`❌ Skip: Could not get file_path`)
-      cursor = Math.max(cursor + 1, photoMsgId + 1)
+      cursor = promptMsgId + 1
       continue
     }
 
-    const imgUrl = `https://api.telegram.org/file/bot${token}/${fileData.result.file_path}`
+    // ساخت لینک پراکسی به جای لینک مستقیم تلگرام
+    const telegramUrl = `https://api.telegram.org/file/bot${token}/${fileData.result.file_path}`
+    const proxyUrl = `${APP_URL}/api/image-proxy?url=${encodeURIComponent(telegramUrl)}`
 
-    // 4. ارسال به جمینای و ذخیره
+    debug.push(`🖼️ Using proxy URL: ${proxyUrl.substring(0, 60)}...`)
+
+    // ارسال به جمینای (فقط متن)
     try {
       debug.push(`🤖 Sending to Gemini...`)
-      const ai = await analyzeWithGemini({ text, categories })
+      const ai = await analyzeWithGemini({ text: finalPrompt, categories })
       
       const cat = await prisma.category.findUnique({ where: { slug: ai.categorySlug } })
-      const finalPrompt = (ai.promptEn || text).trim()
 
       // چک کردن تکراری بودن
-      const existing = await prisma.prompt.findUnique({ where: { slug: `tg-${photoMsgId}` } })
+      const existing = await prisma.prompt.findUnique({ where: { slug: `tg-${cursor}` } })
       if (existing) {
-        debug.push(`⏭️ Skip: Already exists (tg-${photoMsgId})`)
-        cursor = Math.max(cursor + 1, photoMsgId + 1)
+        debug.push(`⏭️ Skip: Already exists (tg-${cursor})`)
+        cursor = promptMsgId + 1
         continue
       }
 
       await prisma.prompt.create({
         data: {
-          titleFa: ai.titleFa,
-          titleEn: ai.titleEn,
-          descFa: ai.descFa,
-          descEn: ai.descEn,
-          usageFa: ai.usageFa,
-          usageEn: ai.usageEn,
-          slug: `tg-${photoMsgId}`,
-          img: imgUrl,
-          model: /--v\s?\d|--ar/.test(finalPrompt) ? 'Midjourney' : 'AI',
+          titleFa: ai.titleFa || extracted.title || 'پرامپت جدید',
+          titleEn: ai.titleEn || extracted.title || 'New Prompt',
+          descFa: ai.descFa || extracted.desc || '',
+          descEn: ai.descEn || extracted.desc || '',
+          usageFa: ai.usageFa || '',
+          usageEn: ai.usageEn || '',
+          slug: `tg-${cursor}`,
+          img: proxyUrl, // استفاده از لینک پراکسی
+          model: /--v\s?\d|--ar|midjourney/i.test(finalPrompt) ? 'Midjourney' : 'AI',
           type: 'IMAGE',
           status: 'PUBLISHED',
           categoryId: cat?.id ?? categories[0]?.id,
@@ -216,18 +223,18 @@ if (!chatId || chatId === 'auto') {
         },
       })
 
-      results.push({ id: photoMsgId, slug: `tg-${photoMsgId}`, title: ai.titleFa })
+      results.push({ id: cursor, slug: `tg-${cursor}`, title: ai.titleFa })
       successCount++
       debug.push(`✅ Successfully imported: ${ai.titleFa}`)
       
-      cursor = Math.max(cursor + 1, photoMsgId + 1)
+      cursor = promptMsgId + 1
 
     } catch (e: any) {
       const errMsg = String(e?.message ?? e)
-      debug.push(`❌ Error for ID ${photoMsgId}: ${errMsg}`)
+      debug.push(`❌ Error for ID ${cursor}: ${errMsg}`)
       currentRetry++
       if (currentRetry >= MAX_CONSECUTIVE_FAILURES) {
-        cursor = Math.max(cursor + 1, photoMsgId + 1)
+        cursor = promptMsgId + 1
         currentRetry = 0
       }
     }
