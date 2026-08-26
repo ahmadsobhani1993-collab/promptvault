@@ -35,7 +35,6 @@ export async function GET(req: Request) {
   const debug: string[] = []
   const results: any[] = []
   
-  // 1. پیدا کردن یا دریافت ID عددی کانال
   let chatId = await getSetting('tg_chat_id', '')
   if (!chatId || chatId === 'auto') {
     debug.push('Resolving channel ID for ' + TARGET_CHANNEL + '...')
@@ -44,146 +43,150 @@ export async function GET(req: Request) {
     if (chatData.ok) {
       chatId = String(chatData.result.id)
       await setSetting('tg_chat_id', chatId)
-      debug.push('✅ Channel ID resolved: ' + chatId)
     } else {
-      return NextResponse.json({ 
-        error: 'Bot must be an admin in ' + TARGET_CHANNEL + ' to read messages.',
-        details: chatData.description 
-      }, { status: 400 })
+      return NextResponse.json({ error: 'Bot must be admin in channel', details: chatData.description }, { status: 400 })
     }
   }
 
-  // 2. دریافت یا تنظیم چت خصوصی برای Forward
   let privChat = await getSetting('tg_private_chat', '')
   if (!privChat) {
-    debug.push('Waiting for /start in private chat...')
-    const updates = await (await fetch(api('getUpdates', { limit: '10' }))).json()
-    for (const u of updates.result ?? []) {
-      if (u.message?.chat?.type === 'private') {
-        privChat = String(u.message.chat.id)
-        break
-      }
-    }
-    if (!privChat) {
-      return NextResponse.json({ error: 'Please send /start to the bot in a private chat first.' }, { status: 400 })
-    }
-    await setSetting('tg_private_chat', privChat)
-    debug.push('✅ Private chat ID set: ' + privChat)
+    return NextResponse.json({ error: 'Please send /start to the bot in private chat first.' }, { status: 400 })
   }
 
-  // 3. خواندن وضعیت Cursor و Retry
-  let cursor = parseInt(await getSetting('import_cursor_msg_id', '1'), 10)
+  let cursor = parseInt(await getSetting('import_cursor_msg_id', '2'), 10) // شروع از ۲
   let consecutiveFailures = parseInt(await getSetting('import_failures', '0'), 10)
   let successCount = 0
   let currentRetry = 0
 
   const categories = await prisma.category.findMany()
-
   debug.push(`🚀 Starting import from message ID: ${cursor}`)
 
   while (successCount < MAX_PHOTOS_PER_RUN && consecutiveFailures < MAX_CONSECUTIVE_FAILURES) {
-    debug.push(`\n--- Processing Message ID: ${cursor} (Retry: ${currentRetry}/${MAX_CONSECUTIVE_FAILURES}) ---`)
+    debug.push(`\n--- Checking Message ID: ${cursor} ---`)
 
-    // Forward message to private chat to read it
-    const fwdRes = await fetch(api('forwardMessage', {
-      chat_id: privChat,
-      from_chat_id: chatId,
-      message_id: String(cursor)
-    }))
+    // 1. Forward پیام جاری
+    const fwdRes = await fetch(api('forwardMessage', { chat_id: privChat, from_chat_id: chatId, message_id: String(cursor) }))
     const fwdData = await fwdRes.json()
 
     if (!fwdData.ok) {
       debug.push(`❌ Forward failed: ${fwdData.description}`)
       consecutiveFailures++
       currentRetry++
-      
-      if (currentRetry >= MAX_CONSECUTIVE_FAILURES) {
-        debug.push(`🛑 Reached max consecutive failures (${MAX_CONSECUTIVE_FAILURES}). Stopping.`)
-        break
-      }
-      cursor++ // Move to next message ID on failure
-      continue
-    }
-
-    // Reset failures on successful forward
-    consecutiveFailures = 0
-    currentRetry = 0
-    const msg = fwdData.result
-    const fwdMsgId = msg.message_id
-
-    // Check if it's a photo
-    if (!msg.photo) {
-      debug.push(`⏭️ Skip: Not a photo (ID: ${cursor})`)
-      await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(fwdMsgId) })).catch(() => {})
+      if (currentRetry >= MAX_CONSECUTIVE_FAILURES) break
       cursor++
       continue
     }
 
-    // Extract text: Caption OR Reply
-    let text = (msg.caption || msg.text || '').trim()
-    let peekedReplyMsgId: number | null = null
-    let advanceCursorBy = 1
+    consecutiveFailures = 0
+    currentRetry = 0
+    const msg = fwdData.result
+    const fwdMsgId = msg.message_id
+    const msgsToDelete: number[] = [fwdMsgId]
 
-    if (!text) {
-      debug.push(`🔍 No caption found. Checking for reply at ID: ${cursor + 1}...`)
-      const peekRes = await fetch(api('forwardMessage', {
-        chat_id: privChat,
-        from_chat_id: chatId,
-        message_id: String(cursor + 1)
-      }))
-      const peekData = await peekRes.json()
+    let photoMsgId = cursor
+    let textMsgId = cursor
+    let text = (msg.caption || msg.text || '').trim()
+    let hasPhoto = !!msg.photo
+
+    // 2. منطق هوشمند پیدا کردن جفت عکس و متن
+    if (hasPhoto && !text) {
+      // حالت الف: عکس هست، متن نیست. چک کردن پیام بعدی (N+1)
+      debug.push(`🔍 Photo found, no caption. Checking next message (${cursor + 1})...`)
+      const nextRes = await fetch(api('forwardMessage', { chat_id: privChat, from_chat_id: chatId, message_id: String(cursor + 1) }))
+      const nextData = await nextRes.json()
       
-      if (peekData.ok) {
-        const peekMsg = peekData.result
-        const peekFwdId = peekMsg.message_id
+      if (nextData.ok) {
+        const nextMsg = nextData.result
+        msgsToDelete.push(nextMsg.message_id)
+        const nextText = (nextMsg.text || nextMsg.caption || '').trim()
         
-        // Check if this next message is a reply to our photo
-        if (peekMsg.reply_to_message?.message_id === cursor) {
-          text = (peekMsg.text || peekMsg.caption || '').trim()
-          if (text) {
-            debug.push(`✅ Found reply text!`)
-            peekedReplyMsgId = peekFwdId
-            advanceCursorBy = 2 // Skip the reply message in next iteration
-          }
+        // اگر پیام بعدی متن داشت و عکس نداشت، احتمالاً پرامپت همین عکس است
+        if (nextText.length > 20 && !nextMsg.photo) {
+          text = nextText
+          textMsgId = cursor + 1
+          debug.push(`✅ Found text in next message (ID: ${cursor + 1})`)
         }
-        
-        // Clean up peeked message
-        await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(peekFwdId) })).catch(() => {})
+      }
+    } else if (!hasPhoto && text && text.length > 20) {
+      // حالت ب: متن هست، عکس نیست. چک کردن پیام بعدی (N+1) برای عکس
+      debug.push(`🔍 Text found, no photo. Checking next message (${cursor + 1}) for photo...`)
+      const nextRes = await fetch(api('forwardMessage', { chat_id: privChat, from_chat_id: chatId, message_id: String(cursor + 1) }))
+      const nextData = await nextRes.json()
+      
+      if (nextData.ok && nextData.result.photo) {
+        hasPhoto = true
+        photoMsgId = cursor + 1
+        // ما پیام عکس را هم forward کردیم، پس باید آن را هم پاک کنیم
+        // اما صبر کنید، ما فقط متن را forward کردیم. برای گرفتن file_id عکس، باید پیام عکس را هم forward کنیم
+        // پس یک forward دیگر برای عکس می‌زنیم
+        const photoRes = await fetch(api('forwardMessage', { chat_id: privChat, from_chat_id: chatId, message_id: String(cursor + 1) }))
+        const photoData = await photoRes.json()
+        if (photoData.ok) {
+           msgsToDelete.push(photoData.result.message_id)
+        }
+        debug.push(`✅ Found photo in next message (ID: ${cursor + 1})`)
       }
     }
 
-    // Clean up the main forwarded photo message
-    await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(fwdMsgId) })).catch(() => {})
-
-    if (!text) {
-      debug.push(`⏭️ Skip: Photo has no caption and no reply text (ID: ${cursor})`)
-      cursor += advanceCursorBy
+    // اگر هنوز عکس یا متن پیدا نشد، رد شو
+    if (!hasPhoto || !text) {
+      debug.push(`⏭️ Skip: No valid photo+text pair found at ID ${cursor}`)
+      for (const id of msgsToDelete) {
+        await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(id) })).catch(() => {})
+      }
+      cursor++
       continue
     }
 
-    // Get Direct File URL (NO DOWNLOAD)
-    const fileId = msg.photo[msg.photo.length - 1].file_id
+    // 3. گرفتن عکس از پیامی که واقعاً عکس دارد (photoMsgId)
+    const photoFwdRes = await fetch(api('forwardMessage', { chat_id: privChat, from_chat_id: chatId, message_id: String(photoMsgId) }))
+    const photoFwdData = await photoFwdRes.json()
+    
+    if (!photoFwdData.ok || !photoFwdData.result.photo) {
+      debug.push(`❌ Could not get photo from ID ${photoMsgId}`)
+      for (const id of msgsToDelete) {
+        await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(id) })).catch(() => {})
+      }
+      cursor = Math.max(cursor + 1, photoMsgId + 1)
+      continue
+    }
+    
+    msgsToDelete.push(photoFwdData.result.message_id)
+    const fileId = photoFwdData.result.photo[photoFwdData.result.photo.length - 1].file_id
+    
     const fileRes = await fetch(api('getFile', { file_id: fileId }))
     const fileData = await fileRes.json()
+    
+    // پاکسازی پیام‌های فوروارد شده از چت خصوصی
+    for (const id of msgsToDelete) {
+      await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(id) })).catch(() => {})
+    }
 
     if (!fileData.ok || !fileData.result?.file_path) {
-      debug.push(`❌ Skip: Could not get file_path for ID: ${cursor}`)
-      cursor += advanceCursorBy
+      debug.push(`❌ Skip: Could not get file_path`)
+      cursor = Math.max(cursor + 1, photoMsgId + 1)
       continue
     }
 
     const imgUrl = `https://api.telegram.org/file/bot${token}/${fileData.result.file_path}`
-    debug.push(`🖼️ Image URL generated: ${imgUrl.substring(0, 50)}...`)
 
-    // Process with Gemini (TEXT ONLY)
+    // 4. ارسال به جمینای و ذخیره
     try {
-      debug.push(`🤖 Sending to Gemini (Text Only)...`)
+      debug.push(`🤖 Sending to Gemini...`)
       const ai = await analyzeWithGemini({ text, categories })
       
       const cat = await prisma.category.findUnique({ where: { slug: ai.categorySlug } })
       const finalPrompt = (ai.promptEn || text).trim()
 
-      const prompt = await prisma.prompt.create({
+      // چک کردن تکراری بودن
+      const existing = await prisma.prompt.findUnique({ where: { slug: `tg-${photoMsgId}` } })
+      if (existing) {
+        debug.push(`⏭️ Skip: Already exists (tg-${photoMsgId})`)
+        cursor = Math.max(cursor + 1, photoMsgId + 1)
+        continue
+      }
+
+      await prisma.prompt.create({
         data: {
           titleFa: ai.titleFa,
           titleEn: ai.titleEn,
@@ -191,8 +194,8 @@ export async function GET(req: Request) {
           descEn: ai.descEn,
           usageFa: ai.usageFa,
           usageEn: ai.usageEn,
-          slug: `tg-${cursor}`,
-          img: imgUrl, // Direct Telegram URL
+          slug: `tg-${photoMsgId}`,
+          img: imgUrl,
           model: /--v\s?\d|--ar/.test(finalPrompt) ? 'Midjourney' : 'AI',
           type: 'IMAGE',
           status: 'PUBLISHED',
@@ -204,38 +207,25 @@ export async function GET(req: Request) {
         },
       })
 
-      results.push({ id: cursor, slug: prompt.slug, title: ai.titleFa })
+      results.push({ id: photoMsgId, slug: `tg-${photoMsgId}`, title: ai.titleFa })
       successCount++
       debug.push(`✅ Successfully imported: ${ai.titleFa}`)
       
-      cursor += advanceCursorBy
+      cursor = Math.max(cursor + 1, photoMsgId + 1)
 
     } catch (e: any) {
       const errMsg = String(e?.message ?? e)
-      debug.push(`❌ Gemini/DB Error for ID ${cursor}: ${errMsg}`)
-      
-      // Do NOT increment cursor here, so it retries the same message next time
+      debug.push(`❌ Error for ID ${photoMsgId}: ${errMsg}`)
       currentRetry++
       if (currentRetry >= MAX_CONSECUTIVE_FAILURES) {
-        debug.push(`🛑 Gave up on message ID ${cursor} after ${MAX_CONSECUTIVE_FAILURES} retries.`)
-        cursor++ // Finally skip it
+        cursor = Math.max(cursor + 1, photoMsgId + 1)
         currentRetry = 0
       }
     }
   }
 
-  // Save state
   await setSetting('import_cursor_msg_id', String(cursor))
   await setSetting('import_failures', String(consecutiveFailures))
 
-  return NextResponse.json({
-    ok: true,
-    summary: {
-      processed_cursor: cursor,
-      success_count: successCount,
-      consecutive_failures: consecutiveFailures,
-    },
-    results,
-    debug,
-  })
+  return NextResponse.json({ ok: true, summary: { processed_up_to: cursor, success_count: successCount }, results, debug })
 }
