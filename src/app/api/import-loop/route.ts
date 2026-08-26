@@ -34,19 +34,28 @@ export async function GET(req: Request) {
 
   const debug: string[] = []
   const results: any[] = []
-  
-  let chatId = await getSetting('tg_chat_id', '')
-  if (!chatId || chatId === 'auto') {
-    debug.push('Resolving channel ID for ' + TARGET_CHANNEL + '...')
-    const chatRes = await fetch(api('getChat', { chat_id: TARGET_CHANNEL }))
-    const chatData = await chatRes.json()
-    if (chatData.ok) {
-      chatId = String(chatData.result.id)
-      await setSetting('tg_chat_id', chatId)
-    } else {
-      return NextResponse.json({ error: 'Bot must be admin in channel', details: chatData.description }, { status: 400 })
-    }
+  // همیشه از @promptsfa1 استفاده کن، صرف‌نظر از تنظیمات قبلی
+const TARGET_CHANNEL = '@promptsfa1'
+let chatId = await getSetting('tg_chat_id', '')
+
+if (!chatId || chatId === 'auto') {
+  debug.push('Resolving channel ID for ' + TARGET_CHANNEL + '...')
+  const chatRes = await fetch(api('getChat', { chat_id: TARGET_CHANNEL }))
+  const chatData = await chatRes.json()
+  if (chatData.ok) {
+    chatId = String(chatData.result.id)
+    await setSetting('tg_chat_id', chatId)
+    debug.push('✅ Channel ID resolved: ' + chatId)
+  } else {
+    return NextResponse.json({ 
+      error: 'Bot must be admin in ' + TARGET_CHANNEL,
+      details: chatData.description 
+    }, { status: 400 })
   }
+} else {
+  // اگر chatId قبلاً تنظیم شده، بررسی کن که آیا همان کانال جدید است
+  debug.push('Using existing chatId: ' + chatId + ' (Verify it\'s @promptsfa1)')
+}
 
   let privChat = await getSetting('tg_private_chat', '')
   if (!privChat) {
