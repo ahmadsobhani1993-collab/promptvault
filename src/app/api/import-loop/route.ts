@@ -30,7 +30,7 @@ function extractPrompt(text: string): string {
 }
 
 function isValidCaption(caption: string): boolean {
-  if (!caption || caption.length < 30) return false
+  if (!caption || caption.length < 50) return false
   
   const placeholderPatterns = [
     /new prompt/i,
@@ -79,12 +79,13 @@ export async function GET(req: Request) {
   debug.push(`🔍 Starting from message ID ${cursor} (target: 10 prompts)`)
 
   let imported = 0
-  const MAX_MESSAGES = 30
+  const MAX_MESSAGES = 50
 
   for (let offset = 0; offset < MAX_MESSAGES && imported < 10; offset++) {
     const msgId = cursor + offset
     
     try {
+      // Forward پیام جاری
       const fwdRes = await fetch(api('forwardMessage', { 
         chat_id: privChat,
         from_chat_id: chatId, 
@@ -102,58 +103,56 @@ export async function GET(req: Request) {
       const msg = fwdData.result
       const fwdMsgId = msg.message_id
 
+      // اگر عکس نیست، رد شو
       if (!msg.photo) {
-        debug.push(`⏭️ ${msgId}: Not a photo`)
+        debug.push(`⏭️ ${msgId}: Not a photo (skipping)`)
         await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(fwdMsgId) })).catch(() => {})
         continue
       }
 
+      // این یک عکس است! بررسی کپشن
       const caption = (msg.caption || '').trim()
       let promptText = ''
-      let promptMsgId = msgId
+      let skipNext = false
 
+      // حالت 1: کپشن معتبر (طولانی و بدون کلمات راهنما)
       if (isValidCaption(caption)) {
         promptText = caption
         debug.push(`✅ ${msgId}: Valid caption (${caption.length} chars)`)
       } else {
-        debug.push(`🔍 ${msgId}: Checking for replies...`)
+        // حالت 2: کپشن کوتاه/نامعتبر → بررسی پیام بعدی
+        debug.push(`🔍 ${msgId}: Short caption (${caption.length} chars). Checking next message...`)
         
-        for (let r = 1; r <= 5; r++) {
-          const replyMsgId = msgId + r
-          const replyFwdRes = await fetch(api('forwardMessage', { 
-            chat_id: privChat,
-            from_chat_id: chatId, 
-            message_id: String(replyMsgId) 
-          }))
-          
-          if (!replyFwdRes.ok) break
-          
-          const replyFwdData = await replyFwdRes.json()
-          if (!replyFwdData.ok) break
-          
-          const replyMsg = replyFwdData.result
-          const replyFwdMsgId = replyMsg.message_id
-          
-          const isReplyToOurPhoto = replyMsg.reply_to_message?.message_id === msgId
-          
-          debug.push(`  Checking ${replyMsgId}: isReply=${isReplyToOurPhoto}, textLen=${(replyMsg.text || replyMsg.caption || '').length}`)
-          
-          if (isReplyToOurPhoto) {
-            const replyText = (replyMsg.text || replyMsg.caption || '').trim()
-            if (replyText.length > 50) {
-              promptText = replyText
-              promptMsgId = replyMsgId
-              debug.push(`✅ ${msgId}: Found REPLY at ${replyMsgId} (${replyText.length} chars)`)
-              
-              await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(replyFwdMsgId) })).catch(() => {})
-              break
+        const nextMsgId = msgId + 1
+        const nextFwdRes = await fetch(api('forwardMessage', { 
+          chat_id: privChat,
+          from_chat_id: chatId, 
+          message_id: String(nextMsgId) 
+        }))
+        
+        if (nextFwdRes.ok) {
+          const nextFwdData = await nextFwdRes.json()
+          if (nextFwdData.ok) {
+            const nextMsg = nextFwdData.result
+            const nextFwdMsgId = nextMsg.message_id
+            const nextText = (nextMsg.text || nextMsg.caption || '').trim()
+            
+            // اگر پیام بعدی متن طولانی داشت و عکس نداشت
+            if (nextText.length > 100 && !nextMsg.photo) {
+              promptText = nextText
+              skipNext = true // پیام بعدی را رد کن
+              debug.push(`✅ ${msgId}: Found prompt in next message ${nextMsgId} (${nextText.length} chars)`)
+            } else {
+              debug.push(`⏭️ ${msgId}: Next message not suitable (textLen=${nextText.length}, hasPhoto=${!!nextMsg.photo})`)
             }
+            
+            // پاک کردن پیام بعدی
+            await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(nextFwdMsgId) })).catch(() => {})
           }
-          
-          await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(replyFwdMsgId) })).catch(() => {})
         }
       }
 
+      // پاک کردن پیام عکس
       await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(fwdMsgId) })).catch(() => {})
 
       if (!promptText) {
@@ -161,6 +160,7 @@ export async function GET(req: Request) {
         continue
       }
 
+      // گرفتن لینک عکس
       const fileId = msg.photo[msg.photo.length - 1].file_id
       const fileRes = await fetch(api('getFile', { file_id: fileId }))
       const fileData = await fileRes.json()
@@ -173,13 +173,15 @@ export async function GET(req: Request) {
       const telegramUrl = `https://api.telegram.org/file/bot${token}/${fileData.result.file_path}`
       const proxyUrl = `${APP_URL}/api/image-proxy?url=${encodeURIComponent(telegramUrl)}`
 
+      // چک تکراری
       const existing = await prisma.prompt.findUnique({ where: { slug: `tg-${msgId}` } })
       if (existing) {
         debug.push(`⏭️ ${msgId}: Already exists`)
-        cursor = msgId + 1
+        offset++ // اگر skipNext بود، یک بار دیگر هم رد کن
         continue
       }
 
+      // پردازش با جمینای
       const finalPrompt = extractPrompt(promptText)
       const ai = await analyzeWithGemini({ text: finalPrompt, categories })
       const cat = await prisma.category.findUnique({ where: { slug: ai.categorySlug } })
@@ -210,6 +212,10 @@ export async function GET(req: Request) {
       debug.push(`✅ Imported ${msgId}: ${ai.titleFa} (${imported}/10)`)
       
       cursor = msgId + 1
+      if (skipNext) {
+        offset++ // رد کردن پیام متنی
+        cursor = msgId + 2
+      }
 
     } catch (e: any) {
       debug.push(`❌ ${msgId}: ${e.message}`)
