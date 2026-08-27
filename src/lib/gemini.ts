@@ -42,15 +42,12 @@ export type GeminiResult = {
 
 const cleanTitle = (t: string) => t.replace(/^([\u0600-\u06FF\w]+)\s+\1/, '$1')
 
-// strongest -> weakest (no Gemma)
+// ترتیب اصلاح‌شده: از پایدارترین به سمت مدل‌های جایگزین. 3.7 در آخرین اولویت است.
 export const MODEL_CHAIN = [
-  // 1. قوی‌ترین مدل (اگر quota پر باشد، سیستم خودکار به بعدی می‌رود)
-  'gemini-3.7-flash',           
-  
-  // 2. مدل‌های کاملاً فعال و تایید شده با تست واقعی
-  'gemini-3.6-flash',            // در حال حاضر بهترین عملکرد را دارد
-  'gemini-3.5-flash',            // جایگزین عالی و قوی
-  'gemini-3.5-flash-lite'        // سریع‌ترین گزینه برای fallback
+  'gemini-3.5-flash',            // 1. اصلی و پایدار
+  'gemini-3.5-flash-lite',       // 2. سبک‌تر و سریع‌تر (مصرف کمتر)
+  'gemini-3.6-flash',            // 3. جایگزین
+  'gemini-3.7-flash'             // 4. آخرین تلاش (اگر بقیه_quota_ یا خطا دادند)
 ]
 
 export async function generateText(opts: {
@@ -59,33 +56,65 @@ export async function generateText(opts: {
   imgMime?: string
 }): Promise<{ text: string; model: string }> {
   const parts: any[] = [{ text: opts.instruction }]
-  if (opts.imgBase64) parts.push({ inline_data: { mime_type: opts.imgMime || 'image/jpeg', data: opts.imgBase64 } })
+  if (opts.imgBase64) {
+    parts.push({ inline_data: { mime_type: opts.imgMime || 'image/jpeg', data: opts.imgBase64 } })
+  }
 
   let lastError = ''
+  
   for (const model of MODEL_CHAIN) {
     try {
+      console.log(`[Gemini] Trying model: ${model}`)
+      
       const res = await fetch(
-        'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + process.env.GEMINI_API_KEY,
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ contents: [{ parts }] }),
-          signal: AbortSignal.timeout(25000),
+          signal: AbortSignal.timeout(30000), // افزایش به 30 ثانیه برای پرامپت‌های طولانی
         }
       )
+      
       const body = await res.text()
-      if (res.status === 429) { lastError = model + ': quota'; continue }
-      if (res.status === 404) { lastError = model + ': not found'; continue }
-      if (!res.ok) { lastError = model + ': HTTP ' + res.status; continue }
+      
+      // مدیریت خطاها و ادامه به مدل بعدی
+      if (res.status === 429) { 
+        console.warn(`[Gemini] Quota exceeded for ${model}, trying next...`)
+        lastError = model + ': quota'
+        continue 
+      }
+      if (res.status === 404) { 
+        console.warn(`[Gemini] Model ${model} not found, trying next...`)
+        lastError = model + ': not found'
+        continue 
+      }
+      if (!res.ok) { 
+        console.warn(`[Gemini] HTTP ${res.status} for ${model}, trying next...`)
+        lastError = model + ': HTTP ' + res.status
+        continue 
+      }
+      
       const json = JSON.parse(body)
       const raw: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
-      if (!raw) { lastError = model + ': empty'; continue }
+      
+      if (!raw) { 
+        console.warn(`[Gemini] Empty response from ${model}, trying next...`)
+        lastError = model + ': empty'
+        continue 
+      }
+      
+      console.log(`[Gemini] Success with model: ${model}`)
       return { text: raw, model }
+      
     } catch (e: any) {
+      console.warn(`[Gemini] Error with ${model}: ${e?.message ?? e}. Trying next...`)
       lastError = model + ': ' + String(e?.message ?? e)
       continue
     }
   }
+  
+  // اگر تمام مدل‌ها شکست خوردند
   throw new Error('GEMINI_QUOTA_EXHAUSTED :: ' + lastError)
 }
 
@@ -102,7 +131,7 @@ export async function analyzeWithGemini(opts: {
     '- titleFa/titleEn: short catchy title (fa/en). NEVER repeat a word twice at the start.\n' +
     '- descFa/descEn: ONE short sentence describing what this prompt does (fa/en).\n' +
     '- usageFa/usageEn: 2-3 sentences explaining HOW to use this prompt (which tool/model, where to paste, tips) (fa/en).\n' +
-    '- promptEn: the FULL prompt text translated to English. Keep every detail and parameter. If it is already English, return it unchanged. A few Persian words inside are OK.\n' +
+    '- promptEn: the FULL prompt text translated to English. Keep every detail and parameter. If it is already English, return it unchanged.\n' +
     '- categorySlug: choose ONE from: ' +
     opts.categories.map((c) => c.slug).join(', ') +
     '\n- tagsFa: JSON ARRAY of MAX 4 items ONLY from: ' +
@@ -122,6 +151,7 @@ export async function analyzeWithGemini(opts: {
     const v = TAG_VOCAB.find((t) => t.fa === fa)
     return v ? v.en : fa
   })
+  
   const catOk = opts.categories.some((c) => c.slug === parsed.categorySlug)
 
   return {
@@ -131,10 +161,10 @@ export async function analyzeWithGemini(opts: {
     descEn: String(parsed.descEn || ''),
     usageFa: String(parsed.usageFa || ''),
     usageEn: String(parsed.usageEn || ''),
-    categorySlug: catOk ? parsed.categorySlug : opts.categories[0]?.slug ?? 'image',
+    categorySlug: catOk ? parsed.categorySlug : (opts.categories[0]?.slug ?? 'image'),
     tagsFa,
     tagsEn,
-    promptEn: String(parsed.promptEn || ''),
-    promptFa: String(parsed.promptFa || parsed.promptEn || ''),
+    promptEn: String(parsed.promptEn || opts.text),
+    promptFa: String(parsed.promptFa || opts.text),
   }
 }
