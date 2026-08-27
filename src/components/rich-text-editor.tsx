@@ -1,147 +1,239 @@
 'use client'
 
-import { useRef, useState, useEffect } from 'react'
+import { useEditor, EditorContent } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import Placeholder from '@tiptap/extension-placeholder'
+import Link from '@tiptap/extension-link'
+import Image from '@tiptap/extension-image'
+import Highlight from '@tiptap/extension-highlight'
+import TextAlign from '@tiptap/extension-text-align'
+import {
+  Bold, Italic, Strikethrough, Code, Heading1, Heading2, Heading3,
+  List, ListOrdered, Quote, Undo, Redo, Link as LinkIcon, Image as ImageIcon,
+  AlignRight, AlignCenter, AlignLeft
+} from 'lucide-react'
 
-export default function RichTextEditor({ name, initialValue = '' }: { name: string; initialValue?: string }) {
-  const editorRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const [wordCount, setWordCount] = useState(0)
+interface RichTextEditorProps {
+  value: string
+  onChange: (html: string) => void
+}
 
-  useEffect(() => {
-    if (editorRef.current && initialValue) {
-      editorRef.current.innerHTML = initialValue
-      syncToTextarea()
-    }
-  }, [initialValue])
+export default function RichTextEditor({ value, onChange }: RichTextEditorProps) {
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Placeholder.configure({
+        placeholder: 'محتوای مقاله را اینجا بنویسید...',
+      }),
+      Link.configure({ openOnClick: false }),
+      Image,
+      Highlight.configure({ multicolor: true }),
+      TextAlign.configure({
+        types: ['heading', 'paragraph'],
+        defaultAlignment: 'right',
+      }),
+    ],
+    content: value,
+    editorProps: {
+      attributes: {
+        class: 'prose prose-gold prose-invert max-w-none min-h-[350px] p-4 focus:outline-none text-right dir-rtl text-ink font-sans leading-relaxed',
+      },
+    },
+    onUpdate: ({ editor }) => {
+      onChange(editor.getHTML())
+    },
+  })
 
-  const syncToTextarea = () => {
-    if (editorRef.current && textareaRef.current) {
-      textareaRef.current.value = editorRef.current.innerHTML
+  if (!editor) return null
+
+  const addImage = () => {
+    const url = window.prompt('آدرس تصویر (URL) را وارد کنید:')
+    if (url) {
+      editor.chain().focus().setImage({ src: url }).run()
     }
   }
 
-  const updateWordCount = () => {
-    if (editorRef.current) {
-      const text = editorRef.current.innerText || ''
-      setWordCount(text.split(/\s+/).filter(Boolean).length)
+  const setLink = () => {
+    const previousUrl = editor.getAttributes('link').href
+    const url = window.prompt('آدرس لینک را وارد کنید:', previousUrl)
+    if (url === null) return
+    if (url === '') {
+      editor.chain().focus().extendMarkRange('link').unsetLink().run()
+      return
     }
+    editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run()
   }
-
-  const execCmd = (cmd: string, value = '') => {
-    document.execCommand(cmd, false, value)
-    editorRef.current?.focus()
-    syncToTextarea()
-  }
-
-  const handlePaste = (e: React.ClipboardEvent) => {
-    e.preventDefault()
-    const html = e.clipboardData.getData('text/html')
-    const text = e.clipboardData.getData('text/plain')
-    
-    // Clean Word formatting artifacts
-    let cleanHtml = html
-    if (html) {
-      // Remove Word-specific tags and classes
-      cleanHtml = html
-        .replace(/<o:p>[\s\S]*?<\/o:p>/gi, '')
-        .replace(/<w:.*?>[\s\S]*?<\/w:.*?>/gi, '')
-        .replace(/class="Mso.*?"/gi, '')
-        .replace(/style="[^"]*mso-[^"]*"/gi, '')
-        .replace(/<span[^>]*>[\s\S]*?<\/span>/gi, (match) => {
-          // Keep span content but remove empty spans
-          const content = match.replace(/<[^>]+>/g, '')
-          return content.trim() ? match : ''
-        })
-    }
-    
-    if (cleanHtml) {
-      document.execCommand('insertHTML', false, cleanHtml)
-    } else {
-      document.execCommand('insertText', false, text)
-    }
-    
-    setTimeout(() => {
-      syncToTextarea()
-      updateWordCount()
-    }, 100)
-  }
-
-  const handleInput = () => {
-    syncToTextarea()
-    updateWordCount()
-  }
-
-  const btnClass = "rounded px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-gold/10 hover:text-gold-bright"
 
   return (
-    <div>
+    <div className="w-full border border-line rounded-xl bg-surface overflow-hidden shadow-card transition focus-within:border-gold">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-1 rounded-t-lg border-b border-line bg-elevated p-2">
-        <button type="button" className={btnClass} onMouseDown={(e) => { e.preventDefault(); execCmd('bold') }}>
-          <strong>B</strong>
+      <div className="flex flex-wrap items-center gap-1 p-2 bg-elevated border-b border-line dir-rtl">
+        <button
+          type="button"
+          onClick={() => editor.chain().focus().toggleBold().run()}
+          className={`p-1.5 rounded transition ${editor.isActive('bold') ? 'bg-gold/20 text-gold-bright' : 'text-ink-muted hover:text-ink hover:bg-surface'}`}
+          title="برجسته (Bold)"
+        >
+          <Bold className="w-4 h-4" />
         </button>
-        <button type="button" className={btnClass} onMouseDown={(e) => { e.preventDefault(); execCmd('italic') }}>
-          <em>I</em>
+
+        <button
+          type="button"
+          onClick={() => editor.chain().focus().toggleItalic().run()}
+          className={`p-1.5 rounded transition ${editor.isActive('italic') ? 'bg-gold/20 text-gold-bright' : 'text-ink-muted hover:text-ink hover:bg-surface'}`}
+          title="کج (Italic)"
+        >
+          <Italic className="w-4 h-4" />
         </button>
-        <button type="button" className={btnClass} onMouseDown={(e) => { e.preventDefault(); execCmd('underline') }}>
-          <u>U</u>
+
+        <button
+          type="button"
+          onClick={() => editor.chain().focus().toggleStrike().run()}
+          className={`p-1.5 rounded transition ${editor.isActive('strike') ? 'bg-gold/20 text-gold-bright' : 'text-ink-muted hover:text-ink hover:bg-surface'}`}
+          title="خط‌خورده"
+        >
+          <Strikethrough className="w-4 h-4" />
         </button>
-        
-        <div className="mx-2 h-4 w-px bg-line" />
-        
-        <button type="button" className={btnClass} onMouseDown={(e) => { e.preventDefault(); execCmd('formatBlock', 'h2') }}>
-          H2
+
+        <button
+          type="button"
+          onClick={() => editor.chain().focus().toggleCode().run()}
+          className={`p-1.5 rounded transition ${editor.isActive('code') ? 'bg-gold/20 text-gold-bright' : 'text-ink-muted hover:text-ink hover:bg-surface'}`}
+          title="کد درون‌خطی"
+        >
+          <Code className="w-4 h-4" />
         </button>
-        <button type="button" className={btnClass} onMouseDown={(e) => { e.preventDefault(); execCmd('formatBlock', 'h3') }}>
-          H3
+
+        <div className="w-[1px] h-4 bg-line mx-1" />
+
+        <button
+          type="button"
+          onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+          className={`p-1.5 rounded transition ${editor.isActive('heading', { level: 1 }) ? 'bg-gold/20 text-gold-bright' : 'text-ink-muted hover:text-ink hover:bg-surface'}`}
+          title="تیتر اصلی (H1)"
+        >
+          <Heading1 className="w-4 h-4" />
         </button>
-        
-        <div className="mx-2 h-4 w-px bg-line" />
-        
-        <button type="button" className={btnClass} onMouseDown={(e) => { e.preventDefault(); execCmd('insertUnorderedList') }}>
-          • لیست
+
+        <button
+          type="button"
+          onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+          className={`p-1.5 rounded transition ${editor.isActive('heading', { level: 2 }) ? 'bg-gold/20 text-gold-bright' : 'text-ink-muted hover:text-ink hover:bg-surface'}`}
+          title="تیتر فرعی (H2)"
+        >
+          <Heading2 className="w-4 h-4" />
         </button>
-        <button type="button" className={btnClass} onMouseDown={(e) => { e.preventDefault(); execCmd('insertOrderedList') }}>
-          1. لیست عددی
+
+        <button
+          type="button"
+          onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+          className={`p-1.5 rounded transition ${editor.isActive('heading', { level: 3 }) ? 'bg-gold/20 text-gold-bright' : 'text-ink-muted hover:text-ink hover:bg-surface'}`}
+          title="تیتر (H3)"
+        >
+          <Heading3 className="w-4 h-4" />
         </button>
-        
-        <div className="mx-2 h-4 w-px bg-line" />
-        
-        <button type="button" className={btnClass} onMouseDown={(e) => { 
-          e.preventDefault()
-          const url = prompt('آدرس لینک:', 'https://')
-          if (url) execCmd('createLink', url)
-        }}>
-          🔗 لینک
+
+        <div className="w-[1px] h-4 bg-line mx-1" />
+
+        <button
+          type="button"
+          onClick={() => editor.chain().focus().setTextAlign('right').run()}
+          className={`p-1.5 rounded transition ${editor.isActive({ textAlign: 'right' }) ? 'bg-gold/20 text-gold-bright' : 'text-ink-muted hover:text-ink hover:bg-surface'}`}
+          title="راست‌چین"
+        >
+          <AlignRight className="w-4 h-4" />
         </button>
-        <button type="button" className={btnClass} onMouseDown={(e) => { e.preventDefault(); execCmd('removeFormat') }}>
-          ✕ پاک کردن فرمت
+
+        <button
+          type="button"
+          onClick={() => editor.chain().focus().setTextAlign('center').run()}
+          className={`p-1.5 rounded transition ${editor.isActive({ textAlign: 'center' }) ? 'bg-gold/20 text-gold-bright' : 'text-ink-muted hover:text-ink hover:bg-surface'}`}
+          title="وسط‌چین"
+        >
+          <AlignCenter className="w-4 h-4" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => editor.chain().focus().setTextAlign('left').run()}
+          className={`p-1.5 rounded transition ${editor.isActive({ textAlign: 'left' }) ? 'bg-gold/20 text-gold-bright' : 'text-ink-muted hover:text-ink hover:bg-surface'}`}
+          title="چپ‌چین"
+        >
+          <AlignLeft className="w-4 h-4" />
+        </button>
+
+        <div className="w-[1px] h-4 bg-line mx-1" />
+
+        <button
+          type="button"
+          onClick={() => editor.chain().focus().toggleBulletList().run()}
+          className={`p-1.5 rounded transition ${editor.isActive('bulletList') ? 'bg-gold/20 text-gold-bright' : 'text-ink-muted hover:text-ink hover:bg-surface'}`}
+          title="لیست نشاندار"
+        >
+          <List className="w-4 h-4" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => editor.chain().focus().toggleOrderedList().run()}
+          className={`p-1.5 rounded transition ${editor.isActive('orderedList') ? 'bg-gold/20 text-gold-bright' : 'text-ink-muted hover:text-ink hover:bg-surface'}`}
+          title="لیست عددی"
+        >
+          <ListOrdered className="w-4 h-4" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => editor.chain().focus().toggleBlockquote().run()}
+          className={`p-1.5 rounded transition ${editor.isActive('blockquote') ? 'bg-gold/20 text-gold-bright' : 'text-ink-muted hover:text-ink hover:bg-surface'}`}
+          title="نقل‌قول"
+        >
+          <Quote className="w-4 h-4" />
+        </button>
+
+        <div className="w-[1px] h-4 bg-line mx-1" />
+
+        <button
+          type="button"
+          onClick={setLink}
+          className={`p-1.5 rounded transition ${editor.isActive('link') ? 'bg-gold/20 text-gold-bright' : 'text-ink-muted hover:text-ink hover:bg-surface'}`}
+          title="درج لینک"
+        >
+          <LinkIcon className="w-4 h-4" />
+        </button>
+
+        <button
+          type="button"
+          onClick={addImage}
+          className="p-1.5 rounded transition text-ink-muted hover:text-ink hover:bg-surface"
+          title="درج تصویر"
+        >
+          <ImageIcon className="w-4 h-4" />
+        </button>
+
+        <div className="w-[1px] h-4 bg-line mx-1" />
+
+        <button
+          type="button"
+          onClick={() => editor.chain().focus().undo().run()}
+          className="p-1.5 rounded transition text-ink-muted hover:text-ink hover:bg-surface"
+          title="Undo"
+        >
+          <Undo className="w-4 h-4" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => editor.chain().focus().redo().run()}
+          className="p-1.5 rounded transition text-ink-muted hover:text-ink hover:bg-surface"
+          title="Redo"
+        >
+          <Redo className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Editor */}
-      <div
-        ref={editorRef}
-        contentEditable
-        onInput={handleInput}
-        onPaste={handlePaste}
-        className="min-h-[400px] w-full resize-y rounded-b-lg border border-line bg-[#0a0805] p-4 text-sm leading-7 outline-none focus:border-gold/50"
-        suppressContentEditableWarning
-      />
-
-      {/* Word count */}
-      <div className="mt-2 text-right text-xs text-ink-muted">
-        {wordCount} کلمه
-      </div>
-
-      {/* Hidden textarea for form submission */}
-      <textarea
-        ref={textareaRef}
-        name={name}
-        required
-        className="hidden"
-        defaultValue={initialValue}
-      />
+      {/* Editor Content Area */}
+      <EditorContent editor={editor} />
     </div>
   )
 }

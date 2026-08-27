@@ -36,9 +36,28 @@ const config: Config = {
         'fade-in': 'fade-in 280ms ease-out both',
         'slide-up': 'slide-up 340ms ease-out both',
       },
+      // سفارشی‌سازی استایل‌های Typography برای ادیتور
+      typography: {
+        gold: {
+          css: {
+            '--tw-prose-body': '#F4EFE6',
+            '--tw-prose-headings': '#E8C877',
+            '--tw-prose-links': '#C9A24B',
+            '--tw-prose-bold': '#F4EFE6',
+            '--tw-prose-counters': '#9B9BA4',
+            '--tw-prose-bullets': '#C9A24B',
+            '--tw-prose-quotes': '#F4EFE6',
+            '--tw-prose-quote-borders': '#C9A24B',
+            '--tw-prose-code': '#E8C877',
+            '--tw-prose-hr': '#232329',
+          },
+        },
+      },
     },
   },
-  plugins: [],
+  plugins: [
+    require('@tailwindcss/typography'),
+  ],
 }
 
 export default config

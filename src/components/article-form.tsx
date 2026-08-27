@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
 import RichTextEditor from '@/components/rich-text-editor'
 
 export default function ArticleForm({ initialData }: { initialData?: any }) {
@@ -9,21 +9,15 @@ export default function ArticleForm({ initialData }: { initialData?: any }) {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
   const [uploading, setUploading] = useState(false)
-  const formRef = useRef<HTMLFormElement>(null)
+  const [imgUrl, setImgUrl] = useState(initialData?.img || '')
+
+  const initialContent = Array.isArray(initialData?.contentFa)
+    ? initialData.contentFa.join('\n')
+    : initialData?.contentFa || ''
+
+  const [contentFa, setContentFa] = useState(initialContent)
 
   const isEdit = !!initialData?.id
-
-  useEffect(() => {
-    if (isEdit && initialData?.contentFa && formRef.current) {
-      const editor = formRef.current.querySelector('[contenteditable]') as HTMLDivElement
-      const textarea = formRef.current.querySelector('textarea[name="contentFa"]') as HTMLTextAreaElement
-      if (editor && textarea) {
-        const htmlContent = Array.isArray(initialData.contentFa) ? initialData.contentFa.join('\n') : initialData.contentFa
-        editor.innerHTML = htmlContent
-        textarea.value = htmlContent
-      }
-    }
-  }, [isEdit, initialData])
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -41,31 +35,22 @@ export default function ArticleForm({ initialData }: { initialData?: any }) {
       })
       const data = await res.json()
       if (data.ok) {
-        const imgInput = document.querySelector('input[name="img"]') as HTMLInputElement
-        if (imgInput) {
-          imgInput.value = data.fileUrl
-        }
+        setImgUrl(data.fileUrl)
         setMsg('✅ عکس با موفقیت آپلود شد')
       } else {
         setMsg('❌ خطا در آپلود: ' + (data.error || 'نامشخص'))
       }
-    } catch (err: any) {
+    } catch (err) {
       setMsg('❌ خطا در ارتباط با سرور')
     } finally {
       setUploading(false)
     }
   }
 
-  const submit = async (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setBusy(true)
     setMsg('')
-
-    const editor = formRef.current?.querySelector('[contenteditable]') as HTMLDivElement
-    const textarea = formRef.current?.querySelector('textarea[name="contentFa"]') as HTMLTextAreaElement
-    if (editor && textarea) {
-      textarea.value = editor.innerHTML
-    }
 
     const fd = new FormData(e.currentTarget)
     const actionType = isEdit ? 'update' : 'create'
@@ -73,8 +58,8 @@ export default function ArticleForm({ initialData }: { initialData?: any }) {
       action: actionType,
       titleFa: fd.get('titleFa'),
       descFa: fd.get('descFa'),
-      contentFa: fd.get('contentFa'),
-      img: fd.get('img'),
+      contentFa: contentFa,
+      img: imgUrl,
       tagFa: fd.get('tagFa'),
     }
     if (isEdit) payload.id = initialData.id
@@ -99,23 +84,23 @@ export default function ArticleForm({ initialData }: { initialData?: any }) {
   }
 
   return (
-    <form ref={formRef} onSubmit={submit} className="card space-y-4 p-6">
+    <form onSubmit={submit} className="card space-y-4 p-6 bg-surface border border-line rounded-2xl">
       <div>
         <label className="mb-1 block text-xs text-ink-muted">عنوان *</label>
-        <input name="titleFa" required defaultValue={initialData?.titleFa || ''} className="input text-sm" placeholder="عنوان مقاله" />
+        <input name="titleFa" required defaultValue={initialData?.titleFa || ''} className="input text-sm w-full bg-elevated border-line text-ink rounded-xl p-2.5 focus:border-gold outline-none" placeholder="عنوان مقاله" />
       </div>
       <div>
         <label className="mb-1 block text-xs text-ink-muted">توضیح متا (سئو)</label>
-        <input name="descFa" defaultValue={initialData?.descFa || ''} className="input text-sm" placeholder="۱۵۵ کاراکتر..." />
+        <input name="descFa" defaultValue={initialData?.descFa || ''} className="input text-sm w-full bg-elevated border-line text-ink rounded-xl p-2.5 focus:border-gold outline-none" placeholder="۱۵۵ کاراکتر..." />
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label className="mb-1 block text-xs text-ink-muted">کلمه کلیدی</label>
-          <input name="tagFa" defaultValue={initialData?.tagFa || ''} className="input text-sm" placeholder="مثلاً: پرامپت نویسی" />
+          <input name="tagFa" defaultValue={initialData?.tagFa || ''} className="input text-sm w-full bg-elevated border-line text-ink rounded-xl p-2.5 focus:border-gold outline-none" placeholder="مثلاً: پرامپت نویسی" />
         </div>
         <div>
           <label className="mb-1 block text-xs text-ink-muted">آدرس تصویر کاور</label>
-          <input name="img" defaultValue={initialData?.img || ''} className="input text-sm" dir="ltr" placeholder="https://..." />
+          <input name="img" value={imgUrl} onChange={(e) => setImgUrl(e.target.value)} className="input text-sm w-full bg-elevated border-line text-ink rounded-xl p-2.5 focus:border-gold outline-none" dir="ltr" placeholder="https://..." />
           <div className="mt-2">
             <label className="block text-xs text-ink-muted mb-1">یا آپلود مستقیم (به تلگرام):</label>
             <input
@@ -123,7 +108,7 @@ export default function ArticleForm({ initialData }: { initialData?: any }) {
               accept="image/*"
               onChange={handleImageUpload}
               disabled={uploading}
-              className="input text-xs py-1.5"
+              className="input text-xs py-1.5 w-full bg-elevated border-line rounded-xl"
             />
             {uploading && <p className="mt-1 text-xs text-gold-bright">⏳ در حال آپلود به تلگرام...</p>}
           </div>
@@ -131,13 +116,13 @@ export default function ArticleForm({ initialData }: { initialData?: any }) {
       </div>
       <div>
         <label className="mb-1 block text-xs text-ink-muted">متن مقاله (فرمت سئو حفظ می‌شود)</label>
-        <RichTextEditor name="contentFa" initialValue={Array.isArray(initialData?.contentFa) ? initialData.contentFa.join('\n') : (initialData?.contentFa || '')} />
+        <RichTextEditor value={contentFa} onChange={setContentFa} />
       </div>
       {msg && (
         <p className={`text-xs ${msg.includes('✅') ? 'text-green-400' : 'text-red-400'}`}>{msg}</p>
       )}
-      <button disabled={busy} className="btn-primary w-full justify-center">
-        {busy ? ' در حال ذخیره...' : (isEdit ? '💾 ذخیره تغییرات' : ' انتشار مقاله')}
+      <button disabled={busy} type="submit" className="btn-primary w-full justify-center bg-gold hover:bg-gold-bright text-ink-inverse font-semibold py-3 rounded-xl transition shadow-gold-glow">
+        {busy ? 'در حال ذخیره...' : (isEdit ? '💾 ذخیره تغییرات' : '🚀 انتشار مقاله')}
       </button>
     </form>
   )
