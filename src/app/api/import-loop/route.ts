@@ -29,22 +29,6 @@ function extractPrompt(text: string): string {
   return text
 }
 
-function isValidCaption(caption: string): boolean {
-  if (!caption || caption.length < 50) return false
-  
-  const placeholderPatterns = [
-    /new prompt/i,
-    /پرامپت جدید/i,
-    /prompt in the next message/i,
-    /پرامپت در پیام بعد/i,
-    /see next message/i,
-    /در پیام بعد/i,
-    /👇/
-  ]
-  
-  return !placeholderPatterns.some(pattern => pattern.test(caption))
-}
-
 export async function GET(req: Request) {
   if (!isCronAuthorized(req)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -76,16 +60,15 @@ export async function GET(req: Request) {
   let cursor = parseInt(await getSetting('import_cursor_msg_id', '2'), 10)
   const categories = await prisma.category.findMany()
   
-  debug.push(`🔍 Starting from message ID ${cursor} (target: 10 prompts)`)
+  debug.push(` Starting from message ID ${cursor} (target: 10 prompts)`)
 
   let imported = 0
-  const MAX_MESSAGES = 50
+  const MAX_MESSAGES = 100
 
   for (let offset = 0; offset < MAX_MESSAGES && imported < 10; offset++) {
     const msgId = cursor + offset
     
     try {
-      // Forward پیام جاری
       const fwdRes = await fetch(api('forwardMessage', { 
         chat_id: privChat,
         from_chat_id: chatId, 
@@ -93,34 +76,34 @@ export async function GET(req: Request) {
       }))
       
       if (!fwdRes.ok) {
-        debug.push(`⏭️ ${msgId}: Cannot forward`)
+        debug.push(`️ ${msgId}: Cannot forward`)
+        cursor = msgId + 1
         continue
       }
       
       const fwdData = await fwdRes.json()
-      if (!fwdData.ok) continue
+      if (!fwdData.ok) {
+        cursor = msgId + 1
+        continue
+      }
       
       const msg = fwdData.result
       const fwdMsgId = msg.message_id
 
-      // اگر عکس نیست، رد شو
       if (!msg.photo) {
-        debug.push(`⏭️ ${msgId}: Not a photo (skipping)`)
+        debug.push(`️ ${msgId}: Not a photo`)
         await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(fwdMsgId) })).catch(() => {})
+        cursor = msgId + 1
         continue
       }
 
-      // این یک عکس است! بررسی کپشن
       const caption = (msg.caption || '').trim()
       let promptText = ''
-      let skipNext = false
 
-      // حالت 1: کپشن معتبر (طولانی و بدون کلمات راهنما)
-      if (isValidCaption(caption)) {
+      if (caption.length > 50) {
         promptText = caption
-        debug.push(`✅ ${msgId}: Valid caption (${caption.length} chars)`)
+        debug.push(`✅ ${msgId}: Caption is prompt (${caption.length} chars)`)
       } else {
-        // حالت 2: کپشن کوتاه/نامعتبر → بررسی پیام بعدی
         debug.push(`🔍 ${msgId}: Short caption (${caption.length} chars). Checking next message...`)
         
         const nextMsgId = msgId + 1
@@ -137,51 +120,46 @@ export async function GET(req: Request) {
             const nextFwdMsgId = nextMsg.message_id
             const nextText = (nextMsg.text || nextMsg.caption || '').trim()
             
-            // اگر پیام بعدی متن طولانی داشت و عکس نداشت
-            if (nextText.length > 100 && !nextMsg.photo) {
+            if (nextText.length > 50) {
               promptText = nextText
-              skipNext = true // پیام بعدی را رد کن
               debug.push(`✅ ${msgId}: Found prompt in next message ${nextMsgId} (${nextText.length} chars)`)
             } else {
-              debug.push(`⏭️ ${msgId}: Next message not suitable (textLen=${nextText.length}, hasPhoto=${!!nextMsg.photo})`)
+              debug.push(`⏭️ ${msgId}: Next message too short (${nextText.length} chars)`)
             }
             
-            // پاک کردن پیام بعدی
             await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(nextFwdMsgId) })).catch(() => {})
           }
         }
       }
 
-      // پاک کردن پیام عکس
       await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(fwdMsgId) })).catch(() => {})
 
       if (!promptText) {
         debug.push(`⏭️ ${msgId}: No valid prompt found`)
+        cursor = msgId + 1
         continue
       }
 
-      // گرفتن لینک عکس
       const fileId = msg.photo[msg.photo.length - 1].file_id
       const fileRes = await fetch(api('getFile', { file_id: fileId }))
       const fileData = await fileRes.json()
       
       if (!fileData.ok || !fileData.result?.file_path) {
         debug.push(`❌ ${msgId}: No file_path`)
+        cursor = msgId + 1
         continue
       }
 
       const telegramUrl = `https://api.telegram.org/file/bot${token}/${fileData.result.file_path}`
       const proxyUrl = `${APP_URL}/api/image-proxy?url=${encodeURIComponent(telegramUrl)}`
 
-      // چک تکراری
       const existing = await prisma.prompt.findUnique({ where: { slug: `tg-${msgId}` } })
       if (existing) {
-        debug.push(`⏭️ ${msgId}: Already exists`)
-        offset++ // اگر skipNext بود، یک بار دیگر هم رد کن
+        debug.push(`️ ${msgId}: Already exists (skipping)`)
+        cursor = msgId + 1
         continue
       }
 
-      // پردازش با جمینای
       const finalPrompt = extractPrompt(promptText)
       const ai = await analyzeWithGemini({ text: finalPrompt, categories })
       const cat = await prisma.category.findUnique({ where: { slug: ai.categorySlug } })
@@ -212,13 +190,10 @@ export async function GET(req: Request) {
       debug.push(`✅ Imported ${msgId}: ${ai.titleFa} (${imported}/10)`)
       
       cursor = msgId + 1
-      if (skipNext) {
-        offset++ // رد کردن پیام متنی
-        cursor = msgId + 2
-      }
 
     } catch (e: any) {
       debug.push(`❌ ${msgId}: ${e.message}`)
+      cursor = msgId + 1
     }
   }
 
