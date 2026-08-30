@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers'
 import { signIn } from '@/auth'
-import WebViewWarning from '@/components/WebViewWarning' // ← خط جدید
+import WebViewWarning from '@/components/WebViewWarning'
 
 export const metadata = { title: 'ورود | PromptsFA' }
 
@@ -9,7 +9,7 @@ export default async function LoginPage() {
   const fa = cookieStore.get('locale')?.value !== 'en'
 
   return (
-    <WebViewWarning>  {/* ← اضافه شد */}
+    <WebViewWarning>
       <section className="container-app grid min-h-[70vh] place-items-center py-16" dir={fa ? 'rtl' : 'ltr'}>
         <div className={'card w-full max-w-md p-8 ' + (fa ? 'text-right' : 'text-left')}>
           <span className="gold-badge">{fa ? 'اعضا' : 'Members'}</span>
@@ -28,6 +28,6 @@ export default async function LoginPage() {
           </form>
         </div>
       </section>
-    </WebViewWarning>  {/* ← اضافه شد */}
+    </WebViewWarning>
   )
 }
