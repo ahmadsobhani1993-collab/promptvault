@@ -1,34 +1,37 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
-import TelegramLogin from './TelegramLogin'
+import { useState } from 'react'
 
 export default function TelegramLoginButton() {
-  const router = useRouter()
+  const [loading, setLoading] = useState(false)
 
-  const handleAuth = async (user: any) => {
+  const handleClick = async () => {
+    setLoading(true)
     try {
-      const res = await fetch('/api/auth/telegram', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(user),
-      })
+      const res = await fetch('/api/auth/telegram/init', { method: 'POST' })
+      const data = await res.json()
 
-      if (res.ok) {
-        router.push('/')
-        router.refresh()
+      if (data.url) {
+        // انتقال به بات تلگرام با توکن
+        window.location.href = data.url
       } else {
-        alert('خطا در ورود با تلگرام')
+        alert('خطا در ساخت لینک ورود')
+        setLoading(false)
       }
     } catch (error) {
       alert('خطا در اتصال به سرور')
+      setLoading(false)
     }
   }
 
   return (
-    <TelegramLogin
-      botUsername="telegramloginbot"
-      onAuth={handleAuth}
-    />
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={loading}
+      className="btn-primary w-full justify-center disabled:opacity-50"
+    >
+      {loading ? 'در حال انتقال به تلگرام…' : 'ورود با تلگرام'}
+    </button>
   )
 }
