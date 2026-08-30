@@ -12,6 +12,21 @@ async function sendText(chatId: number, text: string) {
   })
 }
 
+async function sendButton(chatId: number, text: string, buttonText: string, url: string) {
+  const token = process.env.LOGIN_BOT_TOKEN
+  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      reply_markup: {
+        inline_keyboard: [[{ text: buttonText, url }]],
+      },
+    }),
+  })
+}
+
 export async function POST(req: Request) {
   const update = await req.json()
   const msg = update.message
@@ -20,7 +35,6 @@ export async function POST(req: Request) {
   const from = msg.from
   const chatId = msg.chat.id
 
-  // فقط انسان واقعی، بات رد می‌شود
   if (from.is_bot) return NextResponse.json({ ok: true })
 
   const token = msg.text.startsWith('/start ')
@@ -55,9 +69,11 @@ export async function POST(req: Request) {
     data: { telegramId, status: 'APPROVED' },
   })
 
-  await sendText(
+  await sendButton(
     chatId,
-    `✅ ورود تأیید شد.\nبرای تکمیل، روی لینک زیر بزنید:\n${APP_URL}/api/auth/telegram/callback?token=${token}`
+    '✅ ورود تأیید شد. برای تکمیل ورود روی دکمه زیر بزنید:',
+    '🔐 ورود به سایت',
+    `${APP_URL}/api/auth/telegram/callback?token=${token}`
   )
 
   return NextResponse.json({ ok: true })
