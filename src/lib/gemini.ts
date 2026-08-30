@@ -42,12 +42,11 @@ export type GeminiResult = {
 
 const cleanTitle = (t: string) => t.replace(/^([\u0600-\u06FF\w]+)\s+\1/, '$1')
 
-// ترتیب اصلاح‌شده: از پایدارترین به سمت مدل‌های جایگزین. 3.7 در آخرین اولویت است.
 export const MODEL_CHAIN = [
-  'gemini-3.5-flash',            // 1. اصلی و پایدار
-  'gemini-3.5-flash-lite',       // 2. سبک‌تر و سریع‌تر (مصرف کمتر)
-  'gemini-3.6-flash',            // 3. جایگزین
-  'gemini-3.7-flash'             // 4. آخرین تلاش (اگر بقیه_quota_ یا خطا دادند)
+  'gemini-3.5-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.6-flash',
+  'gemini-3.7-flash'
 ]
 
 export async function generateText(opts: {
@@ -72,13 +71,12 @@ export async function generateText(opts: {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ contents: [{ parts }] }),
-          signal: AbortSignal.timeout(30000), // افزایش به 30 ثانیه برای پرامپت‌های طولانی
+          signal: AbortSignal.timeout(30000),
         }
       )
       
       const body = await res.text()
       
-      // مدیریت خطاها و ادامه به مدل بعدی
       if (res.status === 429) { 
         console.warn(`[Gemini] Quota exceeded for ${model}, trying next...`)
         lastError = model + ': quota'
@@ -114,8 +112,50 @@ export async function generateText(opts: {
     }
   }
   
-  // اگر تمام مدل‌ها شکست خوردند
   throw new Error('GEMINI_QUOTA_EXHAUSTED :: ' + lastError)
+}
+
+/**
+ * تمیزسازی پرامپت:
+ * - حذف آیدی تلگرام، اسم کانال، لینک سایت
+ * - حفظ زبان اصلی (فارسی/انگلیسی)
+ * - ترجمه به انگلیسی اگر زبان دیگری باشد
+ */
+export async function normalizePrompt(raw: string): Promise<string> {
+  if (!raw || !raw.trim()) return raw
+
+  const instruction =
+    'You are a prompt cleaning assistant. You receive raw text that contains an AI generation prompt mixed with promotional noise.\n' +
+    'Return ONLY the cleaned prompt itself. No explanations, no quotes, no labels.\n\n' +
+    'Cleaning rules:\n' +
+    '1. REMOVE all promotional noise: Telegram usernames/IDs (e.g. @promptsfa, @channelname), Telegram channel names, website names and URLs (e.g. promptsfa.ir, https://...), "follow/subscribe" sentences, contact info, watermarks.\n' +
+    '2. PRESERVE the original language of the prompt:\n' +
+    '   - If the prompt is in Persian (فارسی), keep it in Persian exactly.\n' +
+    '   - If the prompt is in English, keep it in English exactly.\n' +
+    '   - If the prompt is in any other language, translate it to English.\n' +
+    '3. Keep all technical parameters (--v, --ar, --style, etc.) exactly as they are.\n' +
+    '4. Keep style keywords and descriptive adjectives.\n' +
+    '5. Output raw prompt text only. No markdown, no code blocks, no "Prompt:" prefix.\n\n' +
+    'TEXT TO CLEAN:\n' + raw
+
+  try {
+    const { text } = await generateText({ instruction })
+    const cleaned = text.trim()
+    return cleaned || fallbackClean(raw)
+  } catch (e: any) {
+    console.warn(`[Gemini] normalizePrompt failed: ${e?.message ?? e}. Using fallback.`)
+    return fallbackClean(raw)
+  }
+}
+
+function fallbackClean(text: string): string {
+  return text
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/@[\w_]+/g, '')
+    .replace(/(t\.me|telegram\.me|promptsfa\.ir|promptsfa)\S*/gi, '')
+    .replace(/دنبال\s*کردن|فالو|سابسکرایب|follow|subscribe/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 export async function analyzeWithGemini(opts: {
@@ -165,6 +205,6 @@ export async function analyzeWithGemini(opts: {
     tagsFa,
     tagsEn,
     promptEn: String(parsed.promptEn || opts.text),
-    promptFa: String(parsed.promptFa || opts.text),
+    promptFa: String(opts.text || parsed.promptEn || ''),
   }
 }
