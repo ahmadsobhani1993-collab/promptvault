@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers'
 import { signIn } from '@/auth'
 import WebViewWarning from '@/components/WebViewWarning'
-import TelegramLogin from '@/components/TelegramLogin'
+import TelegramLoginButton from '@/components/TelegramLoginButton'
 
 export const metadata = { title: 'ورود | PromptsFA' }
 
@@ -20,22 +20,7 @@ export default async function LoginPage() {
           </p>
 
           <div className="mt-6">
-            <TelegramLogin
-              botUsername="telegramloginbot"
-              onAuth={async (user) => {
-                const res = await fetch('/api/auth/telegram', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(user),
-                })
-
-                if (res.ok) {
-                  window.location.href = '/'
-                } else {
-                  alert(fa ? 'خطا در ورود با تلگرام' : 'Telegram sign in failed')
-                }
-              }}
-            />
+            <TelegramLoginButton />
           </div>
 
           <div className="my-6 flex items-center">
