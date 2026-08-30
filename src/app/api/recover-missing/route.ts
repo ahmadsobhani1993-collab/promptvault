@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { analyzeWithGemini } from '@/lib/gemini'
+import { analyzeWithGemini, normalizePrompt } from '@/lib/gemini'
 import { isCronAuthorized } from '@/lib/cron-auth'
 
 export const maxDuration = 120
@@ -138,9 +138,12 @@ export async function GET(req: Request) {
 
       // پردازش با جمینای
       const finalPrompt = extractPrompt(promptText)
+
+      // تمیزسازی با Gemini (حذف @channel و لینک سایت، حفظ زبان)
+      const cleanPrompt = await normalizePrompt(finalPrompt)
       
       try {
-        const ai = await analyzeWithGemini({ text: finalPrompt, categories })
+        const ai = await analyzeWithGemini({ text: cleanPrompt, categories })
         const cat = await prisma.category.findUnique({ where: { slug: ai.categorySlug } })
 
         await prisma.prompt.create({
@@ -153,13 +156,13 @@ export async function GET(req: Request) {
             usageEn: ai.usageEn,
             slug: `tg-${msgId}`,
             img: proxyUrl,
-            model: /--v\s?\d|--ar|midjourney/i.test(finalPrompt) ? 'Midjourney' : 'AI',
+            model: /--v\s?\d|--ar|midjourney/i.test(cleanPrompt) ? 'Midjourney' : 'AI',
             type: 'IMAGE',
             status: 'PUBLISHED',
             categoryId: cat?.id ?? categories[0]?.id,
             tagsFa: ai.tagsFa,
             tagsEn: ai.tagsEn,
-            prompt: finalPrompt,
+            prompt: cleanPrompt,
             views: 1 + Math.floor(Math.random() * 10),
           },
         })
