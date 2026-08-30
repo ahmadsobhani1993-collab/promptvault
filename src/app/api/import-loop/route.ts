@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { analyzeWithGemini } from '@/lib/gemini'
+import { analyzeWithGemini, normalizePrompt } from '@/lib/gemini'
 import { isCronAuthorized } from '@/lib/cron-auth'
 
 export const maxDuration = 120
@@ -60,7 +60,7 @@ export async function GET(req: Request) {
   let cursor = parseInt(await getSetting('import_cursor_msg_id', '2'), 10)
   const categories = await prisma.category.findMany()
   
-  debug.push(` Starting from message ID ${cursor} (target: 10 prompts)`)
+  debug.push(`🚀 Starting from message ID ${cursor} (target: 10 prompts)`)
 
   let imported = 0
   const MAX_MESSAGES = 100
@@ -76,7 +76,7 @@ export async function GET(req: Request) {
       }))
       
       if (!fwdRes.ok) {
-        debug.push(`️ ${msgId}: Cannot forward`)
+        debug.push(`⚠️ ${msgId}: Cannot forward`)
         cursor = msgId + 1
         continue
       }
@@ -91,7 +91,7 @@ export async function GET(req: Request) {
       const fwdMsgId = msg.message_id
 
       if (!msg.photo) {
-        debug.push(`️ ${msgId}: Not a photo`)
+        debug.push(`⚠️ ${msgId}: Not a photo`)
         await fetch(api('deleteMessage', { chat_id: privChat, message_id: String(fwdMsgId) })).catch(() => {})
         cursor = msgId + 1
         continue
@@ -155,13 +155,20 @@ export async function GET(req: Request) {
 
       const existing = await prisma.prompt.findUnique({ where: { slug: `tg-${msgId}` } })
       if (existing) {
-        debug.push(`️ ${msgId}: Already exists (skipping)`)
+        debug.push(`⚠️ ${msgId}: Already exists (skipping)`)
         cursor = msgId + 1
         continue
       }
 
-      const finalPrompt = extractPrompt(promptText)
-      const ai = await analyzeWithGemini({ text: finalPrompt, categories })
+      // مرحله ۱: استخراج خام
+      const rawPrompt = extractPrompt(promptText)
+      
+      // مرحله ۲: تمیزسازی با Gemini (حذف @channel، لینک سایت، حفظ زبان)
+      const cleanPrompt = await normalizePrompt(rawPrompt)
+      debug.push(`🧹 ${msgId}: Prompt normalized (${cleanPrompt.length} chars)`)
+
+      // مرحله ۳: تحلیل با Gemini برای تولید metadata
+      const ai = await analyzeWithGemini({ text: cleanPrompt, categories })
       const cat = await prisma.category.findUnique({ where: { slug: ai.categorySlug } })
 
       await prisma.prompt.create({
@@ -174,13 +181,13 @@ export async function GET(req: Request) {
           usageEn: ai.usageEn,
           slug: `tg-${msgId}`,
           img: proxyUrl,
-          model: /--v\s?\d|--ar|midjourney/i.test(finalPrompt) ? 'Midjourney' : 'AI',
+          model: /--v\s?\d|--ar|midjourney/i.test(cleanPrompt) ? 'Midjourney' : 'AI',
           type: 'IMAGE',
           status: 'PUBLISHED',
           categoryId: cat?.id ?? categories[0]?.id,
           tagsFa: ai.tagsFa,
           tagsEn: ai.tagsEn,
-          prompt: finalPrompt,
+          prompt: cleanPrompt, // ← پرامپت تمیزشده ذخیره می‌شود
           views: 1 + Math.floor(Math.random() * 10),
         },
       })
