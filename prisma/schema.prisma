@@ -285,3 +285,9 @@ model AnalyticsBuffer {
   ip        String?
   createdAt DateTime @default(now())
 }
+model LoginToken {
+  token      String   @id
+  telegramId String?
+  status     String   @default("PENDING")
+  createdAt  DateTime @default(now())
+}
