@@ -1,23 +1,40 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { signIn } from '@/auth'
+import crypto from 'crypto'
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const token = searchParams.get('token')
-  if (!token) return NextResponse.redirect(new URL('/login', req.url))
+  const loginUrl = new URL('/login', req.url)
+
+  if (!token) return NextResponse.redirect(loginUrl)
 
   const loginToken = await prisma.loginToken.findUnique({ where: { token } })
   if (!loginToken || loginToken.status !== 'APPROVED' || !loginToken.telegramId) {
-    return NextResponse.redirect(new URL('/login', req.url))
+    return NextResponse.redirect(loginUrl)
   }
 
   const user = await prisma.user.findUnique({ where: { telegramId: loginToken.telegramId } })
-  if (!user) return NextResponse.redirect(new URL('/login', req.url))
+  if (!user) return NextResponse.redirect(loginUrl)
 
-  await prisma.loginToken.delete({ where: { token } })
+  await prisma.loginToken.delete({ where: { token } }).catch(() => {})
 
-  await signIn('telegram', { userId: user.id, redirect: false })
+  // ساخت session دیتابیسی (دقیقاً مثل لاگین گوگل)
+  const sessionToken = crypto.randomUUID()
+  const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+  await prisma.session.create({ data: { sessionToken, userId: user.id, expires } })
 
-  return NextResponse.redirect(new URL('/', req.url))
+  const isSecure = req.url.startsWith('https')
+  const cookieName = isSecure ? '__Secure-authjs.session-token' : 'authjs.session-token'
+
+  const res = NextResponse.redirect(new URL('/', req.url))
+  res.cookies.set(cookieName, sessionToken, {
+    httpOnly: true,
+    secure: isSecure,
+    sameSite: 'lax',
+    path: '/',
+    expires,
+  })
+
+  return res
 }
