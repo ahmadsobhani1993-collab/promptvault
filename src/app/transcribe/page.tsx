@@ -1,10 +1,9 @@
-import TranscribeClient from '@/components/transcribe/TranscribeClient'
+import AudioTranscribeClient from '@/components/transcribe/AudioTranscribeClient'
 
 export const metadata = {
-  title: 'استخراج متن صدا و ویدیو | PromptsFA',
-  description: 'تبدیل صوت و فیلم به متن',
+  title: 'تبدیل صدا به متن | PromptsFA',
 }
 
-export default function TranscribePage() {
-  return <TranscribeClient />
+export default function Page() {
+  return <AudioTranscribeClient />
 }
