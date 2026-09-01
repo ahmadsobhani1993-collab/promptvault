@@ -67,19 +67,29 @@ export default function TranscribeClient() {
       setStatus('۱. دیکود صدا (مرورگر)…')
       const pcm = await decodeToPcm16k(file)
 
-      // 🔍 تشخیص سکوت / نبود صدا
-      const samples = pcm as unknown as Int16Array | Float32Array
+      // 🔍 تشخیص سکوت (سازگار با ArrayBuffer / TypedArray)
+      const raw: any = pcm
+      let i16: Int16Array
+      if (raw instanceof ArrayBuffer) {
+        i16 = new Int16Array(raw)
+      } else if (raw instanceof Int16Array) {
+        i16 = raw
+      } else if (raw?.buffer instanceof ArrayBuffer) {
+        i16 = new Int16Array(raw.buffer, raw.byteOffset ?? 0, Math.floor(raw.byteLength / 2))
+      } else {
+        i16 = new Int16Array(0)
+      }
       let sum = 0
       let n = 0
-      const step = Math.max(1, Math.floor(samples.length / 20000))
-      for (let i = 0; i < samples.length; i += step) {
-        sum += Math.abs(samples[i])
+      const step = Math.max(1, Math.floor(i16.length / 20000))
+      for (let i = 0; i < i16.length; i += step) {
+        sum += Math.abs(i16[i])
         n++
       }
       const avg = n ? sum / n : 0
-      console.log('[audio] avg amplitude:', avg)
-      if (avg === 0) {
-        setStatus('❌ این فایل هیچ صدایی ندارد — یک فایل با گفتار واضح امتحان کن')
+      console.log('[audio] avg amplitude:', avg, 'samples:', i16.length)
+      if (avg < 10) {
+        setStatus('❌ این فایل صدای قابل استفاده ندارد (سکوت یا بسیار ضعیف) — یک فایل با گفتار واضح امتحان کن')
         setBusy(false)
         return
       }
@@ -210,7 +220,6 @@ export default function TranscribeClient() {
         </div>
       )}
 
-      {/* پیش‌نمایش زیرنویس روی ویدیو */}
       {mode === 'video' && videoUrl && segments.length > 0 && (
         <SubtitlePreview videoUrl={videoUrl} segments={segments} />
       )}
