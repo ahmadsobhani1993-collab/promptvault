@@ -10,7 +10,7 @@ const API_BASE = 'https://generativelanguage.googleapis.com/v1beta'
 
 // مدل‌های REST عمومی (Transcribe-Live فقط برای WebSocket است)
 const TRANSCRIBE_MODELS = [
-  'Gemini-3.5-Transcribe-Live',
+
   'Gemini-3.0-Flash-Live',
 ]
 
