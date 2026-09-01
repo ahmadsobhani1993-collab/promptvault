@@ -1,12 +1,8 @@
-import dynamic from 'next/dynamic'
-
-const TranscribeClient = dynamic(() => import('@/components/transcribe/TranscribeClient'), {
-  ssr: false,
-})
+import TranscribeClient from '@/components/transcribe/TranscribeClient'
 
 export const metadata = {
-  title: 'ترنسکریپت صدا و ویدیو | PromptsFA',
-  description: 'تبدیل گفتار به متن و زیرنویس با هوش مصنوعی Gemini',
+  title: 'استخراج متن صدا و ویدیو | PromptsFA',
+  description: 'تبدیل صوت و فیلم به متن',
 }
 
 export default function TranscribePage() {
