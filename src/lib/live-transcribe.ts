@@ -115,11 +115,13 @@ export class LiveTranscriber {
       }
 
       this.ws.onclose = (e) => {
-        console.log('[live] ws close:', e.code, e.reason)
-        this.onClose()
-      }
-    })
+  console.log('[live] ws close:', e.code, e.reason)
+  if (!settled) {
+    settled = true
+    reject(new Error(`اتصال بسته شد (کد ${e.code}) — دوباره تلاش کن`))
   }
+  this.onClose()
+}
 
   sendChunk(base64: string, seconds: number) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
