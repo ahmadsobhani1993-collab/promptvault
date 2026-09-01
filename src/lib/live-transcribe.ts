@@ -4,7 +4,7 @@ export interface TranscriptSegment {
   end: number
 }
 // ID دقیق از خروجی دستور بالا (بدون پیشوند models/)
-export const TRANSCRIBE_MODEL = 'gemini-3.5-live-transcribe' // ← خروجی واقعی را بگذار
+export const TRANSCRIBE_MODEL = 'gemini-3.5-transcribe-live' // ← خروجی واقعی را بگذار
 
 
 const WS_BASE =
