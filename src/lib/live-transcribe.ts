@@ -4,14 +4,13 @@ export interface TranscriptSegment {
   end: number
 }
 
-// مدل Live — اگر ارور invalid model آمد، ID دقیق را از AI Studio جایگزین کن
+// مدل Live — بعد از تأیید، ID دقیق را بگذار
 export const TRANSCRIBE_MODEL = 'gemini-3.0-flash-live'
 
-// Cloudflare Worker proxy — کلید Gemini داخل Worker تزریق می‌شود، نه اینجا
 const WS_BASE =
   'wss://gemini-live-proxy.ahmadsobhani1993.workers.dev/gemini-live'
 
-// برای سازگاری با rest-transcribe (حالت REST fallback)
+// کلید واحد = همان کلید Vercel
 export async function getGeminiKey(): Promise<string> {
   const res = await fetch('/api/gemini/key')
   if (!res.ok) throw new Error('Gemini key fetch failed')
@@ -30,12 +29,16 @@ export class LiveTranscriber {
   onClose: () => void = () => {}
   onRawMessage: (msg: any) => void = () => {}
 
-  // apiKey دیگر استفاده نمی‌شود (Worker کلید دارد) — فقط برای سازگاری امضا
-  constructor(private apiKey?: string, private model: string = TRANSCRIBE_MODEL) {}
+  constructor(private apiKey: string = '', private model: string = TRANSCRIBE_MODEL) {}
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.ws = new WebSocket(WS_BASE) // بدون ?key=
+      // کلید Vercel به Worker پاس داده می‌شود
+      const wsUrl = this.apiKey
+        ? `${WS_BASE}?key=${encodeURIComponent(this.apiKey)}`
+        : WS_BASE
+
+      this.ws = new WebSocket(wsUrl)
       let settled = false
 
       this.ws.onopen = () => {
@@ -59,7 +62,6 @@ export class LiveTranscriber {
 
         this.onRawMessage(msg)
 
-        // خطاهای Gemini (مثلاً مدل اشتباه / کلید بد)
         if (msg?.error) {
           const errText = msg.error?.message || JSON.stringify(msg.error)
           this.onError('Gemini: ' + errText)
