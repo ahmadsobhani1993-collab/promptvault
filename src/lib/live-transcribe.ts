@@ -5,7 +5,7 @@ export interface TranscriptSegment {
 }
 
 // مدل Live — بعد از تأیید، ID دقیق را بگذار
-export const TRANSCRIBE_MODEL = 'Gemini-3.5-Transcribe-Live'
+export const TRANSCRIBE_MODEL = 'gemini-3.5-transcribe-live'
 
 const WS_BASE =
   'wss://gemini-live-proxy.ahmadsobhani1993.workers.dev/gemini-live'
