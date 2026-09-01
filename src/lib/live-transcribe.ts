@@ -40,23 +40,23 @@ export class LiveTranscriber {
 
       this.ws.onopen = () => {
         this.ws?.send(
-          this.ws?.send(
-  JSON.stringify({
-    setup: {
-      model: `models/${this.model}`,
-      systemInstruction: {
-        parts: [
-          {
-            text:
-              'Transcribe the audio verbatim, word for word, in the original spoken language (Persian, English, or any other). Do not translate, summarize, or omit anything.',
-          },
-        ],
-      },
-      generationConfig: { responseModalities: ['TEXT'] },
-    },
-  })
-)
-             
+          JSON.stringify({
+            setup: {
+              model: `models/${this.model}`,
+              systemInstruction: {
+                parts: [
+                  {
+                    text:
+                      'Transcribe the audio verbatim, word for word, in the original spoken language (Persian, English, or any other). Do not translate, summarize, or omit anything.',
+                  },
+                ],
+              },
+              generationConfig: { responseModalities: ['TEXT'] },
+            },
+          })
+        )
+      }
+
       this.ws.onmessage = (ev) => {
         let msg: any
         try {
@@ -85,7 +85,6 @@ export class LiveTranscriber {
           return
         }
 
-        // هر سه مسیر ممکنِ متن (مدل‌های مختلف)
         const text: string =
           msg?.serverContent?.modelTurn?.parts
             ?.map((p: any) => p.text)
@@ -134,13 +133,11 @@ export class LiveTranscriber {
     this.secondsSent += seconds
   }
 
-  // 🆕 سیگنال پایان ورودی + صبر برای متن پایانی
   async finish(): Promise<void> {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
     try {
       this.ws.send(JSON.stringify({ clientContent: { turnComplete: true } }))
     } catch {}
-    // فرصت flush به مدل
     await new Promise((r) => setTimeout(r, 8000))
     this.ws?.close()
   }
