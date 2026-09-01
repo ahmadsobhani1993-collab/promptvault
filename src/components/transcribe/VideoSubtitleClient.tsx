@@ -6,6 +6,7 @@ import { LiveTranscriber, TranscriptSegment, getGeminiKey } from '@/lib/live-tra
 import { decodeToPcm16k } from '@/lib/audio'
 import { prepareChunks } from '@/lib/audio-enhance'
 import { toSrt, toVtt, toTxt, download } from '@/lib/subtitle'
+import { useAuth } from '@/lib/use-auth'
 
 const FONTS = [
   { id: 'Vazirmatn', label: 'وزیرمتن' },
@@ -79,6 +80,8 @@ const MIME_CANDIDATES = [
 ]
 
 export default function VideoSubtitleClient() {
+  const auth = useAuth()
+
   const [videoUrl, setVideoUrl] = useState('')
   const [fileName, setFileName] = useState('')
   const [status, setStatus] = useState('')
@@ -87,42 +90,65 @@ export default function VideoSubtitleClient() {
   const [speed, setSpeed] = useState<1 | 2 | 4 | 8>(4)
   const [segments, setSegments] = useState<Seg[]>([])
   const [style, setStyle] = useState(DEFAULT_STYLE)
+  const [customFonts, setCustomFonts] = useState<{ id: string; label: string }[]>([])
   const [time, setTime] = useState(0)
   const [exporting, setExporting] = useState(false)
   const [expProg, setExpProg] = useState(0)
+  const [failed, setFailed] = useState(false)
 
   const styleRef = useRef(style)
   styleRef.current = style
   const segRef = useRef(segments)
   segRef.current = segments
+  const gotRef = useRef(0)
+  const lastFileRef = useRef<File | null>(null)
 
   useEffect(() => { loadFont(style.fontId) }, [style.fontId])
 
   const baseName = fileName.replace(/\.[^.]+$/, '') || 'video'
   const current = segments.find((s) => time >= s.start && time <= s.end)
 
-  // ─── ترنسکریپت ───
-  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (!file.type.startsWith('video/')) { setStatus('❌ فقط فایل ویدیویی'); return }
+  // ─── فونت دلخواه کاربر ───
+  const addCustomFont = async (f: File) => {
+    try {
+      const name = f.name.replace(/\.[^.]+$/, '')
+      const url = URL.createObjectURL(f)
+      const face = new FontFace(name, `url(${url})`)
+      await face.load()
+      ;(document as any).fonts.add(face)
+      setCustomFonts((p) => [...p.filter((x) => x.id !== name), { id: name, label: `${name} (دلخواه)` }])
+      setStyle((s) => ({ ...s, fontId: name }))
+    } catch (e) {
+      alert('❌ فونت نامعتبر — فایل ttf/otf/woff بده')
+    }
+  }
 
-    setFileName(file.name)
-    setVideoUrl(URL.createObjectURL(file))
+  // ─── ترنسکریپت ───
+  const runTranscribe = async (file: File) => {
     setSegments([])
     setProgress(0)
     setBusy(true)
+    setFailed(false)
+    gotRef.current = 0
 
     try {
       setStatus('۱. دیکود و بهینه‌سازی صدا (محلی)…')
       const pcm = await decodeToPcm16k(file)
       const { chunks, avg } = await prepareChunks(pcm)
-      if (avg < 0.001) { setStatus('❌ این ویدیو صدای قابل استفاده ندارد'); setBusy(false); return }
+      console.log('[audio] avg amplitude:', avg)
+      if (avg < 0.001) {
+        setStatus('❌ این ویدیو صدای قابل استفاده ندارد (سکوت یا فرمت صوتی پشتیبانی‌نشده)')
+        setBusy(false)
+        return
+      }
 
       setStatus('۲. اتصال…')
       const key = await getGeminiKey()
       const t = new LiveTranscriber(key)
-      t.onSegment = (seg) => setSegments((prev) => [...prev, seg])
+      t.onSegment = (seg) => {
+        gotRef.current++
+        setSegments((prev) => [...prev, seg])
+      }
       t.onError = (m) => setStatus('❌ ' + m)
 
       await Promise.race([t.connect(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 20000))])
@@ -136,12 +162,28 @@ export default function VideoSubtitleClient() {
 
       setStatus('۴. متن پایانی…')
       await t.finish()
-      setStatus('✅ آماده — حالا ادیت کن و خروجی بگیر')
+
+      if (gotRef.current === 0) {
+        setFailed(true)
+        setStatus(`⚠️ متنی دریافت نشد (دامنه صدا: ${avg.toFixed(3)}) — صدای ویدیو واضح نیست یا خیلی ضعیف است. با سرعت 1x دوباره تلاش کن یا فایل دیگری امتحان کن.`)
+      } else {
+        setStatus('✅ آماده — حالا ادیت کن و خروجی بگیر')
+      }
     } catch (err: any) {
       setStatus('❌ ' + (err?.message || String(err)))
     } finally {
       setBusy(false)
     }
+  }
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('video/')) { setStatus('❌ فقط فایل ویدیویی'); return }
+    lastFileRef.current = file
+    setFileName(file.name)
+    setVideoUrl(URL.createObjectURL(file))
+    await runTranscribe(file)
   }
 
   const updateSeg = (i: number, patch: Partial<Seg>) => setSegments(segments.map((s, idx) => (idx === i ? { ...s, ...patch } : s)))
@@ -171,6 +213,7 @@ export default function VideoSubtitleClient() {
 
       const st0 = styleRef.current
       await loadFont(st0.fontId)
+      try { await (document as any).fonts?.load(`700 40px "${st0.fontId}"`) } catch {}
 
       const stream = canvas.captureStream(30)
       dest.stream.getAudioTracks().forEach((t) => stream.addTrack(t))
@@ -187,7 +230,6 @@ export default function VideoSubtitleClient() {
         const seg = segRef.current.find((s) => t >= s.start && t <= s.end)
         const t01 = seg ? Math.min(1, Math.max(0, (t - seg.start) / Math.max(0.1, seg.end - seg.start))) : 0
 
-        // زوم ویدیو (افکت)
         let vs = 1
         if (seg?.fx === 'zoomIn') vs = 1 + 0.12 * t01
         if (seg?.fx === 'zoomOut') vs = 1.12 - 0.12 * t01
@@ -197,7 +239,6 @@ export default function VideoSubtitleClient() {
 
         if (seg) {
           const s2 = styleRef.current
-          // انیمیشن اندازه متن
           let ts = 1
           if (seg.fx === 'pop') ts = easeOutBack(Math.min(1, (t - seg.start) / 0.35))
           if (seg.fx === 'zoomIn') ts = 0.8 + 0.35 * t01
@@ -268,6 +309,20 @@ export default function VideoSubtitleClient() {
     return undefined
   }
 
+  // ─── قفل ورود ───
+  if (auth === 'checking') return <div className="p-10 text-center text-sm text-ink-muted">در حال بررسی…</div>
+  if (auth === 'no')
+    return (
+      <div className="mx-auto max-w-md p-10 text-center" dir="rtl">
+        <div className="card space-y-3 p-6">
+          <div className="text-3xl">🔒</div>
+          <strong>ورود لازم است</strong>
+          <p className="text-xs text-ink-muted">برای استفاده از استودیو زیرنویس، ابتدا وارد حساب کاربری شو.</p>
+          <Link href="/" className="inline-block rounded-lg bg-blue-600 px-4 py-2 text-sm text-white">ورود / ثبت‌نام</Link>
+        </div>
+      </div>
+    )
+
   return (
     <div className="container-app mx-auto max-w-5xl space-y-4 p-6" dir="rtl">
       <style>{`
@@ -281,22 +336,18 @@ export default function VideoSubtitleClient() {
         <Link href="/transcribe" className="rounded-lg bg-gray-700 px-3 py-1.5 text-xs hover:bg-gray-600">🎙️ تبدیل صدا به متن</Link>
       </div>
 
-      <p className="text-xs text-ink-muted">پردازش ۱۰۰٪ محلی در مرورگر — ویدیو هیچ‌جا آپلود یا ذخیره نمی‌شود؛ خروجی روی دستگاه خودت دانلود می‌شود.</p>
+      <p className="text-xs text-ink-muted">پردازش ۱۰۰٪ محلی — ویدیو هیچ‌جا آپلود نمی‌شود؛ خروجی روی دستگاه خودت دانلود می‌شود.</p>
 
-      {/* آپلود — همیشه در دسترس */}
       <div className="card space-y-3 p-4">
-        <input
-          type="file"
-          accept="video/*"
-          disabled={busy || exporting}
-          onChange={handleFile}
-          className="block w-full text-sm text-ink-muted file:ml-4 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-white hover:file:bg-blue-700 disabled:opacity-50"
-        />
+        <input type="file" accept="video/*" disabled={busy || exporting} onChange={handleFile} className="block w-full text-sm text-ink-muted file:ml-4 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-white hover:file:bg-blue-700 disabled:opacity-50" />
         <div className="flex items-center gap-3 text-sm">
           <span className="text-ink-muted">سرعت ترنسکریپت:</span>
           {([1, 2, 4, 8] as const).map((s) => (
             <button key={s} disabled={busy} onClick={() => setSpeed(s)} className={`rounded px-3 py-1 text-xs ${speed === s ? 'bg-blue-600 text-white' : 'bg-gray-700'}`}>{s}x</button>
           ))}
+          {failed && lastFileRef.current && !busy && (
+            <button onClick={() => { setSpeed(1); runTranscribe(lastFileRef.current!) }} className="rounded bg-yellow-600 px-3 py-1 text-xs text-white">🔁 تلاش مجدد با 1x</button>
+          )}
         </div>
         {busy && (
           <div className="h-2 w-full overflow-hidden rounded bg-gray-700">
@@ -306,12 +357,11 @@ export default function VideoSubtitleClient() {
       </div>
 
       {status && (
-        <div className={`rounded-lg p-3 text-sm ${status.startsWith('✅') ? 'bg-green-500/10 text-green-400' : status.startsWith('❌') ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'}`}>{status}</div>
+        <div className={`rounded-lg p-3 text-sm ${status.startsWith('✅') ? 'bg-green-500/10 text-green-400' : status.startsWith('❌') ? 'bg-red-500/10 text-red-400' : status.startsWith('⚠️') ? 'bg-yellow-500/10 text-yellow-400' : 'bg-blue-500/10 text-blue-400'}`}>{status}</div>
       )}
 
       {videoUrl && (
         <div className="card space-y-4 p-4">
-          {/* پیش‌نمایش 16:9 */}
           <div className="relative w-full overflow-hidden rounded-xl bg-black aspect-video" style={{ containerType: 'inline-size' }}>
             <video src={videoUrl} controls playsInline onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)} className="h-full w-full object-contain" />
             {current && (
@@ -338,13 +388,19 @@ export default function VideoSubtitleClient() {
             )}
           </div>
 
-          {/* استایل سراسری */}
-          <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3 lg:grid-cols-7">
             <div>
               <div className="mb-1 text-ink-muted">فونت</div>
               <select value={style.fontId} onChange={(e) => setStyle({ ...style, fontId: e.target.value })} className="w-full rounded bg-gray-700 p-1.5">
+                {customFonts.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
                 {FONTS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
               </select>
+            </div>
+            <div className="flex items-end">
+              <label className="cursor-pointer rounded bg-purple-600 px-3 py-1.5 text-xs text-white hover:bg-purple-700">
+                ＋ فونت دلخواه
+                <input type="file" accept=".ttf,.otf,.woff,.woff2" className="hidden" onChange={(e) => e.target.files?.[0] && addCustomFont(e.target.files[0])} />
+              </label>
             </div>
             <div>
               <div className="mb-1 text-ink-muted">اندازه: {style.size}٪</div>
@@ -373,7 +429,6 @@ export default function VideoSubtitleClient() {
             </div>
           </div>
 
-          {/* خروجی‌ها */}
           <div className="flex flex-wrap items-center gap-2 border-t border-gray-700 pt-3">
             <button onClick={() => download(`${baseName}.srt`, toSrt(segments), 'text/plain')} className="rounded bg-blue-600 px-3 py-1.5 text-xs text-white">⬇ SRT</button>
             <button onClick={() => download(`${baseName}.vtt`, toVtt(segments), 'text/vtt')} className="rounded bg-blue-600 px-3 py-1.5 text-xs text-white">⬇ VTT</button>
@@ -388,7 +443,6 @@ export default function VideoSubtitleClient() {
             </div>
           )}
 
-          {/* ادیتور سگمنت‌ها + افکت */}
           <div className="max-h-[28rem] space-y-2 overflow-y-auto">
             {segments.map((s, i) => (
               <div key={i} className="rounded-lg bg-gray-800/50 p-2">
@@ -404,13 +458,7 @@ export default function VideoSubtitleClient() {
                   </select>
                   <div className="flex items-center gap-1">
                     {HL_COLORS.map((c) => (
-                      <button
-                        key={c || 'none'}
-                        onClick={() => updateSeg(i, { hl: c || undefined })}
-                        className={`h-5 w-5 rounded border-2 ${(s.hl || '') === c ? 'border-white' : 'border-gray-600'}`}
-                        style={{ backgroundColor: c || 'transparent' }}
-                        title={c ? 'هایلایت' : 'بدون هایلایت'}
-                      />
+                      <button key={c || 'none'} onClick={() => updateSeg(i, { hl: c || undefined })} className={`h-5 w-5 rounded border-2 ${(s.hl || '') === c ? 'border-white' : 'border-gray-600'}`} style={{ backgroundColor: c || 'transparent' }} />
                     ))}
                   </div>
                   <button onClick={() => setSegments(segments.filter((_, idx) => idx !== i))} className="mr-auto text-red-400">✕</button>
