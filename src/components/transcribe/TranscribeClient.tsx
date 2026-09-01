@@ -4,9 +4,11 @@ import { useRef, useState } from 'react'
 import { LiveTranscriber, TranscriptSegment, getGeminiKey } from '@/lib/live-transcribe'
 import { decodeToPcm16k, bufferToBase64Chunks, MAX_AUDIO_MB } from '@/lib/audio'
 import { toSrt, toVtt, toTxt, download } from '@/lib/subtitle'
-import { extractAudioFromVideo, isVideoFile, isAudioFile, loadFFmpeg } from '@/lib/video-extract'
 
-const MAX_VIDEO_MB = 500
+const MAX_VIDEO_MB = 200
+
+const isVideoFile = (f: File) => f.type.startsWith('video/')
+const isAudioFile = (f: File) => f.type.startsWith('audio/')
 
 export default function TranscribeClient() {
   const [status, setStatus] = useState('')
@@ -47,26 +49,12 @@ export default function TranscribeClient() {
     stopRef.current = false
 
     try {
-      let audioBlob: Blob = file
-
-      // ویدیو → استخراج صدا با FFmpeg WASM
-      if (video) {
-        setStatus('۱. بارگذاری FFmpeg (بار اول ~۳۰MB)…')
-        await loadFFmpeg()
-        setStatus('۲. استخراج صدا از ویدیو…')
-        audioBlob = await extractAudioFromVideo(file, (p) => {
-          setStatus(`۲. استخراج صدا: ${p}%`)
-          setProgress(Math.round(p * 0.3))
-        })
-      } else {
-        setStatus('۱. آماده‌سازی صدا…')
-      }
-
-      setStatus('۳. دیکود صدا…')
-      const pcm = await decodeToPcm16k(audioBlob as File)
+      // مرورگر خودش تراک صوتی ویدیو را دیکود می‌کند — بدون FFmpeg
+      setStatus('۱. دیکود صدا (مرورگر)…')
+      const pcm = await decodeToPcm16k(file)
       const chunks = bufferToBase64Chunks(pcm, 1)
 
-      setStatus('۴. اتصال به سرور…')
+      setStatus('۲. اتصال به سرور…')
       const key = await getGeminiKey()
       const t = new LiveTranscriber(key)
       tRef.current = t
@@ -79,17 +67,16 @@ export default function TranscribeClient() {
         new Promise((_, rej) => setTimeout(() => rej(new Error('timeout اتصال')), 20000)),
       ])
 
-      setStatus('۵. ترنسکریپت زنده…')
+      setStatus('۳. ترنسکریپت زنده…')
       for (let i = 0; i < chunks.length; i++) {
         if (stopRef.current) break
         t.sendChunk(chunks[i].data, chunks[i].seconds)
-        const tp = Math.round(((i + 1) / chunks.length) * 100)
-        setProgress(video ? 30 + Math.round(tp * 0.7) : tp)
+        setProgress(Math.round(((i + 1) / chunks.length) * 100))
         await new Promise((r) => setTimeout(r, 1000 / speed))
       }
 
       if (!stopRef.current) {
-        setStatus('۶. دریافت متن پایانی…')
+        setStatus('۴. دریافت متن پایانی…')
         await t.finish()
         setStatus('✅ ترنسکریپت تمام شد — متن را ادیت و خروجی بگیر')
       }
