@@ -3,14 +3,15 @@ export interface TranscriptSegment {
   start: number
   end: number
 }
-// ID دقیق از خروجی دستور بالا (بدون پیشوند models/)
-export const TRANSCRIBE_MODEL = 'gemini-3.0-flash-live' // ← خروجی واقعی را بگذار
 
+// مدل Live — اگر ارور invalid model آمد، ID دقیق را از AI Studio جایگزین کن
+export const TRANSCRIBE_MODEL = 'gemini-3.0-flash-live'
 
+// Cloudflare Worker proxy — کلید Gemini داخل Worker تزریق می‌شود، نه اینجا
 const WS_BASE =
-  'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent'
+  'wss://gemini-live-proxy.ahmadsobhani1993.workers.dev/gemini-live'
 
-// دریافت همان GEMINI_API_KEY موجود از سرور (بدون متغیر جدید)
+// برای سازگاری با rest-transcribe (حالت REST fallback)
 export async function getGeminiKey(): Promise<string> {
   const res = await fetch('/api/gemini/key')
   if (!res.ok) throw new Error('Gemini key fetch failed')
@@ -27,15 +28,18 @@ export class LiveTranscriber {
   onSegment: (seg: TranscriptSegment) => void = () => {}
   onError: (msg: string) => void = () => {}
   onClose: () => void = () => {}
+  onRawMessage: (msg: any) => void = () => {}
 
-  constructor(private apiKey: string, private model: string = TRANSCRIBE_MODEL) {}
+  // apiKey دیگر استفاده نمی‌شود (Worker کلید دارد) — فقط برای سازگاری امضا
+  constructor(private apiKey?: string, private model: string = TRANSCRIBE_MODEL) {}
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.ws = new WebSocket(`${WS_BASE}?key=${this.apiKey}`)
+      this.ws = new WebSocket(WS_BASE) // بدون ?key=
+      let settled = false
 
       this.ws.onopen = () => {
-        this.ws!.send(
+        this.ws?.send(
           JSON.stringify({
             setup: {
               model: `models/${this.model}`,
@@ -53,13 +57,34 @@ export class LiveTranscriber {
           return
         }
 
-        if (msg.setupComplete) {
-          resolve()
+        this.onRawMessage(msg)
+
+        // خطاهای Gemini (مثلاً مدل اشتباه / کلید بد)
+        if (msg?.error) {
+          const errText = msg.error?.message || JSON.stringify(msg.error)
+          this.onError('Gemini: ' + errText)
+          if (!settled) {
+            settled = true
+            reject(new Error('Gemini: ' + errText))
+          }
           return
         }
 
-        const text = msg?.serverContent?.modelTurn?.parts?.[0]?.text
-        if (typeof text === 'string' && text.trim()) {
+        if (msg.setupComplete) {
+          if (!settled) {
+            settled = true
+            resolve()
+          }
+          return
+        }
+
+        const text =
+          msg?.serverContent?.modelTurn?.parts
+            ?.map((p: any) => p.text)
+            ?.filter(Boolean)
+            ?.join(' ') || ''
+
+        if (text.trim()) {
           const seg: TranscriptSegment = {
             text: text.trim(),
             start: this.lastEnd,
@@ -73,8 +98,12 @@ export class LiveTranscriber {
 
       this.ws.onerror = () => {
         this.onError('WebSocket error')
-        reject(new Error('WebSocket error'))
+        if (!settled) {
+          settled = true
+          reject(new Error('WebSocket error'))
+        }
       }
+
       this.ws.onclose = () => this.onClose()
     })
   }
