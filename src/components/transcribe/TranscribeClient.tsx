@@ -142,4 +142,128 @@ export default function TranscribeClient() {
           accept={mode === 'audio' ? 'audio/*' : 'video/*'}
           disabled={busy}
           onChange={handleFile}
-          className="block w-full text-sm text-ink-muted file:ml-
+          className="block w-full text-sm text-ink-muted file:ml-4 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-white hover:file:bg-blue-700 disabled:opacity-50"
+        />
+
+        <div className="flex items-center gap-3 text-sm">
+          <span className="text-ink-muted">سرعت:</span>
+          {([1, 2, 4, 8] as const).map((s) => (
+            <button
+              key={s}
+              disabled={busy}
+              onClick={() => setSpeed(s)}
+              className={`rounded px-3 py-1 text-xs ${speed === s ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}
+            >
+              {s}x
+            </button>
+          ))}
+          {busy && (
+            <button
+              onClick={() => {
+                stopRef.current = true
+                tRef.current?.finish()
+              }}
+              className="rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-700"
+            >
+              ⏹ توقف
+            </button>
+          )}
+        </div>
+
+        {busy && (
+          <div className="h-2 w-full overflow-hidden rounded bg-gray-700">
+            <div className="h-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
+          </div>
+        )}
+      </div>
+
+      {status && (
+        <div
+          className={`rounded-lg p-3 text-sm ${
+            status.startsWith('✅')
+              ? 'bg-green-500/10 text-green-400'
+              : status.startsWith('❌')
+              ? 'bg-red-500/10 text-red-400'
+              : status.startsWith('⚠️')
+              ? 'bg-yellow-500/10 text-yellow-400'
+              : 'bg-blue-500/10 text-blue-400'
+          }`}
+        >
+          {status}
+        </div>
+      )}
+
+      {segments.length > 0 && (
+        <div className="card space-y-3 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-700 pb-3">
+            <strong className="text-sm">
+              {mode === 'video' ? 'ویرایش زیرنویس' : 'ویرایش متن'} ({segments.length} سگمنت)
+            </strong>
+            <div className="flex gap-2">
+              {mode === 'video' ? (
+                <>
+                  <button
+                    onClick={() => download(`${baseName}.srt`, toSrt(segments), 'text/plain')}
+                    className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700"
+                  >
+                    ⬇ SRT
+                  </button>
+                  <button
+                    onClick={() => download(`${baseName}.vtt`, toVtt(segments), 'text/vtt')}
+                    className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700"
+                  >
+                    ⬇ VTT
+                  </button>
+                  <button
+                    onClick={() => download(`${baseName}.txt`, toTxt(segments))}
+                    className="rounded bg-gray-700 px-3 py-1 text-xs hover:bg-gray-600"
+                  >
+                    ⬇ TXT
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => download(`${baseName}.txt`, toTxt(segments))}
+                    className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700"
+                  >
+                    ⬇ TXT
+                  </button>
+                  <button
+                    onClick={() => download(`${baseName}.srt`, toSrt(segments), 'text/plain')}
+                    className="rounded bg-gray-700 px-3 py-1 text-xs hover:bg-gray-600"
+                  >
+                    ⬇ SRT
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="max-h-[32rem] space-y-2 overflow-y-auto">
+            {segments.map((s, i) => (
+              <div key={i} className="flex items-start gap-2 rounded-lg bg-gray-800/50 p-2">
+                <span className="mt-2 shrink-0 font-mono text-[11px] text-ink-muted">
+                  {s.start.toFixed(1)}–{s.end.toFixed(1)}
+                </span>
+                <textarea
+                  value={s.text}
+                  onChange={(e) => updateText(i, e.target.value)}
+                  rows={1}
+                  className="w-full resize-y bg-transparent text-sm outline-none"
+                />
+                <button
+                  onClick={() => removeSeg(i)}
+                  className="mt-1 shrink-0 text-red-400 hover:text-red-300"
+                  title="حذف"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
