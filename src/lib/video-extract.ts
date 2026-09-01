@@ -1,5 +1,14 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
-import { fetchFile, toBlobURL } from '@ffmpeg/util'
+
+// جایگزین @ffmpeg/util — بدون وابستگی اضافه
+async function toBlobURL(url: string, type: string): Promise<string> {
+  const buf = await (await fetch(url)).arrayBuffer()
+  return URL.createObjectURL(new Blob([buf], { type }))
+}
+
+async function fetchFile(f: File): Promise<Uint8Array> {
+  return new Uint8Array(await f.arrayBuffer())
+}
 
 let ffmpeg: FFmpeg | null = null
 
@@ -35,7 +44,7 @@ export async function extractAudioFromVideo(
     })
   }
 
-  const inputName = 'input' + videoFile.name.match(/\.[^.]+$/)?.[0] || '.mp4'
+  const inputName = 'input' + (videoFile.name.match(/\.[^.]+$/)?.[0] || '.mp4')
   const outputName = 'output.wav'
 
   await ff.writeFile(inputName, await fetchFile(videoFile))
