@@ -7,21 +7,30 @@ import { toSrt, toVtt, toTxt, download } from '@/lib/subtitle'
 
 const MAX_VIDEO_MB = 200
 
-const isVideoFile = (f: File) => f.type.startsWith('video/')
-const isAudioFile = (f: File) => f.type.startsWith('audio/')
+type Mode = 'audio' | 'video'
 
 export default function TranscribeClient() {
+  const [mode, setMode] = useState<Mode>('audio')
   const [status, setStatus] = useState('')
   const [segments, setSegments] = useState<TranscriptSegment[]>([])
   const [fileName, setFileName] = useState('')
   const [progress, setProgress] = useState(0)
   const [busy, setBusy] = useState(false)
   const [speed, setSpeed] = useState<1 | 2 | 4 | 8>(4)
-  const [isVideo, setIsVideo] = useState(false)
   const stopRef = useRef(false)
   const tRef = useRef<LiveTranscriber | null>(null)
 
   const baseName = fileName.replace(/\.[^.]+$/, '') || 'transcript'
+  const maxMb = mode === 'video' ? MAX_VIDEO_MB : MAX_AUDIO_MB
+
+  const switchMode = (m: Mode) => {
+    if (busy) return
+    setMode(m)
+    setStatus('')
+    setSegments([])
+    setFileName('')
+    setProgress(0)
+  }
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -29,15 +38,13 @@ export default function TranscribeClient() {
 
     setFileName(file.name)
 
-    if (!isAudioFile(file) && !isVideoFile(file)) {
-      setStatus('❌ فقط فایل صوتی یا ویدیویی مجاز است')
+    const isAudio = file.type.startsWith('audio/')
+    const isVideo = file.type.startsWith('video/')
+    if ((mode === 'audio' && !isAudio) || (mode === 'video' && !isVideo)) {
+      setStatus(mode === 'audio' ? '❌ در این بخش فقط فایل صوتی مجاز است' : '❌ در این بخش فقط فایل ویدیویی مجاز است')
       return
     }
 
-    const video = isVideoFile(file)
-    setIsVideo(video)
-
-    const maxMb = video ? MAX_VIDEO_MB : MAX_AUDIO_MB
     if (file.size > maxMb * 1024 * 1024) {
       setStatus(`❌ فایل بزرگ‌تر از ${maxMb}MB است`)
       return
@@ -49,7 +56,6 @@ export default function TranscribeClient() {
     stopRef.current = false
 
     try {
-      // مرورگر خودش تراک صوتی ویدیو را دیکود می‌کند — بدون FFmpeg
       setStatus('۱. دیکود صدا (مرورگر)…')
       const pcm = await decodeToPcm16k(file)
       const chunks = bufferToBase64Chunks(pcm, 1)
@@ -78,7 +84,11 @@ export default function TranscribeClient() {
       if (!stopRef.current) {
         setStatus('۴. دریافت متن پایانی…')
         await t.finish()
-        setStatus('✅ ترنسکریپت تمام شد — متن را ادیت و خروجی بگیر')
+        setStatus(
+          segments.length === 0
+            ? '⚠️ متنی دریافت نشد — با سرعت 1x دوباره تلاش کن'
+            : '✅ تمام شد — متن را ادیت و خروجی بگیر'
+        )
       }
     } catch (err: any) {
       console.error('[transcribe]', err)
@@ -97,117 +107,39 @@ export default function TranscribeClient() {
   return (
     <div className="container-app mx-auto max-w-4xl space-y-4 p-6" dir="rtl">
       <h1 className="font-display text-2xl font-extrabold">ترنسکریپت صدا و ویدیو</h1>
-      <p className="text-sm text-ink-muted">
-        فایل صوتی تا {MAX_AUDIO_MB}MB یا ویدیو تا {MAX_VIDEO_MB}MB — متن زنده می‌آید، ادیت کن و SRT/VTT/TXT بگیر.
-      </p>
+
+      {/* دو تب مجزا */}
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          onClick={() => switchMode('audio')}
+          disabled={busy}
+          className={`rounded-xl p-4 text-right transition ${
+            mode === 'audio' ? 'bg-blue-600 text-white' : 'card hover:bg-gray-800'
+          }`}
+        >
+          <div className="text-base font-bold">🎙️ تبدیل فایل صوتی به متن</div>
+          <div className={`mt-1 text-xs ${mode === 'audio' ? 'text-blue-100' : 'text-ink-muted'}`}>
+            MP3/WAV/M4A تا {MAX_AUDIO_MB}MB — خروجی متن
+          </div>
+        </button>
+        <button
+          onClick={() => switchMode('video')}
+          disabled={busy}
+          className={`rounded-xl p-4 text-right transition ${
+            mode === 'video' ? 'bg-blue-600 text-white' : 'card hover:bg-gray-800'
+          }`}
+        >
+          <div className="text-base font-bold">🎬 ساخت زیرنویس از ویدیو</div>
+          <div className={`mt-1 text-xs ${mode === 'video' ? 'text-blue-100' : 'text-ink-muted'}`}>
+            MP4/WebM تا {MAX_VIDEO_MB}MB — خروجی SRT/VTT
+          </div>
+        </button>
+      </div>
 
       <div className="card space-y-3 p-4">
         <input
           type="file"
-          accept="audio/*,video/*"
+          accept={mode === 'audio' ? 'audio/*' : 'video/*'}
           disabled={busy}
           onChange={handleFile}
-          className="block w-full text-sm text-ink-muted file:ml-4 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-white hover:file:bg-blue-700 disabled:opacity-50"
-        />
-
-        <div className="flex items-center gap-3 text-sm">
-          <span className="text-ink-muted">سرعت:</span>
-          {([1, 2, 4, 8] as const).map((s) => (
-            <button
-              key={s}
-              disabled={busy}
-              onClick={() => setSpeed(s)}
-              className={`rounded px-3 py-1 text-xs ${speed === s ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}
-            >
-              {s}x
-            </button>
-          ))}
-          {busy && (
-            <button
-              onClick={() => {
-                stopRef.current = true
-                tRef.current?.finish()
-              }}
-              className="rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-700"
-            >
-              ⏹ توقف
-            </button>
-          )}
-        </div>
-
-        {busy && (
-          <div className="h-2 w-full overflow-hidden rounded bg-gray-700">
-            <div className="h-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
-          </div>
-        )}
-      </div>
-
-      {status && (
-        <div
-          className={`rounded-lg p-3 text-sm ${
-            status.startsWith('✅')
-              ? 'bg-green-500/10 text-green-400'
-              : status.startsWith('❌')
-              ? 'bg-red-500/10 text-red-400'
-              : 'bg-blue-500/10 text-blue-400'
-          }`}
-        >
-          {status}
-        </div>
-      )}
-
-      {segments.length > 0 && (
-        <div className="card space-y-3 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-700 pb-3">
-            <strong className="text-sm">
-              ویرایش زیرنویس ({segments.length} سگمنت){isVideo ? ' — ویدیو' : ''}
-            </strong>
-            <div className="flex gap-2">
-              <button
-                onClick={() => download(`${baseName}.srt`, toSrt(segments), 'text/plain')}
-                className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700"
-              >
-                ⬇ SRT
-              </button>
-              <button
-                onClick={() => download(`${baseName}.vtt`, toVtt(segments), 'text/vtt')}
-                className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700"
-              >
-                ⬇ VTT
-              </button>
-              <button
-                onClick={() => download(`${baseName}.txt`, toTxt(segments))}
-                className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700"
-              >
-                ⬇ TXT
-              </button>
-            </div>
-          </div>
-
-          <div className="max-h-[32rem] space-y-2 overflow-y-auto">
-            {segments.map((s, i) => (
-              <div key={i} className="flex items-start gap-2 rounded-lg bg-gray-800/50 p-2">
-                <span className="mt-2 shrink-0 font-mono text-[11px] text-ink-muted">
-                  {s.start.toFixed(1)}–{s.end.toFixed(1)}
-                </span>
-                <textarea
-                  value={s.text}
-                  onChange={(e) => updateText(i, e.target.value)}
-                  rows={1}
-                  className="w-full resize-y bg-transparent text-sm outline-none"
-                />
-                <button
-                  onClick={() => removeSeg(i)}
-                  className="mt-1 shrink-0 text-red-400 hover:text-red-300"
-                  title="حذف"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
+          className="block w-full text-sm text-ink-muted file:ml-
