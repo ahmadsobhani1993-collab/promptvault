@@ -6,8 +6,11 @@ import { LiveTranscriber, TranscriptSegment, getGeminiKey } from '@/lib/live-tra
 import { decodeToPcm16k, MAX_AUDIO_MB } from '@/lib/audio'
 import { prepareChunks } from '@/lib/audio-enhance'
 import { toSrt, toTxt } from '@/lib/subtitle'
+import { useAuth } from '@/lib/use-auth'
 
 export default function AudioTranscribeClient() {
+  const auth = useAuth()
+
   const [status, setStatus] = useState('')
   const [segments, setSegments] = useState<TranscriptSegment[]>([])
   const [fileName, setFileName] = useState('')
@@ -87,6 +90,25 @@ export default function AudioTranscribeClient() {
     } finally {
       setBusy(false)
     }
+  }
+
+  // ─── قفل ورود ───
+  if (auth === 'checking') {
+    return <div className="p-10 text-center text-sm text-ink-muted">در حال بررسی…</div>
+  }
+  if (auth === 'no') {
+    return (
+      <div className="mx-auto max-w-md p-10 text-center" dir="rtl">
+        <div className="card space-y-3 p-6">
+          <div className="text-3xl">🔒</div>
+          <strong>ورود لازم است</strong>
+          <p className="text-xs text-ink-muted">برای استفاده از تبدیل صدا به متن، ابتدا وارد حساب کاربری شو.</p>
+          <Link href="/" className="inline-block rounded-lg bg-blue-600 px-4 py-2 text-sm text-white">
+            ورود / ثبت‌نام
+          </Link>
+        </div>
+      </div>
+    )
   }
 
   return (
