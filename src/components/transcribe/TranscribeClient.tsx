@@ -58,9 +58,11 @@ export default function TranscribeClient() {
         await new Promise((r) => setTimeout(r, 1000 / speed))
       }
 
-      if (!stopRef.current) {
-        t.finish()
-        setStatus('✅ ترنسکریپت تمام شد — متن را ادیت و خروجی بگیر')
+     if (!stopRef.current) {
+  setStatus('۴. دریافت متن پایانی…')
+  await t.finish()
+  setStatus('✅ ترنسکریپت تمام شد — متن را ادیت و خروجی بگیر')
+}
       }
     } catch (err: any) {
       console.error('[transcribe]', err)
