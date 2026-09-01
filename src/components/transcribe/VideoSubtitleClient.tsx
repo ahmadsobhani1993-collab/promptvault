@@ -2,12 +2,13 @@
 
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
-import { LiveTranscriber, TranscriptSegment, getGeminiKey } from '@/lib/live-transcribe'
+import { TranscriptSegment, getGeminiKey } from '@/lib/live-transcribe'
 import { decodeToPcm16k } from '@/lib/audio'
-import { prepareChunks } from '@/lib/audio-enhance'
+import { prepareWavChunks } from '@/lib/audio-enhance'
 import { toSrt, toVtt, toTxt, download } from '@/lib/subtitle'
 import { useAuth } from '@/lib/use-auth'
 
+const WORKER = 'https://gemini-live-proxy.ahmadsobhani1993.workers.dev'
 const FONTS = [
   { id: 'Vazirmatn', label: 'وزیرمتن' },
   { id: 'Lalezar', label: 'لاله‌زار' },
