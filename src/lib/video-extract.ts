@@ -1,8 +1,9 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 
-// جایگزین @ffmpeg/util — بدون وابستگی اضافه
 async function toBlobURL(url: string, type: string): Promise<string> {
-  const buf = await (await fetch(url)).arrayBuffer()
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`fetch failed: ${url} (${res.status})`)
+  const buf = await res.arrayBuffer()
   return URL.createObjectURL(new Blob([buf], { type }))
 }
 
@@ -10,27 +11,39 @@ async function fetchFile(f: File): Promise<Uint8Array> {
   return new Uint8Array(await f.arrayBuffer())
 }
 
+// اول self-host (سریع و مطمئن)، بعد CDN ها
+const CORE_SOURCES = [
+  '/ffmpeg',
+  'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm',
+  'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm',
+]
+
 let ffmpeg: FFmpeg | null = null
 
 export async function loadFFmpeg(): Promise<FFmpeg> {
   if (ffmpeg) return ffmpeg
 
-  ffmpeg = new FFmpeg()
-
-  // CDN برای core فایل‌ها
-  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm'
-
-  await ffmpeg.load({
-    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-  })
-
-  return ffmpeg
+  let lastErr: unknown = null
+  for (const base of CORE_SOURCES) {
+    try {
+      const ff = new FFmpeg()
+      await ff.load({
+        coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
+      })
+      ffmpeg = ff
+      console.log('[ffmpeg] loaded from:', base)
+      return ffmpeg
+    } catch (e) {
+      console.warn('[ffmpeg] source failed:', base, e)
+      lastErr = e
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('FFmpeg load failed')
 }
 
 /**
  * استخراج صدا از ویدیو به صورت WAV mono 16kHz
- * خروجی: Blob (audio/wav)
  */
 export async function extractAudioFromVideo(
   videoFile: File,
@@ -49,19 +62,17 @@ export async function extractAudioFromVideo(
 
   await ff.writeFile(inputName, await fetchFile(videoFile))
 
-  // تبدیل به WAV mono 16kHz (فرمت مورد نیاز Gemini)
   await ff.exec([
     '-i', inputName,
-    '-vn',                    // بدون ویدیو
-    '-acodec', 'pcm_s16le',   // PCM 16-bit
-    '-ar', '16000',           // 16kHz
-    '-ac', '1',               // mono
+    '-vn',
+    '-acodec', 'pcm_s16le',
+    '-ar', '16000',
+    '-ac', '1',
     outputName,
   ])
 
   const data = await ff.readFile(outputName)
 
-  // پاکسازی
   await ff.deleteFile(inputName)
   await ff.deleteFile(outputName)
 
