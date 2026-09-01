@@ -58,11 +58,10 @@ export default function TranscribeClient() {
         await new Promise((r) => setTimeout(r, 1000 / speed))
       }
 
-     if (!stopRef.current) {
-  setStatus('۴. دریافت متن پایانی…')
-  await t.finish()
-  setStatus('✅ ترنسکریپت تمام شد — متن را ادیت و خروجی بگیر')
-}
+      if (!stopRef.current) {
+        setStatus('۴. دریافت متن پایانی…')
+        await t.finish()
+        setStatus('✅ ترنسکریپت تمام شد — متن را ادیت و خروجی بگیر')
       }
     } catch (err: any) {
       console.error('[transcribe]', err)
@@ -85,7 +84,6 @@ export default function TranscribeClient() {
         فایل صوتی تا {MAX_AUDIO_MB}MB آپلود کن — متن زنده می‌آید، ادیت کن و SRT/VTT/TXT بگیر.
       </p>
 
-      {/* آپلود */}
       <div className="card space-y-3 p-4">
         <input
           type="file"
@@ -141,7 +139,6 @@ export default function TranscribeClient() {
         </div>
       )}
 
-      {/* ادیتور + خروجی */}
       {segments.length > 0 && (
         <div className="card space-y-3 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-700 pb-3">
