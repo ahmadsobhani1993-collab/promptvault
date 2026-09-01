@@ -9,6 +9,7 @@ import { toSrt, toVtt, toTxt, download } from '@/lib/subtitle'
 import { useAuth } from '@/lib/use-auth'
 
 const WORKER = 'https://gemini-live-proxy.ahmadsobhani1993.workers.dev'
+
 const FONTS = [
   { id: 'Vazirmatn', label: 'وزیرمتن' },
   { id: 'Lalezar', label: 'لاله‌زار' },
@@ -124,7 +125,7 @@ export default function VideoSubtitleClient() {
     }
   }
 
-  // ─── ترنسکریپت ───
+  // ─── ترنسکریپت REST (مسیر جدید) ───
   const runTranscribe = async (file: File) => {
     setSegments([])
     setProgress(0)
@@ -133,42 +134,51 @@ export default function VideoSubtitleClient() {
     gotRef.current = 0
 
     try {
-      setStatus('۱. دیکود و بهینه‌سازی صدا (محلی)…')
+      setStatus('۱. دیکود صدا (محلی)…')
       const pcm = await decodeToPcm16k(file)
-      const { chunks, avg } = await prepareChunks(pcm)
-      console.log('[audio] avg amplitude:', avg)
-      if (avg < 0.001) {
-        setStatus('❌ این ویدیو صدای قابل استفاده ندارد (سکوت یا فرمت صوتی پشتیبانی‌نشده)')
+      const parts = await prepareWavChunks(pcm, 30)
+      if (parts.length === 0) {
+        setStatus('❌ صدایی پیدا نشد')
         setBusy(false)
         return
       }
 
-      setStatus('۲. اتصال…')
+      setStatus('۲. ترنسکریپت (مدل اختصاصی)…')
       const key = await getGeminiKey()
-      const t = new LiveTranscriber(key)
-      t.onSegment = (seg) => {
-        gotRef.current++
-        setSegments((prev) => [...prev, seg])
+
+      for (let i = 0; i < parts.length; i++) {
+        const r = await fetch(`${WORKER}/transcribe?key=${encodeURIComponent(key)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audioBase64: parts[i].data }),
+        })
+        if (!r.ok) throw new Error(`transcribe failed: ${r.status}`)
+        const j = await r.json()
+        const text: string = (j.text || '').trim()
+
+        if (text) {
+          // تقسیم به جملات برای زیرنویس تمیز + زمان‌بندی وزنی
+          const sentences = text.match(/[^.!?؟\n]+[.!?؟]?/g) || [text]
+          const words = sentences.map((s2) => s2.split(/\s+/).length)
+          const totalW = words.reduce((a, b) => a + b, 0) || 1
+          const dur = parts[i].end - parts[i].start
+          let cursor = parts[i].start
+          sentences.forEach((s2, k) => {
+            const d = Math.max(0.5, (words[k] / totalW) * dur)
+            const seg: Seg = { text: s2.trim(), start: cursor, end: cursor + d }
+            cursor += d
+            gotRef.current++
+            setSegments((prev) => [...prev, seg])
+          })
+        }
+        setProgress(Math.round(((i + 1) / parts.length) * 100))
       }
-      t.onError = (m) => setStatus('❌ ' + m)
-
-      await Promise.race([t.connect(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 20000))])
-
-      setStatus('۳. ترنسکریپت زنده…')
-      for (let i = 0; i < chunks.length; i++) {
-        t.sendChunk(chunks[i].data, chunks[i].seconds)
-        setProgress(Math.round(((i + 1) / chunks.length) * 100))
-        await new Promise((r) => setTimeout(r, 1000 / speed))
-      }
-
-      setStatus('۴. متن پایانی…')
-      await t.finish()
 
       if (gotRef.current === 0) {
         setFailed(true)
-        setStatus(`⚠️ متنی دریافت نشد (دامنه صدا: ${avg.toFixed(3)}) — صدای ویدیو واضح نیست یا خیلی ضعیف است. با سرعت 1x دوباره تلاش کن یا فایل دیگری امتحان کن.`)
+        setStatus('⚠️ متنی دریافت نشد — فایل دیگری امتحان کن')
       } else {
-        setStatus('✅ آماده — حالا ادیت کن و خروجی بگیر')
+        setStatus('✅ آماده — ادیت کن و خروجی بگیر')
       }
     } catch (err: any) {
       setStatus('❌ ' + (err?.message || String(err)))
@@ -319,7 +329,7 @@ export default function VideoSubtitleClient() {
           <div className="text-3xl">🔒</div>
           <strong>ورود لازم است</strong>
           <p className="text-xs text-ink-muted">برای استفاده از استودیو زیرنویس، ابتدا وارد حساب کاربری شو.</p>
-          <Link href="/" className="inline-block rounded-lg bg-blue-600 px-4 py-2 text-sm text-white">ورود / ثبت‌نام</Link>
+          <Link href="/login" className="inline-block rounded-lg bg-blue-600 px-4 py-2 text-sm text-white">ورود به حساب کاربری</Link>
         </div>
       </div>
     )
