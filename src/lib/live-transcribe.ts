@@ -40,15 +40,23 @@ export class LiveTranscriber {
 
       this.ws.onopen = () => {
         this.ws?.send(
-          JSON.stringify({
-            setup: {
-              model: `models/${this.model}`,
-              generationConfig: { responseModalities: ['TEXT'] },
-            },
-          })
-        )
-      }
-
+          this.ws?.send(
+  JSON.stringify({
+    setup: {
+      model: `models/${this.model}`,
+      systemInstruction: {
+        parts: [
+          {
+            text:
+              'Transcribe the audio verbatim, word for word, in the original spoken language (Persian, English, or any other). Do not translate, summarize, or omit anything.',
+          },
+        ],
+      },
+      generationConfig: { responseModalities: ['TEXT'] },
+    },
+  })
+)
+             
       this.ws.onmessage = (ev) => {
         let msg: any
         try {
