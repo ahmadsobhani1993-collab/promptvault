@@ -3,10 +3,9 @@ export interface TranscriptSegment {
   start: number
   end: number
 }
+// ID دقیق از خروجی دستور بالا (بدون پیشوند models/)
+export const TRANSCRIBE_MODEL = 'gemini-3.5-live-transcribe' // ← خروجی واقعی را بگذار
 
-// دقیقاً مطابق اسکرین‌شات سهمیه: "Gemini 3.5 Transcribe Live"
-// اگر 404 مدل گرفت، فقط همین رشته را با ID دقیق داخل AI Studio چک کن
-export const TRANSCRIBE_MODEL = 'gemini-3.5-transcribe-live'
 
 const WS_BASE =
   'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent'
