@@ -67,31 +67,53 @@ export default function TranscribeClient() {
       setStatus('۱. دیکود صدا (مرورگر)…')
       const pcm = await decodeToPcm16k(file)
 
-      // 🔍 تشخیص سکوت (سازگار با ArrayBuffer / TypedArray)
+      // 🔍 تشخیص سکوت — سازگار با AudioBuffer / ArrayBuffer / TypedArray
       const raw: any = pcm
-      let i16: Int16Array
-      if (raw instanceof ArrayBuffer) {
+      let f32: Float32Array | null = null
+      let i16: Int16Array | null = null
+
+      if (typeof raw?.getChannelData === 'function') {
+        f32 = raw.getChannelData(0) as Float32Array
+      } else if (raw instanceof ArrayBuffer) {
         i16 = new Int16Array(raw)
       } else if (raw instanceof Int16Array) {
         i16 = raw
+      } else if (raw instanceof Float32Array) {
+        f32 = raw
       } else if (raw?.buffer instanceof ArrayBuffer) {
         i16 = new Int16Array(raw.buffer, raw.byteOffset ?? 0, Math.floor(raw.byteLength / 2))
-      } else {
-        i16 = new Int16Array(0)
       }
+
       let sum = 0
       let n = 0
-      const step = Math.max(1, Math.floor(i16.length / 20000))
-      for (let i = 0; i < i16.length; i += step) {
-        sum += Math.abs(i16[i])
-        n++
-      }
-      const avg = n ? sum / n : 0
-      console.log('[audio] avg amplitude:', avg, 'samples:', i16.length)
-      if (avg < 10) {
-        setStatus('❌ این فایل صدای قابل استفاده ندارد (سکوت یا بسیار ضعیف) — یک فایل با گفتار واضح امتحان کن')
-        setBusy(false)
-        return
+      if (f32) {
+        const st = Math.max(1, Math.floor(f32.length / 20000))
+        for (let i = 0; i < f32.length; i += st) {
+          sum += Math.abs(f32[i])
+          n++
+        }
+        const avg = n ? sum / n : 0
+        console.log('[audio] avg amplitude (float):', avg, 'samples:', f32.length)
+        if (avg < 0.001) {
+          setStatus('❌ این فایل صدای قابل استفاده ندارد (سکوت) — فایل با گفتار واضح امتحان کن')
+          setBusy(false)
+          return
+        }
+      } else if (i16) {
+        const st = Math.max(1, Math.floor(i16.length / 20000))
+        for (let i = 0; i < i16.length; i += st) {
+          sum += Math.abs(i16[i])
+          n++
+        }
+        const avg = n ? sum / n : 0
+        console.log('[audio] avg amplitude (int16):', avg, 'samples:', i16.length)
+        if (avg < 10) {
+          setStatus('❌ این فایل صدای قابل استفاده ندارد (سکوت) — فایل با گفتار واضح امتحان کن')
+          setBusy(false)
+          return
+        }
+      } else {
+        console.log('[audio] unknown pcm type:', raw?.constructor?.name)
       }
 
       const chunks = bufferToBase64Chunks(pcm, 1)
