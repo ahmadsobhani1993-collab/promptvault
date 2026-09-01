@@ -3,6 +3,12 @@ export interface PcmChunk {
   seconds: number
 }
 
+export interface WavPart {
+  data: string
+  start: number
+  end: number
+}
+
 function toMonoFloat32(pcm: any): { f32: Float32Array; sampleRate: number } {
   if (typeof pcm?.getChannelData === 'function') {
     const len = pcm.length as number
@@ -39,6 +45,22 @@ async function ensure16k(f32: Float32Array, sr: number): Promise<Float32Array> {
   return out.getChannelData(0)
 }
 
+/**
+ * نرمال‌سازی peak — صدای ضعیف را تقویت می‌کند (تا ۸ برابر)
+ * خروجی: Float32Array جدید (mutable نیست)
+ */
+function normalizePeak(f32: Float32Array, targetPeak = 0.95, maxGain = 8): Float32Array {
+  let peak = 0
+  for (let i = 0; i < f32.length; i++) peak = Math.max(peak, Math.abs(f32[i]))
+  if (peak < 0.0001) return f32
+  const gain = Math.min(targetPeak / peak, maxGain)
+  if (gain <= 1.05) return f32
+  const out = new Float32Array(f32.length)
+  for (let i = 0; i < f32.length; i++) out[i] = f32[i] * gain
+  console.log('[audio-enhance] normalized: peak', peak.toFixed(4), '→ gain', gain.toFixed(2))
+  return out
+}
+
 function chunkFloat32(f32: Float32Array, sampleRate: number, sec = 1): PcmChunk[] {
   const per = Math.floor(sampleRate * sec)
   const chunks: PcmChunk[] = []
@@ -58,39 +80,6 @@ function chunkFloat32(f32: Float32Array, sampleRate: number, sec = 1): PcmChunk[
     chunks.push({ data: btoa(bin), seconds: slice.length / sampleRate })
   }
   return chunks
-}
-
-/**
- * دیکود‌شده → مونو → 16k → نرمال → chunk
- */
-export async function prepareChunks(pcm: unknown): Promise<{ chunks: PcmChunk[]; avg: number; duration: number }> {
-  const { f32: mixed, sampleRate } = toMonoFloat32(pcm)
-  const f32 = await ensure16k(mixed, sampleRate)
-
-  // میانگین دامنه (تشخیص سکوت)
-  let sum = 0
-  let n = 0
-  const st = Math.max(1, Math.floor(f32.length / 20000))
-  for (let i = 0; i < f32.length; i += st) {
-    sum += Math.abs(f32[i])
-    n++
-  }
-  const avg = n ? sum / n : 0
-
-  // نرمال‌سازی peak — صدای ضعیف ویدیو را تقویت می‌کند
-  let peak = 0
-  for (let i = 0; i < f32.length; i++) peak = Math.max(peak, Math.abs(f32[i]))
-  if (peak > 0.0001) {
-    const gain = Math.min(0.95 / peak, 6)
-    if (gain > 1.05) for (let i = 0; i < f32.length; i++) f32[i] *= gain
-  }
-
-  return { chunks: chunkFloat32(f32, 16000, 1), avg, duration: f32.length / 16000 }
-}
-export interface WavPart {
-  data: string
-  start: number
-  end: number
 }
 
 function f32ToWavBase64(f32: Float32Array, sr: number): string {
@@ -116,11 +105,39 @@ function f32ToWavBase64(f32: Float32Array, sr: number): string {
 }
 
 /**
- * تقسیم صدا به بخش‌های WAV سی‌ثانیه‌ای برای REST
+ * مسیر صدا (Live WS): دیکود → مونو → 16k → نرمال → chunk 1s PCM
+ */
+export async function prepareChunks(pcm: unknown): Promise<{ chunks: PcmChunk[]; avg: number; duration: number }> {
+  const { f32: mixed, sampleRate } = toMonoFloat32(pcm)
+  let f32 = await ensure16k(mixed, sampleRate)
+
+  // نرمال‌سازی
+  f32 = normalizePeak(f32, 0.95, 6)
+
+  // میانگین دامنه (تشخیص سکوت)
+  let sum = 0
+  let n = 0
+  const st = Math.max(1, Math.floor(f32.length / 20000))
+  for (let i = 0; i < f32.length; i += st) {
+    sum += Math.abs(f32[i])
+    n++
+  }
+  const avg = n ? sum / n : 0
+
+  return { chunks: chunkFloat32(f32, 16000, 1), avg, duration: f32.length / 16000 }
+}
+
+/**
+ * مسیر ویدیو (REST): دیکود → مونو → 16k → نرمال → chunk 30s WAV
+ * 🔑 نرمال‌سازی قوی‌تر برای ویدیوهای کم‌صدا
  */
 export async function prepareWavChunks(pcm: unknown, sec = 30): Promise<WavPart[]> {
   const { f32: mixed, sampleRate } = toMonoFloat32(pcm)
-  const f32 = await ensure16k(mixed, sampleRate)
+  let f32 = await ensure16k(mixed, sampleRate)
+
+  // نرمال‌سازی قوی‌تر (تا ۸ برابر) برای ویدیوهایی که صدای ضعیف دارند
+  f32 = normalizePeak(f32, 0.95, 8)
+
   const per = 16000 * sec
   const parts: WavPart[] = []
   for (let o = 0; o < f32.length; o += per) {
