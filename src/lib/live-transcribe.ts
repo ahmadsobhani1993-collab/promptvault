@@ -4,13 +4,11 @@ export interface TranscriptSegment {
   end: number
 }
 
-// مدل Live — بعد از تأیید، ID دقیق را بگذار
 export const TRANSCRIBE_MODEL = 'gemini-3.5-transcribe-live'
 
 const WS_BASE =
   'wss://gemini-live-proxy.ahmadsobhani1993.workers.dev/gemini-live'
 
-// کلید واحد = همان کلید Vercel
 export async function getGeminiKey(): Promise<string> {
   const res = await fetch('/api/gemini/key')
   if (!res.ok) throw new Error('Gemini key fetch failed')
@@ -33,7 +31,6 @@ export class LiveTranscriber {
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
-      // کلید Vercel به Worker پاس داده می‌شود
       const wsUrl = this.apiKey
         ? `${WS_BASE}?key=${encodeURIComponent(this.apiKey)}`
         : WS_BASE
@@ -79,18 +76,16 @@ export class LiveTranscriber {
           }
           return
         }
-// مدل‌های مختلف در مسیرهای مختلف متن برمی‌گردانند
-const text =
-  // مسیر ۱: مدل‌های Live استاندارد
-  msg?.serverContent?.modelTurn?.parts
-    ?.map((p: any) => p.text)
-    ?.filter(Boolean)
-    ?.join(' ') ||
-  // مسیر ۲: transcribe (ورودی)
-  msg?.serverContent?.inputTranscription?.text ||
-  // مسیر ۳: transcribe (خروجی)
-  msg?.serverContent?.outputTranscription?.text ||
-  ''
+
+        // هر سه مسیر ممکنِ متن (مدل‌های مختلف)
+        const text: string =
+          msg?.serverContent?.modelTurn?.parts
+            ?.map((p: any) => p.text)
+            ?.filter(Boolean)
+            ?.join(' ') ||
+          msg?.serverContent?.inputTranscription?.text ||
+          msg?.serverContent?.outputTranscription?.text ||
+          ''
 
         if (text.trim()) {
           const seg: TranscriptSegment = {
@@ -112,7 +107,10 @@ const text =
         }
       }
 
-      this.ws.onclose = () => this.onClose()
+      this.ws.onclose = (e) => {
+        console.log('[live] ws close:', e.code, e.reason)
+        this.onClose()
+      }
     })
   }
 
@@ -128,8 +126,15 @@ const text =
     this.secondsSent += seconds
   }
 
-  finish() {
-    setTimeout(() => this.ws?.close(), 2000)
+  // 🆕 سیگنال پایان ورودی + صبر برای متن پایانی
+  async finish(): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
+    try {
+      this.ws.send(JSON.stringify({ clientContent: { turnComplete: true } }))
+    } catch {}
+    // فرصت flush به مدل
+    await new Promise((r) => setTimeout(r, 8000))
+    this.ws?.close()
   }
 
   getSegments() {
