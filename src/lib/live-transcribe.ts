@@ -79,12 +79,18 @@ export class LiveTranscriber {
           }
           return
         }
-
-        const text =
-          msg?.serverContent?.modelTurn?.parts
-            ?.map((p: any) => p.text)
-            ?.filter(Boolean)
-            ?.join(' ') || ''
+// مدل‌های مختلف در مسیرهای مختلف متن برمی‌گردانند
+const text =
+  // مسیر ۱: مدل‌های Live استاندارد
+  msg?.serverContent?.modelTurn?.parts
+    ?.map((p: any) => p.text)
+    ?.filter(Boolean)
+    ?.join(' ') ||
+  // مسیر ۲: transcribe (ورودی)
+  msg?.serverContent?.inputTranscription?.text ||
+  // مسیر ۳: transcribe (خروجی)
+  msg?.serverContent?.outputTranscription?.text ||
+  ''
 
         if (text.trim()) {
           const seg: TranscriptSegment = {
