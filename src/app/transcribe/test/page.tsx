@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { LiveTranscriber, TranscriptSegment } from '@/lib/live-transcribe'
+import { LiveTranscriber, TranscriptSegment, getGeminiKey } from '@/lib/live-transcribe'
 import { decodeToPcm16k, bufferToBase64Chunks, MAX_AUDIO_MB } from '@/lib/audio'
 
 const CHUNK_SECONDS = 1 // Live API = هر ثانیه یک chunk
@@ -36,9 +36,11 @@ export default function TestPage() {
 
       setStatus('۲. ساخت chunk های ۱ ثانیه‌ای…')
       const chunks = bufferToBase64Chunks(pcm, CHUNK_SECONDS)
-      setStatus(`۳. ${chunks.length} chunk آماده — اتصال به Worker…`)
+      setStatus('۳. دریافت کلید Vercel و اتصال به Worker…')
+      const key = await getGeminiKey()
+      const t = new LiveTranscriber(key)
+      
 
-      const t = new LiveTranscriber()
       transcriberRef.current = t
 
       t.onSegment = (seg) => {
