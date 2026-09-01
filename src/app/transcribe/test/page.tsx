@@ -20,28 +20,43 @@ export default function TestPage() {
 
     setSegments([])
     stopRef.current = false
-    setStatus('در حال دیکود صدا…')
 
-    const pcm = await decodeToPcm16k(file)
-    const chunks = bufferToBase64Chunks(pcm, 1)
+    try {
+      setStatus('۱. در حال دیکود صدا…')
+      const pcm = await decodeToPcm16k(file)
+      const chunks = bufferToBase64Chunks(pcm, 1)
+      setStatus(`۲. دیکود OK — ${chunks.length} chunk آماده`)
 
-    setStatus('دریافت کلید و اتصال به Gemini…')
-    const key = await getGeminiKey()
-    const t = new LiveTranscriber(key)
-    t.onSegment = (seg) => setSegments((prev) => [...prev, seg])
-    t.onError = (m) => setStatus('❌ ' + m)
-    await t.connect()
+      setStatus('۳. دریافت کلید از سرور…')
+      const key = await getGeminiKey()
+      setStatus('۴. کلید OK — اتصال WebSocket به Gemini…')
 
-    setStatus('استریم 1x…')
-    for (let i = 0; i < chunks.length; i++) {
-      if (stopRef.current) break
-      t.sendChunk(chunks[i].data, chunks[i].seconds)
-      setStatus(`⏳ استریم: ${Math.round(((i + 1) / chunks.length) * 100)}%`)
-      await new Promise((r) => setTimeout(r, 1000))
+      const t = new LiveTranscriber(key)
+      t.onSegment = (seg) => setSegments((prev) => [...prev, seg])
+      t.onError = (m) => setStatus('❌ WS: ' + m)
+
+      // timeout برای اتصال (۱۵ ثانیه)
+      await Promise.race([
+        t.connect(),
+        new Promise((_, rej) =>
+          setTimeout(() => rej(new Error('timeout اتصال — شبکه یا فیلترینگ را چک کن')), 15000)
+        ),
+      ])
+
+      setStatus('۵. متصل شد — استریم 1x…')
+      for (let i = 0; i < chunks.length; i++) {
+        if (stopRef.current) break
+        t.sendChunk(chunks[i].data, chunks[i].seconds)
+        setStatus(`⏳ استریم: ${Math.round(((i + 1) / chunks.length) * 100)}%`)
+        await new Promise((r) => setTimeout(r, 1000))
+      }
+
+      t.finish()
+      setStatus('✅ تمام')
+    } catch (err: any) {
+      console.error('[transcribe]', err)
+      setStatus('❌ ' + (err?.message || String(err)))
     }
-
-    t.finish()
-    setStatus('✅ تمام')
   }
 
   return (
