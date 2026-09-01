@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { LiveTranscriber, TranscriptSegment, getGeminiKey } from '@/lib/live-transcribe'
 import { decodeToPcm16k, bufferToBase64Chunks, MAX_AUDIO_MB } from '@/lib/audio'
 import { toSrt, toVtt, toTxt, download } from '@/lib/subtitle'
+import { extractAudioFromVideo, isVideoFile, isAudioFile, loadFFmpeg } from '@/lib/video-extract'
 
 export default function TranscribeClient() {
   const [status, setStatus] = useState('')
