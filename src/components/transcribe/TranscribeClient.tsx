@@ -6,13 +6,16 @@ import { decodeToPcm16k, bufferToBase64Chunks, MAX_AUDIO_MB } from '@/lib/audio'
 import { toSrt, toVtt, toTxt, download } from '@/lib/subtitle'
 import { extractAudioFromVideo, isVideoFile, isAudioFile, loadFFmpeg } from '@/lib/video-extract'
 
+const MAX_VIDEO_MB = 500
+
 export default function TranscribeClient() {
   const [status, setStatus] = useState('')
   const [segments, setSegments] = useState<TranscriptSegment[]>([])
   const [fileName, setFileName] = useState('')
   const [progress, setProgress] = useState(0)
   const [busy, setBusy] = useState(false)
-  const [speed, setSpeed] = useState<1 | 2 | 4>(1)
+  const [speed, setSpeed] = useState<1 | 2 | 4 | 8>(4)
+  const [isVideo, setIsVideo] = useState(false)
   const stopRef = useRef(false)
   const tRef = useRef<LiveTranscriber | null>(null)
 
@@ -23,8 +26,18 @@ export default function TranscribeClient() {
     if (!file) return
 
     setFileName(file.name)
-    if (file.size > MAX_AUDIO_MB * 1024 * 1024) {
-      setStatus(`❌ فایل بزرگ‌تر از ${MAX_AUDIO_MB} مگابایت است`)
+
+    if (!isAudioFile(file) && !isVideoFile(file)) {
+      setStatus('❌ فقط فایل صوتی یا ویدیویی مجاز است')
+      return
+    }
+
+    const video = isVideoFile(file)
+    setIsVideo(video)
+
+    const maxMb = video ? MAX_VIDEO_MB : MAX_AUDIO_MB
+    if (file.size > maxMb * 1024 * 1024) {
+      setStatus(`❌ فایل بزرگ‌تر از ${maxMb}MB است`)
       return
     }
 
@@ -34,11 +47,26 @@ export default function TranscribeClient() {
     stopRef.current = false
 
     try {
-      setStatus('۱. دیکود صدا…')
-      const pcm = await decodeToPcm16k(file)
+      let audioBlob: Blob = file
+
+      // ویدیو → استخراج صدا با FFmpeg WASM
+      if (video) {
+        setStatus('۱. بارگذاری FFmpeg (بار اول ~۳۰MB)…')
+        await loadFFmpeg()
+        setStatus('۲. استخراج صدا از ویدیو…')
+        audioBlob = await extractAudioFromVideo(file, (p) => {
+          setStatus(`۲. استخراج صدا: ${p}%`)
+          setProgress(Math.round(p * 0.3))
+        })
+      } else {
+        setStatus('۱. آماده‌سازی صدا…')
+      }
+
+      setStatus('۳. دیکود صدا…')
+      const pcm = await decodeToPcm16k(audioBlob as File)
       const chunks = bufferToBase64Chunks(pcm, 1)
 
-      setStatus('۲. اتصال به سرور…')
+      setStatus('۴. اتصال به سرور…')
       const key = await getGeminiKey()
       const t = new LiveTranscriber(key)
       tRef.current = t
@@ -51,16 +79,17 @@ export default function TranscribeClient() {
         new Promise((_, rej) => setTimeout(() => rej(new Error('timeout اتصال')), 20000)),
       ])
 
-      setStatus('۳. ترنسکریپت زنده…')
+      setStatus('۵. ترنسکریپت زنده…')
       for (let i = 0; i < chunks.length; i++) {
         if (stopRef.current) break
         t.sendChunk(chunks[i].data, chunks[i].seconds)
-        setProgress(Math.round(((i + 1) / chunks.length) * 100))
+        const tp = Math.round(((i + 1) / chunks.length) * 100)
+        setProgress(video ? 30 + Math.round(tp * 0.7) : tp)
         await new Promise((r) => setTimeout(r, 1000 / speed))
       }
 
       if (!stopRef.current) {
-        setStatus('۴. دریافت متن پایانی…')
+        setStatus('۶. دریافت متن پایانی…')
         await t.finish()
         setStatus('✅ ترنسکریپت تمام شد — متن را ادیت و خروجی بگیر')
       }
@@ -82,13 +111,13 @@ export default function TranscribeClient() {
     <div className="container-app mx-auto max-w-4xl space-y-4 p-6" dir="rtl">
       <h1 className="font-display text-2xl font-extrabold">ترنسکریپت صدا و ویدیو</h1>
       <p className="text-sm text-ink-muted">
-        فایل صوتی تا {MAX_AUDIO_MB}MB آپلود کن — متن زنده می‌آید، ادیت کن و SRT/VTT/TXT بگیر.
+        فایل صوتی تا {MAX_AUDIO_MB}MB یا ویدیو تا {MAX_VIDEO_MB}MB — متن زنده می‌آید، ادیت کن و SRT/VTT/TXT بگیر.
       </p>
 
       <div className="card space-y-3 p-4">
         <input
           type="file"
-          accept="audio/*"
+          accept="audio/*,video/*"
           disabled={busy}
           onChange={handleFile}
           className="block w-full text-sm text-ink-muted file:ml-4 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-white hover:file:bg-blue-700 disabled:opacity-50"
@@ -96,7 +125,7 @@ export default function TranscribeClient() {
 
         <div className="flex items-center gap-3 text-sm">
           <span className="text-ink-muted">سرعت:</span>
-          {([1, 2, 4] as const).map((s) => (
+          {([1, 2, 4, 8] as const).map((s) => (
             <button
               key={s}
               disabled={busy}
@@ -143,7 +172,9 @@ export default function TranscribeClient() {
       {segments.length > 0 && (
         <div className="card space-y-3 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-700 pb-3">
-            <strong className="text-sm">ویرایش زیرنویس ({segments.length} سگمنت)</strong>
+            <strong className="text-sm">
+              ویرایش زیرنویس ({segments.length} سگمنت){isVideo ? ' — ویدیو' : ''}
+            </strong>
             <div className="flex gap-2">
               <button
                 onClick={() => download(`${baseName}.srt`, toSrt(segments), 'text/plain')}
