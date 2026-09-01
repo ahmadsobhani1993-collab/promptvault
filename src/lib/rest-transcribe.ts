@@ -10,10 +10,8 @@ const API_BASE = 'https://generativelanguage.googleapis.com/v1beta'
 
 // مدل‌های REST عمومی (Transcribe-Live فقط برای WebSocket است)
 const TRANSCRIBE_MODELS = [
-  'gemini-3.5-flash',
-  'gemini-3.5-flash-lite',
-  'gemini-2.5-flash',
-  'gemini-2.0-flash',
+  'Gemini-3.5-Transcribe-Live',
+  'Gemini-3.0-Flash-Live',
 ]
 
 export { getGeminiKey }
