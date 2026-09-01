@@ -11,6 +11,8 @@
   "dependencies": {
     "@auth/core": "^0.41.3",
     "@auth/prisma-adapter": "^2.11.3",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@prisma/client": "^6.19.3",
     "@tiptap/extension-highlight": "^3.30.5",
     "@tiptap/extension-image": "^3.30.5",
