@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { LiveTranscriber, TranscriptSegment, getGeminiKey } from '@/lib/live-transcribe'
 import { decodeToPcm16k, bufferToBase64Chunks, MAX_AUDIO_MB } from '@/lib/audio'
 import { toSrt, toVtt, toTxt, download } from '@/lib/subtitle'
+import SubtitlePreview from './SubtitlePreview'
 
 const MAX_VIDEO_MB = 200
 
@@ -14,6 +15,7 @@ export default function TranscribeClient() {
   const [status, setStatus] = useState('')
   const [segments, setSegments] = useState<TranscriptSegment[]>([])
   const [fileName, setFileName] = useState('')
+  const [videoUrl, setVideoUrl] = useState('')
   const [progress, setProgress] = useState(0)
   const [busy, setBusy] = useState(false)
   const [speed, setSpeed] = useState<1 | 2 | 4 | 8>(4)
@@ -55,9 +57,33 @@ export default function TranscribeClient() {
     setBusy(true)
     stopRef.current = false
 
+    if (isVideo) {
+      setVideoUrl(URL.createObjectURL(file))
+    } else {
+      setVideoUrl('')
+    }
+
     try {
       setStatus('۱. دیکود صدا (مرورگر)…')
       const pcm = await decodeToPcm16k(file)
+
+      // 🔍 تشخیص سکوت / نبود صدا
+      const samples = pcm as unknown as Int16Array | Float32Array
+      let sum = 0
+      let n = 0
+      const step = Math.max(1, Math.floor(samples.length / 20000))
+      for (let i = 0; i < samples.length; i += step) {
+        sum += Math.abs(samples[i])
+        n++
+      }
+      const avg = n ? sum / n : 0
+      console.log('[audio] avg amplitude:', avg)
+      if (avg === 0) {
+        setStatus('❌ این فایل هیچ صدایی ندارد — یک فایل با گفتار واضح امتحان کن')
+        setBusy(false)
+        return
+      }
+
       const chunks = bufferToBase64Chunks(pcm, 1)
 
       setStatus('۲. اتصال به سرور…')
@@ -84,11 +110,7 @@ export default function TranscribeClient() {
       if (!stopRef.current) {
         setStatus('۴. دریافت متن پایانی…')
         await t.finish()
-        setStatus(
-          segments.length === 0
-            ? '⚠️ متنی دریافت نشد — با سرعت 1x دوباره تلاش کن'
-            : '✅ تمام شد — متن را ادیت و خروجی بگیر'
-        )
+        setStatus('✅ تمام شد — متن را ادیت کن و خروجی بگیر')
       }
     } catch (err: any) {
       console.error('[transcribe]', err)
@@ -108,14 +130,11 @@ export default function TranscribeClient() {
     <div className="container-app mx-auto max-w-4xl space-y-4 p-6" dir="rtl">
       <h1 className="font-display text-2xl font-extrabold">ترنسکریپت صدا و ویدیو</h1>
 
-      {/* دو تب مجزا */}
       <div className="grid grid-cols-2 gap-2">
         <button
           onClick={() => switchMode('audio')}
           disabled={busy}
-          className={`rounded-xl p-4 text-right transition ${
-            mode === 'audio' ? 'bg-blue-600 text-white' : 'card hover:bg-gray-800'
-          }`}
+          className={`rounded-xl p-4 text-right transition ${mode === 'audio' ? 'bg-blue-600 text-white' : 'card hover:bg-gray-800'}`}
         >
           <div className="text-base font-bold">🎙️ تبدیل فایل صوتی به متن</div>
           <div className={`mt-1 text-xs ${mode === 'audio' ? 'text-blue-100' : 'text-ink-muted'}`}>
@@ -125,13 +144,11 @@ export default function TranscribeClient() {
         <button
           onClick={() => switchMode('video')}
           disabled={busy}
-          className={`rounded-xl p-4 text-right transition ${
-            mode === 'video' ? 'bg-blue-600 text-white' : 'card hover:bg-gray-800'
-          }`}
+          className={`rounded-xl p-4 text-right transition ${mode === 'video' ? 'bg-blue-600 text-white' : 'card hover:bg-gray-800'}`}
         >
           <div className="text-base font-bold">🎬 ساخت زیرنویس از ویدیو</div>
           <div className={`mt-1 text-xs ${mode === 'video' ? 'text-blue-100' : 'text-ink-muted'}`}>
-            MP4/WebM تا {MAX_VIDEO_MB}MB — خروجی SRT/VTT
+            MP4/WebM تا {MAX_VIDEO_MB}MB — خروجی SRT/VTT + پیش‌نمایش
           </div>
         </button>
       </div>
@@ -193,6 +210,11 @@ export default function TranscribeClient() {
         </div>
       )}
 
+      {/* پیش‌نمایش زیرنویس روی ویدیو */}
+      {mode === 'video' && videoUrl && segments.length > 0 && (
+        <SubtitlePreview videoUrl={videoUrl} segments={segments} />
+      )}
+
       {segments.length > 0 && (
         <div className="card space-y-3 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-700 pb-3">
@@ -202,39 +224,14 @@ export default function TranscribeClient() {
             <div className="flex gap-2">
               {mode === 'video' ? (
                 <>
-                  <button
-                    onClick={() => download(`${baseName}.srt`, toSrt(segments), 'text/plain')}
-                    className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700"
-                  >
-                    ⬇ SRT
-                  </button>
-                  <button
-                    onClick={() => download(`${baseName}.vtt`, toVtt(segments), 'text/vtt')}
-                    className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700"
-                  >
-                    ⬇ VTT
-                  </button>
-                  <button
-                    onClick={() => download(`${baseName}.txt`, toTxt(segments))}
-                    className="rounded bg-gray-700 px-3 py-1 text-xs hover:bg-gray-600"
-                  >
-                    ⬇ TXT
-                  </button>
+                  <button onClick={() => download(`${baseName}.srt`, toSrt(segments), 'text/plain')} className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700">⬇ SRT</button>
+                  <button onClick={() => download(`${baseName}.vtt`, toVtt(segments), 'text/vtt')} className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700">⬇ VTT</button>
+                  <button onClick={() => download(`${baseName}.txt`, toTxt(segments))} className="rounded bg-gray-700 px-3 py-1 text-xs hover:bg-gray-600">⬇ TXT</button>
                 </>
               ) : (
                 <>
-                  <button
-                    onClick={() => download(`${baseName}.txt`, toTxt(segments))}
-                    className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700"
-                  >
-                    ⬇ TXT
-                  </button>
-                  <button
-                    onClick={() => download(`${baseName}.srt`, toSrt(segments), 'text/plain')}
-                    className="rounded bg-gray-700 px-3 py-1 text-xs hover:bg-gray-600"
-                  >
-                    ⬇ SRT
-                  </button>
+                  <button onClick={() => download(`${baseName}.txt`, toTxt(segments))} className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700">⬇ TXT</button>
+                  <button onClick={() => download(`${baseName}.srt`, toSrt(segments), 'text/plain')} className="rounded bg-gray-700 px-3 py-1 text-xs hover:bg-gray-600">⬇ SRT</button>
                 </>
               )}
             </div>
@@ -252,13 +249,7 @@ export default function TranscribeClient() {
                   rows={1}
                   className="w-full resize-y bg-transparent text-sm outline-none"
                 />
-                <button
-                  onClick={() => removeSeg(i)}
-                  className="mt-1 shrink-0 text-red-400 hover:text-red-300"
-                  title="حذف"
-                >
-                  ✕
-                </button>
+                <button onClick={() => removeSeg(i)} className="mt-1 shrink-0 text-red-400 hover:text-red-300" title="حذف">✕</button>
               </div>
             ))}
           </div>
