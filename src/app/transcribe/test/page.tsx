@@ -1,13 +1,18 @@
 'use client'
 
-import { useRef, useState } from 'react'
-import { LiveTranscriber, TranscriptSegment, getGeminiKey } from '@/lib/live-transcribe'
-import { decodeToPcm16k, bufferToBase64Chunks, MAX_AUDIO_MB } from '@/lib/audio'
+import { useState } from 'react'
+import {
+  getGeminiKey,
+  uploadAudioFile,
+  transcribeFile,
+  deleteFile,
+  TranscriptSegment,
+} from '@/lib/rest-transcribe'
+import { MAX_AUDIO_MB } from '@/lib/audio'
 
 export default function TestPage() {
   const [status, setStatus] = useState('')
   const [segments, setSegments] = useState<TranscriptSegment[]>([])
-  const stopRef = useRef(false)
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -19,40 +24,20 @@ export default function TestPage() {
     }
 
     setSegments([])
-    stopRef.current = false
-
     try {
-      setStatus('۱. در حال دیکود صدا…')
-      const pcm = await decodeToPcm16k(file)
-      const chunks = bufferToBase64Chunks(pcm, 1)
-      setStatus(`۲. دیکود OK — ${chunks.length} chunk آماده`)
-
-      setStatus('۳. دریافت کلید از سرور…')
+      setStatus('۱. دریافت کلید…')
       const key = await getGeminiKey()
-      setStatus('۴. کلید OK — اتصال WebSocket به Gemini…')
 
-      const t = new LiveTranscriber(key)
-      t.onSegment = (seg) => setSegments((prev) => [...prev, seg])
-      t.onError = (m) => setStatus('❌ WS: ' + m)
+      setStatus('۲. آپلود مستقیم به Gemini Files…')
+      const uploaded = await uploadAudioFile(file, key)
 
-      // timeout برای اتصال (۱۵ ثانیه)
-      await Promise.race([
-        t.connect(),
-        new Promise((_, rej) =>
-          setTimeout(() => rej(new Error('timeout اتصال — شبکه یا فیلترینگ را چک کن')), 15000)
-        ),
-      ])
+      setStatus('۳. ترنسکریپت (ممکن است ۱-۲ دقیقه طول بکشد)…')
+      const segs = await transcribeFile(uploaded.uri, file.type || 'audio/mpeg', key)
 
-      setStatus('۵. متصل شد — استریم 1x…')
-      for (let i = 0; i < chunks.length; i++) {
-        if (stopRef.current) break
-        t.sendChunk(chunks[i].data, chunks[i].seconds)
-        setStatus(`⏳ استریم: ${Math.round(((i + 1) / chunks.length) * 100)}%`)
-        await new Promise((r) => setTimeout(r, 1000))
-      }
+      setSegments(segs)
+      setStatus(`✅ تمام — ${segs.length} سگمنت`)
 
-      t.finish()
-      setStatus('✅ تمام')
+      deleteFile(uploaded.name, key)
     } catch (err: any) {
       console.error('[transcribe]', err)
       setStatus('❌ ' + (err?.message || String(err)))
@@ -61,10 +46,10 @@ export default function TestPage() {
 
   return (
     <div className="container-app mx-auto max-w-3xl space-y-4 p-6" dir="rtl">
-      <h1 className="font-display text-2xl font-extrabold">تست ترنسکریپت زنده</h1>
+      <h1 className="font-display text-2xl font-extrabold">تست ترنسکریپت (REST)</h1>
       <input type="file" accept="audio/*" onChange={handleFile} />
       <p className="text-sm text-ink-muted">{status}</p>
-      <div className="card space-y-1 p-4 text-sm">
+      <div className="card max-h-96 space-y-1 overflow-y-auto p-4 text-sm">
         {segments.map((s, i) => (
           <p key={i}>
             <span className="text-ink-muted">[{s.start.toFixed(1)}–{s.end.toFixed(1)}]</span> {s.text}
