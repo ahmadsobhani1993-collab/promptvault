@@ -2,9 +2,9 @@
 
 import { useRef, useState } from 'react'
 import { LiveTranscriber, TranscriptSegment, getGeminiKey } from '@/lib/live-transcribe'
-import { decodeToPcm16k, bufferToBase64Chunks, MAX_AUDIO_MB } from '@/lib/audio'
-import { toSrt, toVtt, toTxt, download } from '@/lib/subtitle'
-import SubtitlePreview from './SubtitlePreview'
+import { decodeToPcm16k, MAX_AUDIO_MB } from '@/lib/audio'
+import { prepareChunks } from '@/lib/audio-enhance'
+import SubtitleStudio from './SubtitleStudio'
 
 const MAX_VIDEO_MB = 200
 
@@ -57,66 +57,20 @@ export default function TranscribeClient() {
     setBusy(true)
     stopRef.current = false
 
-    if (isVideo) {
-      setVideoUrl(URL.createObjectURL(file))
-    } else {
-      setVideoUrl('')
-    }
+    if (isVideo) setVideoUrl(URL.createObjectURL(file))
+    else setVideoUrl('')
 
     try {
-      setStatus('۱. دیکود صدا (مرورگر)…')
+      setStatus('۱. دیکود و بهینه‌سازی صدا…')
       const pcm = await decodeToPcm16k(file)
+      const { chunks, avg } = await prepareChunks(pcm)
+      console.log('[audio] avg amplitude:', avg)
 
-      // 🔍 تشخیص سکوت — سازگار با AudioBuffer / ArrayBuffer / TypedArray
-      const raw: any = pcm
-      let f32: Float32Array | null = null
-      let i16: Int16Array | null = null
-
-      if (typeof raw?.getChannelData === 'function') {
-        f32 = raw.getChannelData(0) as Float32Array
-      } else if (raw instanceof ArrayBuffer) {
-        i16 = new Int16Array(raw)
-      } else if (raw instanceof Int16Array) {
-        i16 = raw
-      } else if (raw instanceof Float32Array) {
-        f32 = raw
-      } else if (raw?.buffer instanceof ArrayBuffer) {
-        i16 = new Int16Array(raw.buffer, raw.byteOffset ?? 0, Math.floor(raw.byteLength / 2))
+      if (avg < 0.001) {
+        setStatus('❌ این فایل صدای قابل استفاده ندارد (سکوت) — فایل با گفتار واضح امتحان کن')
+        setBusy(false)
+        return
       }
-
-      let sum = 0
-      let n = 0
-      if (f32) {
-        const st = Math.max(1, Math.floor(f32.length / 20000))
-        for (let i = 0; i < f32.length; i += st) {
-          sum += Math.abs(f32[i])
-          n++
-        }
-        const avg = n ? sum / n : 0
-        console.log('[audio] avg amplitude (float):', avg, 'samples:', f32.length)
-        if (avg < 0.001) {
-          setStatus('❌ این فایل صدای قابل استفاده ندارد (سکوت) — فایل با گفتار واضح امتحان کن')
-          setBusy(false)
-          return
-        }
-      } else if (i16) {
-        const st = Math.max(1, Math.floor(i16.length / 20000))
-        for (let i = 0; i < i16.length; i += st) {
-          sum += Math.abs(i16[i])
-          n++
-        }
-        const avg = n ? sum / n : 0
-        console.log('[audio] avg amplitude (int16):', avg, 'samples:', i16.length)
-        if (avg < 10) {
-          setStatus('❌ این فایل صدای قابل استفاده ندارد (سکوت) — فایل با گفتار واضح امتحان کن')
-          setBusy(false)
-          return
-        }
-      } else {
-        console.log('[audio] unknown pcm type:', raw?.constructor?.name)
-      }
-
-      const chunks = bufferToBase64Chunks(pcm, 1)
 
       setStatus('۲. اتصال به سرور…')
       const key = await getGeminiKey()
@@ -142,7 +96,7 @@ export default function TranscribeClient() {
       if (!stopRef.current) {
         setStatus('۴. دریافت متن پایانی…')
         await t.finish()
-        setStatus('✅ تمام شد — متن را ادیت کن و خروجی بگیر')
+        setStatus('✅ تمام شد — در استودیو زیرنویس، ادیت و خروجی بگیر')
       }
     } catch (err: any) {
       console.error('[transcribe]', err)
@@ -151,12 +105,6 @@ export default function TranscribeClient() {
       setBusy(false)
     }
   }
-
-  const updateText = (i: number, text: string) =>
-    setSegments((prev) => prev.map((s, idx) => (idx === i ? { ...s, text } : s)))
-
-  const removeSeg = (i: number) =>
-    setSegments((prev) => prev.filter((_, idx) => idx !== i))
 
   return (
     <div className="container-app mx-auto max-w-4xl space-y-4 p-6" dir="rtl">
@@ -180,7 +128,7 @@ export default function TranscribeClient() {
         >
           <div className="text-base font-bold">🎬 ساخت زیرنویس از ویدیو</div>
           <div className={`mt-1 text-xs ${mode === 'video' ? 'text-blue-100' : 'text-ink-muted'}`}>
-            MP4/WebM تا {MAX_VIDEO_MB}MB — خروجی SRT/VTT + پیش‌نمایش
+            MP4/WebM تا {MAX_VIDEO_MB}MB — SRT/VTT + ویدیو با زیرنویس
           </div>
         </button>
       </div>
@@ -243,45 +191,37 @@ export default function TranscribeClient() {
       )}
 
       {mode === 'video' && videoUrl && segments.length > 0 && (
-        <SubtitlePreview videoUrl={videoUrl} segments={segments} />
+        <SubtitleStudio videoUrl={videoUrl} baseName={baseName} segments={segments} onChange={setSegments} />
       )}
 
-      {segments.length > 0 && (
+      {mode === 'audio' && segments.length > 0 && (
         <div className="card space-y-3 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-700 pb-3">
-            <strong className="text-sm">
-              {mode === 'video' ? 'ویرایش زیرنویس' : 'ویرایش متن'} ({segments.length} سگمنت)
-            </strong>
-            <div className="flex gap-2">
-              {mode === 'video' ? (
-                <>
-                  <button onClick={() => download(`${baseName}.srt`, toSrt(segments), 'text/plain')} className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700">⬇ SRT</button>
-                  <button onClick={() => download(`${baseName}.vtt`, toVtt(segments), 'text/vtt')} className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700">⬇ VTT</button>
-                  <button onClick={() => download(`${baseName}.txt`, toTxt(segments))} className="rounded bg-gray-700 px-3 py-1 text-xs hover:bg-gray-600">⬇ TXT</button>
-                </>
-              ) : (
-                <>
-                  <button onClick={() => download(`${baseName}.txt`, toTxt(segments))} className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700">⬇ TXT</button>
-                  <button onClick={() => download(`${baseName}.srt`, toSrt(segments), 'text/plain')} className="rounded bg-gray-700 px-3 py-1 text-xs hover:bg-gray-600">⬇ SRT</button>
-                </>
-              )}
-            </div>
+            <strong className="text-sm">ویرایش متن ({segments.length} سگمنت)</strong>
+            <button
+              onClick={() => {
+                const txt = segments.map((s) => s.text).join('\n')
+                const blob = new Blob(['\uFEFF' + txt], { type: 'text/plain;charset=utf-8' })
+                const a = document.createElement('a')
+                a.href = URL.createObjectURL(blob)
+                a.download = `${baseName}.txt`
+                a.click()
+                setTimeout(() => URL.revokeObjectURL(a.href), 5000)
+              }}
+              className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700"
+            >
+              ⬇ TXT
+            </button>
           </div>
-
           <div className="max-h-[32rem] space-y-2 overflow-y-auto">
             {segments.map((s, i) => (
-              <div key={i} className="flex items-start gap-2 rounded-lg bg-gray-800/50 p-2">
-                <span className="mt-2 shrink-0 font-mono text-[11px] text-ink-muted">
-                  {s.start.toFixed(1)}–{s.end.toFixed(1)}
-                </span>
-                <textarea
-                  value={s.text}
-                  onChange={(e) => updateText(i, e.target.value)}
-                  rows={1}
-                  className="w-full resize-y bg-transparent text-sm outline-none"
-                />
-                <button onClick={() => removeSeg(i)} className="mt-1 shrink-0 text-red-400 hover:text-red-300" title="حذف">✕</button>
-              </div>
+              <textarea
+                key={i}
+                value={s.text}
+                onChange={(e) => setSegments(segments.map((x, idx) => (idx === i ? { ...x, text: e.target.value } : x)))}
+                rows={1}
+                className="w-full resize-y rounded-lg bg-gray-800/50 p-2 text-sm outline-none"
+              />
             ))}
           </div>
         </div>
