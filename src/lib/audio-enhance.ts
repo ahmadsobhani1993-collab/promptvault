@@ -87,3 +87,49 @@ export async function prepareChunks(pcm: unknown): Promise<{ chunks: PcmChunk[];
 
   return { chunks: chunkFloat32(f32, 16000, 1), avg, duration: f32.length / 16000 }
 }
+export interface WavPart {
+  data: string
+  start: number
+  end: number
+}
+
+function f32ToWavBase64(f32: Float32Array, sr: number): string {
+  const n = f32.length
+  const buf = new ArrayBuffer(44 + n * 2)
+  const v = new DataView(buf)
+  const wstr = (o: number, s: string) => {
+    for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i))
+  }
+  wstr(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); wstr(8, 'WAVE'); wstr(12, 'fmt ')
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true)
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true)
+  wstr(36, 'data'); v.setUint32(40, n * 2, true)
+  for (let i = 0; i < n; i++) {
+    const x = Math.max(-1, Math.min(1, f32[i]))
+    v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7fff, true)
+  }
+  const bytes = new Uint8Array(buf)
+  let bin = ''
+  const CH = 0x8000
+  for (let i = 0; i < bytes.length; i += CH) bin += String.fromCharCode(...bytes.subarray(i, i + CH))
+  return btoa(bin)
+}
+
+/**
+ * تقسیم صدا به بخش‌های WAV سی‌ثانیه‌ای برای REST
+ */
+export async function prepareWavChunks(pcm: unknown, sec = 30): Promise<WavPart[]> {
+  const { f32: mixed, sampleRate } = toMonoFloat32(pcm)
+  const f32 = await ensure16k(mixed, sampleRate)
+  const per = 16000 * sec
+  const parts: WavPart[] = []
+  for (let o = 0; o < f32.length; o += per) {
+    const slice = f32.subarray(o, Math.min(o + per, f32.length))
+    parts.push({
+      data: f32ToWavBase64(slice, 16000),
+      start: o / 16000,
+      end: Math.min(f32.length, o + per) / 16000,
+    })
+  }
+  return parts
+}
