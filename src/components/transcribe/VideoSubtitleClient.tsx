@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
-import { TranscriptSegment, getGeminiKey } from '@/lib/live-transcribe'
+import { TranscriptSegment } from '@/lib/live-transcribe'
 import { decodeToPcm16k } from '@/lib/audio'
 import { prepareWavChunks } from '@/lib/audio-enhance'
 import { toSrt, toVtt, toTxt, download } from '@/lib/subtitle'
@@ -224,7 +224,7 @@ export default function VideoSubtitleClient() {
     }
   }
 
-  // ─── ترنسکریپت REST ───
+  // ─── ترنسکریپت REST (کلید مخفی) ───
   const runTranscribe = async (file: File) => {
     setSegments([])
     setProgress(0)
@@ -237,17 +237,23 @@ export default function VideoSubtitleClient() {
       if (parts.length === 0) { setStatus('❌ صدایی پیدا نشد'); setBusy(false); return }
 
       setStatus('۲. ترنسکریپت (مدل اختصاصی)…')
-      const key = await getGeminiKey()
+      // 🔒 کلید در URL نیست — فقط Worker از env می‌خواند
       const newSegs: Seg[] = []
 
       for (let i = 0; i < parts.length; i++) {
-        const r = await fetch(`${WORKER}/transcribe?key=${encodeURIComponent(key)}`, {
+        const r = await fetch(`${WORKER}/transcribe`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ audioBase64: parts[i].data }),
         })
-        if (!r.ok) throw new Error(`transcribe failed: ${r.status}`)
         const j = await r.json()
+
+        // خطای Gemini را کامل نمایش بده (برای دیباگ)
+        if (!r.ok || j.error) {
+          const errMsg = j.error || `HTTP ${r.status}`
+          throw new Error(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg))
+        }
+
         const text: string = (j.text || '').trim()
 
         if (text) {
