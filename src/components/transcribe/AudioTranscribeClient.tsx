@@ -9,6 +9,12 @@ import { toSrt, toTxt } from '@/lib/subtitle'
 import { useAuth } from '@/lib/use-auth'
 import AuthGate from './AuthGate'
 
+const fmt = (t: number) => {
+  const m = Math.floor(t / 60)
+  const s = Math.floor(t % 60)
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
 export default function AudioTranscribeClient() {
   const auth = useAuth()
 
@@ -62,7 +68,6 @@ export default function AudioTranscribeClient() {
       }
 
       setStatus('۲. اتصال به سرور…')
-      // 🔒 کلید در URL نیست — فقط Worker از env می‌خواند
       const t = new LiveTranscriber()
       tRef.current = t
       t.onSegment = (seg) => setSegments((prev) => [...prev, seg])
@@ -93,72 +98,134 @@ export default function AudioTranscribeClient() {
     }
   }
 
-  // ─── قفل ورود ───
-  if (auth === 'checking') {
-    return <div className="p-10 text-center text-sm text-ink-muted">در حال بررسی…</div>
-  }
-  if (auth === 'no') {
-    return <AuthGate />
-  }
+  if (auth === 'checking') return <div className="p-10 text-center text-sm text-white/40">در حال بررسی…</div>
+  if (auth === 'no') return <AuthGate />
 
   return (
-    <div className="container-app mx-auto max-w-3xl space-y-4 p-6" dir="rtl">
-      <div className="flex items-center justify-between">
-        <h1 className="font-display text-2xl font-extrabold">🎙️ تبدیل فایل صوتی به متن</h1>
-        <Link href="/subtitle" className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-700">
+    <div className="mx-auto max-w-5xl space-y-4 p-4 lg:p-6" dir="rtl">
+      {/* ─── Top Bar ─── */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="font-display text-lg font-extrabold text-white lg:text-xl">🎙️ تبدیل فایل صوتی به متن</h1>
+          <p className="mt-0.5 max-w-[60vw] truncate text-[11px] text-white/40" title={fileName}>
+            {fileName || 'MP3 / WAV / M4A — تا ' + MAX_AUDIO_MB + 'MB'}
+          </p>
+        </div>
+        <Link href="/subtitle" className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/70 transition hover:border-amber-500/40 hover:text-amber-300">
           🎬 استودیو زیرنویس ویدیو
         </Link>
       </div>
 
-      <div className="card space-y-3 p-4">
-        <input
-          type="file"
-          accept="audio/*"
-          disabled={busy}
-          onChange={handleFile}
-          className="block w-full text-sm text-ink-muted file:ml-4 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-white hover:file:bg-blue-700 disabled:opacity-50"
-        />
-        <div className="flex items-center gap-3 text-sm">
-          <span className="text-ink-muted">سرعت:</span>
-          {([1, 2, 4, 8] as const).map((s) => (
-            <button key={s} disabled={busy} onClick={() => setSpeed(s)} className={`rounded px-3 py-1 text-xs ${speed === s ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}>{s}x</button>
-          ))}
+      {/* ─── Import / Status strip ─── */}
+      <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="cursor-pointer rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-black transition hover:bg-amber-400">
+            📥 وارد کردن فایل صوتی
+            <input type="file" accept="audio/*" disabled={busy} onChange={handleFile} className="hidden" />
+          </label>
+
+          <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-black/40 p-1">
+            <span className="px-2 text-[10px] text-white/40">سرعت</span>
+            {([1, 2, 4, 8] as const).map((s) => (
+              <button
+                key={s}
+                disabled={busy}
+                onClick={() => setSpeed(s)}
+                className={`rounded-md px-2.5 py-1 text-[11px] transition ${speed === s ? 'bg-amber-500 font-bold text-black' : 'text-white/60 hover:bg-white/10'}`}
+              >
+                {s}x
+              </button>
+            ))}
+          </div>
+
           {busy && (
-            <button onClick={() => { stopRef.current = true; tRef.current?.finish() }} className="rounded bg-red-600 px-3 py-1 text-xs text-white">⏹ توقف</button>
+            <button
+              onClick={() => { stopRef.current = true; tRef.current?.finish() }}
+              className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs text-red-400 transition hover:bg-red-500/20"
+            >
+              ⏹ توقف
+            </button>
+          )}
+
+          {segments.length > 0 && (
+            <span className="ms-auto rounded-md bg-white/5 px-2 py-1 text-[11px] text-white/40">{segments.length} سگمنت</span>
           )}
         </div>
+
         {busy && (
-          <div className="h-2 w-full overflow-hidden rounded bg-gray-700">
-            <div className="h-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
+          <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-white/10">
+            <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${progress}%` }} />
+          </div>
+        )}
+
+        {status && (
+          <div
+            className={`mt-3 rounded-lg px-3 py-2 text-xs ${
+              status.startsWith('✅')
+                ? 'bg-emerald-500/10 text-emerald-400'
+                : status.startsWith('❌')
+                ? 'bg-red-500/10 text-red-400'
+                : status.startsWith('⚠️')
+                ? 'bg-amber-500/10 text-amber-400'
+                : 'bg-white/5 text-white/60'
+            }`}
+          >
+            {status}
           </div>
         )}
       </div>
 
-      {status && (
-        <div className={`rounded-lg p-3 text-sm ${status.startsWith('✅') ? 'bg-green-500/10 text-green-400' : status.startsWith('❌') ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'}`}>
-          {status}
+      {/* ─── Empty State ─── */}
+      {!busy && segments.length === 0 && (
+        <div className="flex flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed border-white/10 bg-zinc-900/30 py-20 text-center">
+          <div className="text-4xl">🎙️</div>
+          <div>
+            <p className="text-sm font-bold text-white/80">فایل صوتی را وارد کن</p>
+            <p className="mt-1 text-xs text-white/40">ترنسکریپت زنده → ویرایش متن → خروجی TXT / SRT</p>
+          </div>
         </div>
       )}
 
+      {/* ─── Transcript + Output ─── */}
       {segments.length > 0 && (
-        <div className="card space-y-3 p-4">
-          <div className="flex items-center justify-between border-b border-gray-700 pb-3">
-            <strong className="text-sm">ویرایش متن ({segments.length} سگمنت)</strong>
-            <div className="flex gap-2">
-              <button onClick={() => dl(`${baseName}.txt`, toTxt(segments))} className="rounded bg-blue-600 px-3 py-1 text-xs text-white">⬇ TXT</button>
-              <button onClick={() => dl(`${baseName}.srt`, toSrt(segments))} className="rounded bg-gray-700 px-3 py-1 text-xs">⬇ SRT</button>
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <div className="flex h-full flex-col rounded-2xl border border-white/10 bg-zinc-900/60">
+              <div className="border-b border-white/10 p-3 text-xs">
+                <strong className="text-white/80">ویرایش متن ({segments.length} سگمنت)</strong>
+              </div>
+              <div className="max-h-[30rem] flex-1 space-y-1 overflow-y-auto p-2">
+                {segments.map((s, i) => (
+                  <div key={i} className="rounded-xl border-r-2 border-transparent p-2.5 transition hover:bg-white/5">
+                    <span className="font-mono text-[10px] text-white/40">{fmt(s.start)}</span>
+                    <textarea
+                      value={s.text}
+                      rows={1}
+                      onChange={(e) => setSegments(segments.map((x, idx) => (idx === i ? { ...x, text: e.target.value } : x)))}
+                      className="mt-1 w-full resize-y bg-transparent text-sm leading-6 text-white/90 outline-none"
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-          <div className="max-h-[32rem] space-y-2 overflow-y-auto">
-            {segments.map((s, i) => (
-              <textarea
-                key={i}
-                value={s.text}
-                rows={1}
-                onChange={(e) => setSegments(segments.map((x, idx) => (idx === i ? { ...x, text: e.target.value } : x)))}
-                className="w-full resize-y rounded-lg bg-gray-800/50 p-2 text-sm outline-none"
-              />
-            ))}
+
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-4">
+              <strong className="mb-3 block text-sm text-white/80">خروجی</strong>
+              <button
+                onClick={() => dl(`${baseName}.txt`, toTxt(segments))}
+                className="mb-2 block w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-bold text-black shadow-lg shadow-amber-500/20 transition hover:bg-amber-400"
+              >
+                ⬇ دانلود TXT
+              </button>
+              <button
+                onClick={() => dl(`${baseName}.srt`, toSrt(segments))}
+                className="block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs text-white/70 transition hover:border-amber-500/40 hover:text-amber-300"
+              >
+                ⬇ دانلود SRT
+              </button>
+            </div>
           </div>
         </div>
       )}
