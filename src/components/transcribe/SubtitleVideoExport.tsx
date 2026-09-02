@@ -51,7 +51,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         if (seg?.fx === 'zoomOut') vs = 1.12 - 0.12 * t01
         const sw = W / vs, sh = H / vs
         ctx.drawImage(video, (W - sw) / 2, (H - sh) / 2, sw, sh, 0, 0, W, H)
-        if (!seg) return
+        if (!seg) 
         const s2 = styleRef.current
         let ts = 1
         if (seg.fx === 'pop') ts = easeOutBack(Math.min(1, (t - seg.start) / 0.35))
@@ -128,18 +128,20 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       setExporting(false)
     }
   }
-
+    
   return (
     <div>
-      <button onClick={exportVideo} disabled={exporting || segments.length === 0}
-        className="block w-full rounded bg-green-600 px-3 py-2 text-xs text-white hover:bg-green-700 disabled:opacity-50">
-        {exporting ? `⏳ رندر ${Math.round(expProg * 100)}٪` : '🎥 خروجی ویدیو (رزولوشن اصلی)'}
+      <button
+        onClick={exportVideo}
+        disabled={exporting || segments.length === 0}
+        className="block w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-bold text-black shadow-lg shadow-amber-500/20 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {exporting ? `⏳ در حال رندر… ${Math.round(expProg * 100)}٪` : '🎥 خروجی ویدیو با زیرنویس'}
       </button>
       {exporting && (
-        <div className="h-2 w-full overflow-hidden rounded bg-gray-700 mt-2">
-          <div className="h-full bg-green-600 transition-all" style={{ width: `${Math.round(expProg * 100)}%` }} />
+        <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/10">
+          <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${Math.round(expProg * 100)}%` }} />
         </div>
       )}
     </div>
   )
-}
