@@ -5,6 +5,9 @@ import { L, getCategories } from '@/lib/data'
 import { type Locale } from '@/lib/i18n'
 import MobileMenu from '@/components/mobile-menu'
 import NotifBell from '@/components/notif-bell'
+import ToolsMenu from '@/components/layout/ToolsMenu'
+// ...
+<ToolsMenu />
 
 export default async function Header() {
   const cookieStore = await cookies()
