@@ -1,29 +1,38 @@
 import { useRef, useState } from 'react'
 import { LiveTranscriber, type TranscriptSegment } from './live-transcribe'
 import { decodeToPcm16k } from './audio'
-import { prepareChunks } from './audio-enhance'
+import { prepareChunks, getSpeechRegions } from './audio-enhance'
 import { mkWords, type Seg } from './subtitle-studio'
 
 /**
- * شکستن یک متن بزرگ به جملات + تقسیم proportionally زمان
- * (وقتی Gemini همه متن را یک‌باره برمی‌گرداند)
+ * هم‌ترازی جملات روی بازه‌های گفتار:
+ * کلمات به‌ترتیب روی زمانِ واقعی صحبت (انرژی صدا) نشسته‌اند،
+ * نه روی کل طول ویدیو → مکث‌ها حفظ می‌شوند.
  */
-const splitIntoSentences = (text: string, start: number, end: number): Seg[] => {
-  const sentences = text.match(/[^.!?؟\n]+[.!?؟]?/g)?.map((s) => s.trim()).filter(Boolean) || [text]
-  if (sentences.length === 1) {
-    return [{ text: sentences[0], start, end, words: mkWords(sentences[0], start, end) }]
+const retimeToSpeech = (segs: Seg[], regions: { start: number; end: number }[]): Seg[] => {
+  const count = (s: string) => s.split(/\s+/).filter(Boolean).length
+  const totalWords = segs.reduce((a, s) => a + count(s.text), 0) || 1
+  const totalSpeech = regions.reduce((a, r) => a + (r.end - r.start), 0)
+
+  const timeAtWord = (w: number) => {
+    const target = (w / totalWords) * totalSpeech
+    let acc = 0
+    for (const r of regions) {
+      const d = r.end - r.start
+      if (acc + d >= target) return r.start + (target - acc)
+      acc += d
+    }
+    return regions[regions.length - 1].end
   }
-  const words = sentences.map((s) => s.split(/\s+/).filter(Boolean).length)
-  const totalW = words.reduce((a, b) => a + b, 0) || 1
-  const dur = end - start
-  const out: Seg[] = []
-  let cursor = start
-  sentences.forEach((txt, k) => {
-    const d = Math.max(0.4, (words[k] / totalW) * dur)
-    out.push({ text: txt, start: cursor, end: cursor + d, words: mkWords(txt, cursor, cursor + d) })
-    cursor += d
+
+  let cursor = 0
+  return segs.map((s) => {
+    const w = count(s.text)
+    const start = timeAtWord(cursor)
+    const end = Math.max(start + 0.4, timeAtWord(cursor + w))
+    cursor += w
+    return { ...s, start, end, words: mkWords(s.text, start, end) }
   })
-  return out
 }
 
 export const useVideoTranscribe = () => {
@@ -48,14 +57,15 @@ export const useVideoTranscribe = () => {
       console.log('[audio] avg:', avg, 'chunks:', chunks.length)
       if (avg < 0.001) { setStatus('❌ صدای قابل استفاده ندارد'); setBusy(false); return }
 
+      // 🔑 بازه‌های گفتار برای هم‌ترازی نهایی
+      const regions = await getSpeechRegions(pcm)
+      console.log('[align] speech regions:', regions.length)
+
       setStatus('۲. اتصال WebSocket…')
       const t = new LiveTranscriber()
       tRef.current = t
-
       t.onSegment = (seg: TranscriptSegment) => {
-        // 🔑 شکستن خودکار متن بزرگ به جملات با زمان‌بندی proportionally
-        const broken = splitIntoSentences(seg.text, seg.start, seg.end)
-        acc.push(...broken)
+        acc.push({ ...seg, words: mkWords(seg.text, seg.start, seg.end) })
         setSegments([...acc])
       }
       t.onError = (m) => setStatus('❌ ' + m)
@@ -73,12 +83,15 @@ export const useVideoTranscribe = () => {
         await new Promise((r) => setTimeout(r, 1000 / speed))
       }
 
-      setStatus('۴. متن پایانی…')
+      setStatus('۴. هم‌ترازی زیرنویس با صدا…')
       await t.finish()
 
       if (acc.length === 0) {
         setStatus('⚠️ متنی دریافت نشد — با سرعت 1x دوباره تلاش کن')
       } else {
+        // 🔑 هم‌ترازی نهایی روی انرژی صدا
+        const aligned = retimeToSpeech([...acc], regions)
+        setSegments(aligned)
         setStatus('✅ آماده — ادیت کن و خروجی بگیر')
       }
     } catch (err: any) {
