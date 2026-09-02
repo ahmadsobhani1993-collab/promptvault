@@ -2,8 +2,22 @@ import { useRef, useState } from 'react'
 import { LiveTranscriber, type TranscriptSegment } from './live-transcribe'
 import { decodeToPcm16k } from './audio'
 import { prepareChunks } from './audio-enhance'
-import { alignSegments } from './align'
 import { mkWords, type Seg } from './subtitle-studio'
+
+const splitIntoSentences = (text: string, start: number, end: number): Seg[] => {
+  const sentences = text.match(/[^.!?؟\n]+[.!?؟]?/g)?.map((s) => s.trim()).filter(Boolean) || [text]
+  const words = sentences.map((s) => s.split(/\s+/).filter(Boolean).length)
+  const totalW = words.reduce((a, b) => a + b, 0) || 1
+  const dur = end - start
+  const out: Seg[] = []
+  let cursor = start
+  sentences.forEach((txt, k) => {
+    const d = Math.max(0.4, (words[k] / totalW) * dur)
+    out.push({ text: txt, start: cursor, end: cursor + d, words: mkWords(txt, cursor, cursor + d) })
+    cursor += d
+  })
+  return out
+}
 
 export const useVideoTranscribe = () => {
   const [status, setStatus] = useState('')
@@ -24,14 +38,14 @@ export const useVideoTranscribe = () => {
       setStatus('۱. دیکود صدا (محلی)…')
       const pcm = await decodeToPcm16k(file)
       const { chunks, avg } = await prepareChunks(pcm)
-      console.log('[audio] avg:', avg, 'chunks:', chunks.length)
       if (avg < 0.001) { setStatus('❌ صدای قابل استفاده ندارد'); setBusy(false); return }
 
       setStatus('۲. اتصال WebSocket…')
       const t = new LiveTranscriber()
       tRef.current = t
       t.onSegment = (seg: TranscriptSegment) => {
-        acc.push({ ...seg, words: mkWords(seg.text, seg.start, seg.end) })
+        const broken = splitIntoSentences(seg.text, seg.start, seg.end)
+        acc.push(...broken)
         setSegments([...acc])
       }
       t.onError = (m) => setStatus('❌ ' + m)
@@ -49,16 +63,10 @@ export const useVideoTranscribe = () => {
         await new Promise((r) => setTimeout(r, 1000 / speed))
       }
 
-      setStatus('۴. هم‌ترازی دقیق زیرنویس با صدا…')
+      setStatus('۴. پایان…')
       await t.finish()
 
-      if (acc.length === 0) {
-        setStatus('⚠️ متنی دریافت نشد — با سرعت 1x دوباره تلاش کن')
-      } else {
-        // 🔑 هم‌ترازی حرفه‌ای: DP روی مکث‌ها + نگاشت معکوس voiced + snap به onset
-        setSegments(alignSegments([...acc], pcm))
-        setStatus('✅ آماده — ادیت کن و خروجی بگیر')
-      }
+      setStatus(acc.length === 0 ? '⚠️ متنی دریافت نشد' : '✅ آماده — زمان‌ها را از transcript تنظیم کن')
     } catch (err: any) {
       setStatus('❌ ' + (err?.message || String(err)))
     } finally {
@@ -66,10 +74,7 @@ export const useVideoTranscribe = () => {
     }
   }
 
-  const stop = () => {
-    stopRef.current = true
-    tRef.current?.finish()
-  }
+  const stop = () => { stopRef.current = true; tRef.current?.finish() }
 
   return { status, progress, busy, segments, setSegments, run, stop }
 }
