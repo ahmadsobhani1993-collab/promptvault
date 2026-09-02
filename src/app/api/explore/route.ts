@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
-const PAGE_SIZE = 12
+const PAGE_SIZE = 20
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
@@ -10,13 +10,15 @@ export async function GET(req: Request) {
   const sort = searchParams.get('sort')
   const type = searchParams.get('type')
   const model = searchParams.get('model')
-  const tags = (searchParams.get('tags') ?? '').split(',').map((t) => t.trim()).filter(Boolean).slice(0, 2)
+  const sub = searchParams.get('sub')
+  const tags = (searchParams.get('tags') ?? '').split(',').map((t) => t.trim()).filter(Boolean).slice(0, 10)
   const q = searchParams.get('q') ?? ''
 
   const where: any = { status: 'PUBLISHED' }
   if (type) where.type = type
   if (model) where.model = model
-  if (tags.length) where.tagsFa = { hasEvery: tags }
+  if (sub) where.sub = { slug: sub }
+  if (tags.length) where.tagsFa = { hasSome: tags }
   if (q) {
     where.OR = [
       { titleFa: { contains: q, mode: 'insensitive' } },
@@ -30,7 +32,7 @@ export async function GET(req: Request) {
   const orderBy = sort === 'likes' ? { likes: 'desc' } : sort === 'views' ? { views: 'desc' } : { createdAt: 'desc' }
 
   const [rows, total] = await Promise.all([
-    prisma.prompt.findMany({ where, orderBy, skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE, include: { category: true } }),
+    prisma.prompt.findMany({ where, orderBy, skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE, include: { category: true, sub: true } }),
     prisma.prompt.count({ where }),
   ])
 
