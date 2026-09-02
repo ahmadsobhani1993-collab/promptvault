@@ -4,6 +4,28 @@ import { decodeToPcm16k } from './audio'
 import { prepareChunks } from './audio-enhance'
 import { mkWords, type Seg } from './subtitle-studio'
 
+/**
+ * شکستن یک متن بزرگ به جملات + تقسیم proportionally زمان
+ * (وقتی Gemini همه متن را یک‌باره برمی‌گرداند)
+ */
+const splitIntoSentences = (text: string, start: number, end: number): Seg[] => {
+  const sentences = text.match(/[^.!?؟\n]+[.!?؟]?/g)?.map((s) => s.trim()).filter(Boolean) || [text]
+  if (sentences.length === 1) {
+    return [{ text: sentences[0], start, end, words: mkWords(sentences[0], start, end) }]
+  }
+  const words = sentences.map((s) => s.split(/\s+/).filter(Boolean).length)
+  const totalW = words.reduce((a, b) => a + b, 0) || 1
+  const dur = end - start
+  const out: Seg[] = []
+  let cursor = start
+  sentences.forEach((txt, k) => {
+    const d = Math.max(0.4, (words[k] / totalW) * dur)
+    out.push({ text: txt, start: cursor, end: cursor + d, words: mkWords(txt, cursor, cursor + d) })
+    cursor += d
+  })
+  return out
+}
+
 export const useVideoTranscribe = () => {
   const [status, setStatus] = useState('')
   const [progress, setProgress] = useState(0)
@@ -29,9 +51,11 @@ export const useVideoTranscribe = () => {
       setStatus('۲. اتصال WebSocket…')
       const t = new LiveTranscriber()
       tRef.current = t
+
       t.onSegment = (seg: TranscriptSegment) => {
-        const s: Seg = { ...seg, words: mkWords(seg.text, seg.start, seg.end) }
-        acc.push(s)
+        // 🔑 شکستن خودکار متن بزرگ به جملات با زمان‌بندی proportionally
+        const broken = splitIntoSentences(seg.text, seg.start, seg.end)
+        acc.push(...broken)
         setSegments([...acc])
       }
       t.onError = (m) => setStatus('❌ ' + m)
