@@ -110,6 +110,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
       if (idx !== i) return s
       const next = { ...s, ...patch }
       if (patch.text !== undefined) next.words = mkWords(next.text, next.start, next.end)
+      else if (patch.start !== undefined || patch.end !== undefined) next.words = mkWords(next.text, next.start, next.end)
       return next
     }))
   }
@@ -296,12 +297,41 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                 <button onClick={findReplace} className="rounded-lg bg-amber-500 px-2.5 py-1 font-bold text-black transition hover:bg-amber-400">اعمال</button>
               </div>
             </div>
+
+            {/* ─── Sync Toolbar ─── */}
+            <div className="flex flex-wrap items-center gap-2 border-b border-white/10 px-3 py-2 text-[10px]">
+              <span className="text-white/40">انتقال همه:</span>
+              {[-5, -2, -1, -0.5, 0.5, 1, 2, 5].map((d) => (
+                <button
+                  key={d}
+                  onClick={() => {
+                    snapshot()
+                    setSegments(segments.map((s) => ({
+                      ...s,
+                      start: Math.max(0, s.start + d),
+                      end: s.end + d,
+                      words: mkWords(s.text, Math.max(0, s.start + d), s.end + d),
+                    })))
+                  }}
+                  className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 font-mono text-white/70 transition hover:border-amber-500/40 hover:text-amber-300"
+                >
+                  {d > 0 ? `+${d}` : d}s
+                </button>
+              ))}
+              <button
+                onClick={() => { snapshot(); setSegments([]) }}
+                className="mr-auto rounded-md border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-red-400 transition hover:bg-red-500/20"
+              >
+                پاک کردن همه
+              </button>
+            </div>
+
             <div className="max-h-[26rem] flex-1 space-y-1 overflow-y-auto p-2 lg:max-h-[34rem]">
               {segments.map((s, i) => (
                 <div
                   key={i}
                   onClick={() => { setSelected(i); seek(s.start) }}
-                  className={`group cursor-pointer rounded-xl border-r-2 p-2.5 transition ${
+                  className={`group rounded-xl border-r-2 p-2.5 transition ${
                     time >= s.start && time <= s.end
                       ? 'border-amber-500 bg-amber-500/10'
                       : i === selected
@@ -309,12 +339,80 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                       : 'border-transparent hover:bg-white/5'
                   }`}
                 >
-                  <div className="flex flex-wrap items-center gap-2 text-[10px]">
-                    <span className={`font-mono ${time >= s.start && time <= s.end ? 'text-amber-300' : 'text-white/40'}`}>
-                      {fmt(s.start)} – {fmt(s.end)}
-                    </span>
-                    {cps(s) > 22 && <span className="text-amber-400" title="سرعت خواندن زیاد">⚠ تند</span>}
-                    <select value={s.fx || 'none'} onClick={(e) => e.stopPropagation()} onChange={(e) => updateSeg(i, { fx: e.target.value as Fx })} className="rounded-md border border-white/10 bg-black/40 p-0.5 text-white/60">
+                  {/* ─── Row 1: Time controls ─── */}
+                  <div className="flex flex-wrap items-center gap-1.5 text-[10px]" onClick={(e) => e.stopPropagation()}>
+                    <span className="text-white/40">از</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={Number(s.start.toFixed(1))}
+                      onChange={(e) => updateSeg(i, { start: Math.max(0, Number(e.target.value)) })}
+                      className="w-16 rounded-md border border-white/10 bg-black/40 px-1.5 py-0.5 font-mono text-white/80 focus:border-amber-500/50 focus:outline-none"
+                    />
+                    <span className="text-white/40">تا</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={Number(s.end.toFixed(1))}
+                      onChange={(e) => updateSeg(i, { end: Math.max(s.start + 0.3, Number(e.target.value)) })}
+                      className="w-16 rounded-md border border-white/10 bg-black/40 px-1.5 py-0.5 font-mono text-white/80 focus:border-amber-500/50 focus:outline-none"
+                    />
+                    <span className="text-white/40">ثانیه</span>
+
+                    {/* میکرو ادجاست‌ها */}
+                    <div className="flex items-center gap-0.5">
+                      {[-0.5, -0.1].map((d) => (
+                        <button
+                          key={d}
+                          onClick={() => updateSeg(i, { start: Math.max(0, s.start + d), end: s.end + d })}
+                          className="rounded-md bg-white/5 px-1.5 py-0.5 font-mono text-white/60 hover:bg-white/10 hover:text-white"
+                          title={`${d}s`}
+                        >
+                          {d}s
+                        </button>
+                      ))}
+                      {([0.1, 0.5]).map((d) => (
+                        <button
+                          key={d}
+                          onClick={() => updateSeg(i, { start: s.start + d, end: s.end + d })}
+                          className="rounded-md bg-white/5 px-1.5 py-0.5 font-mono text-white/60 hover:bg-white/10 hover:text-white"
+                          title={`+${d}s`}
+                        >
+                          +{d}s
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="ms-auto flex items-center gap-1">
+                      <button
+                        onClick={() => seek(s.start)}
+                        className="rounded-md bg-amber-500/20 px-1.5 py-0.5 text-amber-300 hover:bg-amber-500/30"
+                        title="پرش به ابتدا"
+                      >
+                        ▶
+                      </button>
+                      <button
+                        onClick={() => { snapshot(); updateSeg(i, { start: time }, false) }}
+                        className="rounded-md bg-white/10 px-1.5 py-0.5 text-white/70 hover:bg-white/20"
+                        title="شروع از زمان فعلی"
+                      >
+                        S
+                      </button>
+                      <button
+                        onClick={() => { snapshot(); updateSeg(i, { end: time }, false) }}
+                        className="rounded-md bg-white/10 px-1.5 py-0.5 text-white/70 hover:bg-white/20"
+                        title="پایان در زمان فعلی"
+                      >
+                        E
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ─── Row 2: Actions ─── */}
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]" onClick={(e) => e.stopPropagation()}>
+                    <select value={s.fx || 'none'} onChange={(e) => updateSeg(i, { fx: e.target.value as Fx })} className="rounded-md border border-white/10 bg-black/40 p-0.5 text-white/60">
                       <option value="none">بدون افکت</option>
                       <option value="pop">پاپ</option>
                       <option value="zoomIn">زوم این</option>
@@ -323,17 +421,18 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                     </select>
                     <div className="flex items-center gap-1">
                       {HL_COLORS.map((c) => (
-                        <button key={c || 'none'} onClick={(e) => { e.stopPropagation(); updateSeg(i, { hl: c || undefined }) }} className={`h-3.5 w-3.5 rounded-full border ${(s.hl || '') === c ? 'border-white' : 'border-white/20'}`} style={{ backgroundColor: c || 'transparent' }} />
+                        <button key={c || 'none'} onClick={() => updateSeg(i, { hl: c || undefined })} className={`h-3.5 w-3.5 rounded-full border ${(s.hl || '') === c ? 'border-white' : 'border-white/20'}`} style={{ backgroundColor: c || 'transparent' }} />
                       ))}
                     </div>
-                    <div className="ms-auto flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
-                      <button title="تقسیم" onClick={(e) => { e.stopPropagation(); splitSeg(i) }} className="rounded-md bg-white/10 px-1.5 text-white/60 hover:text-white">✂️</button>
-                      <button title="ادغام" onClick={(e) => { e.stopPropagation(); mergeSeg(i) }} className="rounded-md bg-white/10 px-1.5 text-white/60 hover:text-white">🔗</button>
-                      <button title="حذف" onClick={(e) => { e.stopPropagation(); snapshot(); setSegments(segments.filter((_, idx) => idx !== i)) }} className="rounded-md bg-white/10 px-1.5 text-red-400 hover:text-red-300">✕</button>
-                    </div>
+                    <button title="تقسیم" onClick={() => splitSeg(i)} className="rounded-md bg-white/10 px-1.5 text-white/60 hover:text-white">✂️</button>
+                    <button title="ادغام با بعدی" onClick={() => mergeSeg(i)} className="rounded-md bg-white/10 px-1.5 text-white/60 hover:text-white">🔗</button>
+                    <button title="حذف" onClick={() => { snapshot(); setSegments(segments.filter((_, idx) => idx !== i)) }} className="mr-auto rounded-md bg-white/10 px-1.5 text-red-400 hover:text-red-300">✕</button>
                   </div>
+
+                  {/* ─── Row 3: Text ─── */}
                   <textarea
-                    value={s.text} rows={1}
+                    value={s.text}
+                    rows={1}
                     onClick={(e) => e.stopPropagation()}
                     onChange={(e) => updateSeg(i, { text: e.target.value })}
                     className="mt-1.5 w-full resize-y bg-transparent text-sm leading-6 text-white/90 outline-none placeholder:text-white/30"
