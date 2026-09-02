@@ -1,76 +1,76 @@
-import Link from 'next/link'
 import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { type Locale } from '@/lib/i18n'
-import { getCategories, getPrompts, L } from '@/lib/data'
-import PromptCard from '@/components/prompt-card'
+import { getCategories, L } from '@/lib/data'
+import { prisma } from '@/lib/db'
+import ExploreClient from '@/components/explore/ExploreClient'
 import CategoryIcon from '@/components/category-icon'
 
 export const dynamic = 'force-dynamic'
+const PAGE_SIZE = 20
 
 export default async function CategoryDetailPage({
   params,
   searchParams,
 }: {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ sub?: string }>
+  searchParams: Promise<Record<string, string | undefined>>
 }) {
   const { slug } = await params
-  const { sub } = await searchParams
-  const cookieStore = await cookies()
-  const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
+  const sp = await searchParams
+  const locale: Locale = (await cookies()).get('locale')?.value === 'en' ? 'en' : 'fa'
 
   const categories = await getCategories()
   const cat = categories.find((c) => c.slug === slug)
   if (!cat) notFound()
 
-  const list = await getPrompts({ categorySlug: slug, subSlug: sub })
+  const where: any = { status: 'PUBLISHED', category: { slug } }
+  if (sp.sub) where.sub = { slug: sp.sub }
+  if (sp.model) where.model = sp.model
+  const tags = (sp.tags ?? '').split(',').filter(Boolean)
+  if (tags.length) where.tagsFa = { hasSome: tags }
+  if (sp.q) {
+    where.OR = [
+      { titleFa: { contains: sp.q, mode: 'insensitive' } },
+      { titleEn: { contains: sp.q, mode: 'insensitive' } },
+    ]
+  }
+
+  const sort = sp.sort === 'likes' ? 'likes' : sp.sort === 'views' ? 'views' : 'newest'
+  const orderBy = sort === 'likes' ? { likes: 'desc' } : sort === 'views' ? { views: 'desc' } : { createdAt: 'desc' }
+
+  const [rows, total, models, tagRows] = await Promise.all([
+    prisma.prompt.findMany({ where, orderBy, take: PAGE_SIZE, include: { sub: true } }),
+    prisma.prompt.count({ where }),
+    prisma.prompt.findMany({ where: { status: 'PUBLISHED', category: { slug } }, select: { model: true }, distinct: ['model'] }),
+    prisma.prompt.findMany({ where: { status: 'PUBLISHED', category: { slug } }, select: { tagsFa: true } }),
+  ])
+
+  const freq: Record<string, number> = {}
+  for (const r of tagRows) for (const t of r.tagsFa) freq[t] = (freq[t] ?? 0) + 1
+  const tagList = Object.entries(freq).sort((a, b) => b[1] - a[1]).map(([tag, count]) => ({ tag, count }))
 
   return (
-    <section className="container-app py-16">
-      <div className="flex items-center gap-5">
-        <div className="glow-gold rounded-2xl bg-[#F2EAD8] p-4 text-[#171512]">
-          <CategoryIcon name={cat.icon} />
+    <>
+      <section className="container-app pt-10">
+        <div className="flex items-center gap-5">
+          <div className="glow-gold rounded-2xl bg-[#F2EAD8] p-4 text-[#171512]">
+            <CategoryIcon name={cat.icon} />
+          </div>
+          <div>
+            <h1 className="font-display text-3xl font-extrabold tracking-tight">{L(locale, cat.nameFa, cat.nameEn)}</h1>
+            <p className="mt-2 text-sm text-ink-muted">{L(locale, cat.descFa, cat.descEn)}</p>
+          </div>
         </div>
-        <div>
-          <h1 className="font-display text-3xl font-extrabold tracking-tight">
-            {L(locale, cat.nameFa, cat.nameEn)}
-          </h1>
-          <p className="mt-2 text-sm text-ink-muted">
-            {L(locale, cat.descFa, cat.descEn)}
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-8 flex flex-wrap gap-2">
-        <Link
-          href={'/categories/' + slug}
-          className={'rounded-full border px-4 py-1.5 text-xs ' + (!sub ? 'border-gold bg-gold/15 text-gold-bright' : 'border-line bg-elevated text-ink-muted')}
-        >
-          {L(locale, 'همه', 'All')}
-        </Link>
-        {cat.subs.map((s) => (
-          <Link
-            key={s.id}
-            href={'/categories/' + slug + '?sub=' + s.slug}
-            className={'rounded-full border px-4 py-1.5 text-xs ' + (sub === s.slug ? 'border-gold bg-gold/15 text-gold-bright' : 'border-line bg-elevated text-ink-muted')}
-          >
-            {L(locale, s.fa, s.en)}
-          </Link>
-        ))}
-      </div>
-
-      {list.length > 0 ? (
-        <div className="mt-10 grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-5">
-          {list.map((item) => (
-            <PromptCard key={item.id} item={item} locale={locale} />
-          ))}
-        </div>
-      ) : (
-        <div className="card mt-10 p-10 text-center text-sm text-ink-muted">
-          {L(locale, 'به‌زودی پرامپت‌های این بخش اضافه می‌شود.', 'Prompts coming soon.')}
-        </div>
-      )}
-    </section>
+      </section>
+      <ExploreClient
+        initial={rows}
+        initialTotal={total}
+        locale={locale}
+        basePath={process.env.NEXT_PUBLIC_APP_URL ?? ''}
+        initialActive={{ q: sp.q ?? '', sub: sp.sub ?? '', model: sp.model ?? '', tags, sort }}
+        filters={{ subs: cat.subs, models: models.map((m) => m.model), tags: tagList }}
+      />
+    </>
   )
 }
