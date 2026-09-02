@@ -150,3 +150,62 @@ export async function prepareWavChunks(pcm: unknown, sec = 30): Promise<WavPart[
   }
   return parts
 }
+
+/**
+ * تشخیص بازه‌های گفتار از روی انرژی صدا
+ * (برای هم‌ترازی زیرنویس با زمان واقعی صحبت)
+ */
+export async function getSpeechRegions(pcm: unknown): Promise<{ start: number; end: number }[]> {
+  const { f32, sampleRate } = toMonoFloat32(pcm)
+  const sr = sampleRate
+  const frameSec = 0.25
+  const frame = Math.floor(sr * frameSec)
+
+  // انرژی هر فریم
+  const energies: number[] = []
+  for (let o = 0; o < f32.length; o += frame) {
+    let sum = 0
+    let n = 0
+    for (let i = o; i < Math.min(o + frame, f32.length); i += 4) {
+      sum += Math.abs(f32[i])
+      n++
+    }
+    energies.push(n ? sum / n : 0)
+  }
+
+  // آستانه تطبیقی
+  const sorted = [...energies].sort((a, b) => a - b)
+  const p75 = sorted[Math.floor(sorted.length * 0.75)] || 0
+  const thr = Math.max(0.008, p75 * 0.35)
+
+  // ساخت بازه‌ها با hang برای پر کردن مکث‌های ریز
+  const raw: { start: number; end: number }[] = []
+  let cur: { start: number; end: number } | null = null
+  let hang = 0
+  energies.forEach((e, i) => {
+    const t = i * frameSec
+    if (e > thr) {
+      if (!cur) cur = { start: t, end: t + frameSec }
+      else cur.end = t + frameSec
+      hang = 3
+    } else if (cur) {
+      cur.end = t + frameSec
+      hang--
+      if (hang <= 0) {
+        raw.push(cur)
+        cur = null
+      }
+    }
+  })
+  if (cur) raw.push(cur)
+
+  // ادغام فاصله‌های کوچک + حذف نویز
+  const merged: { start: number; end: number }[] = []
+  for (const r of raw) {
+    const last = merged[merged.length - 1]
+    if (last && r.start - last.end < 0.4) last.end = r.end
+    else if (r.end - r.start > 0.3) merged.push(r)
+  }
+
+  return merged.length ? merged : [{ start: 0, end: f32.length / sr }]
+}
