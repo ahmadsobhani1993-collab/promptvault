@@ -1,355 +1,358 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import type { TranscriptSegment } from '@/lib/live-transcribe'
-import { toSrt, toVtt, toTxt, download } from '@/lib/subtitle'
-
-export const FONTS = [
-  { id: 'Vazirmatn', label: 'وزیرمتن' },
-  { id: 'Lalezar', label: 'لاله‌زار' },
-  { id: 'Markazi Text', label: 'مرکزی' },
-  { id: 'Noto Nastaliq Urdu', label: 'نستعلیق' },
-  { id: 'Noto Naskh Arabic', label: 'نسخ' },
-  { id: 'Noto Kufi Arabic', label: 'کوفی' },
-  { id: 'Cairo', label: 'قاهره' },
-  { id: 'Tajawal', label: 'تجوال' },
-  { id: 'Almarai', label: 'مرعی' },
-  { id: 'Readex Pro', label: 'ریدکس' },
-  { id: 'IBM Plex Sans Arabic', label: 'پلکس' },
-  { id: 'Amiri', label: 'امیری' },
-  { id: 'Reem Kufi', label: 'ریم کوفی' },
-  { id: 'Aref Ruqaa', label: 'رقعه' },
-  { id: 'Gulzar', label: 'گلزار' },
-  { id: 'Jomhuria', label: 'جمهوری' },
-]
-
-export interface SubStyle {
-  fontId: string
-  size: number // % ارتفاع ویدیو
-  color: string
-  bgOpacity: number // 0..1
-  outline: boolean
-  pos: 'bottom' | 'top'
-}
-
-const DEFAULT_STYLE: SubStyle = {
-  fontId: 'Vazirmatn',
-  size: 6,
-  color: '#ffffff',
-  bgOpacity: 0.55,
-  outline: true,
-  pos: 'bottom',
-}
-
-async function loadFont(id: string) {
-  const lid = 'gf-' + id.replace(/\s+/g, '-')
-  if (!document.getElementById(lid)) {
-    const l = document.createElement('link')
-    l.id = lid
-    l.rel = 'stylesheet'
-    l.href = `https://fonts.googleapis.com/css2?family=${id.replace(/ /g, '+')}:wght@400;700&display=swap`
-    document.head.appendChild(l)
-  }
-  try {
-    await (document as any).fonts?.load(`700 40px "${id}"`)
-  } catch {}
-}
-
-function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
-  const words = text.split(/\s+/)
-  const lines: string[] = []
-  let line = ''
-  for (const w of words) {
-    const test = line ? line + ' ' + w : w
-    if (ctx.measureText(test).width > maxWidth && line) {
-      lines.push(line)
-      line = w
-    } else line = test
-  }
-  if (line) lines.push(line)
-  return lines
-}
-
-const MIME_CANDIDATES = [
-  'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-  'video/mp4',
-  'video/webm;codecs=vp9,opus',
-  'video/webm;codecs=vp8,opus',
-  'video/webm',
-]
+import {
+  FONTS, PRESETS, HL_COLORS, DEFAULT_STYLE,
+  type Seg, type Style, type Fx, mkWords, loadFont,
+} from '@/lib/subtitle-studio'
 
 type Props = {
   videoUrl: string
-  baseName: string
-  segments: TranscriptSegment[]
-  onChange: (segs: TranscriptSegment[]) => void
+  segments: Seg[]
+  setSegments: (s: Seg[]) => void
 }
 
-export default function SubtitleStudio({ videoUrl, baseName, segments, onChange }: Props) {
+export default function SubtitleStudio({ videoUrl, segments, setSegments }: Props) {
+  const [style, setStyle] = useState<Style>(DEFAULT_STYLE)
+  const [customFonts, setCustomFonts] = useState<{ id: string; label: string }[]>([])
   const [time, setTime] = useState(0)
-  const [style, setStyle] = useState<SubStyle>(DEFAULT_STYLE)
-  const [exporting, setExporting] = useState(false)
-  const [expProg, setExpProg] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [vidW, setVidW] = useState(0)
+  const [vidH, setVidH] = useState(0)
+  const [selected, setSelected] = useState(-1)
+  const [zoom, setZoom] = useState(40)
+  const [showSafe, setShowSafe] = useState(false)
+  const [showAdv, setShowAdv] = useState(false)
+  const [findQ, setFindQ] = useState('')
+  const [replQ, setReplQ] = useState('')
 
-  const styleRef = useRef(style)
-  styleRef.current = style
-  const segRef = useRef(segments)
-  segRef.current = segments
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const stageRef = useRef<HTMLDivElement>(null)
+  const histRef = useRef<string[]>([])
+  const futRef = useRef<string[]>([])
 
-  useEffect(() => {
-    loadFont(style.fontId)
-  }, [style.fontId])
-
+  useEffect(() => { loadFont(style.fontId) }, [style.fontId])
   const current = segments.find((s) => time >= s.start && time <= s.end)
 
-  const updateSeg = (i: number, patch: Partial<TranscriptSegment>) =>
-    onChange(segments.map((s, idx) => (idx === i ? { ...s, ...patch } : s)))
+  const snapshot = () => {
+    histRef.current.push(JSON.stringify({ segments, style }))
+    if (histRef.current.length > 60) histRef.current.shift()
+    futRef.current = []
+  }
+  const undo = () => {
+    const h = histRef.current.pop()
+    if (!h) return
+    futRef.current.push(JSON.stringify({ segments, style }))
+    const s = JSON.parse(h)
+    setSegments(s.segments); setStyle(s.style)
+  }
+  const redo = () => {
+    const h = futRef.current.pop()
+    if (!h) return
+    histRef.current.push(JSON.stringify({ segments, style }))
+    const s = JSON.parse(h)
+    setSegments(s.segments); setStyle(s.style)
+  }
 
-  const removeSeg = (i: number) => onChange(segments.filter((_, idx) => idx !== i))
-
-  // ─── خروجی ویدیو با زیرنویس (کیفیت اصلی، کاملاً client-side) ───
-  const exportVideo = async () => {
-    if (exporting) return
-    setExporting(true)
-    setExpProg(0)
-    try {
-      const video = document.createElement('video')
-      video.src = videoUrl
-      video.playsInline = true
-      await new Promise((res, rej) => {
-        video.onloadedmetadata = () => res(null)
-        video.onerror = () => rej(new Error('video load failed'))
-      })
-
-      const W = video.videoWidth
-      const H = video.videoHeight
-      const canvas = document.createElement('canvas')
-      canvas.width = W
-      canvas.height = H
-      const ctx = canvas.getContext('2d')!
-
-      // صدا بدون پخش شنیداری
-      const ac = new AudioContext()
-      const srcNode = ac.createMediaElementSource(video)
-      const dest = ac.createMediaStreamDestination()
-      srcNode.connect(dest)
-
-      const st = styleRef.current
-      await loadFont(st.fontId)
-
-      const stream = canvas.captureStream(30)
-      dest.stream.getAudioTracks().forEach((t) => stream.addTrack(t))
-
-      const mime = MIME_CANDIDATES.find((m) => MediaRecorder.isTypeSupported(m)) || ''
-      const rec = new MediaRecorder(stream, {
-        mimeType: mime || undefined,
-        videoBitsPerSecond: Math.max(8_000_000, W * H * 10),
-      })
-      const parts: Blob[] = []
-      rec.ondataavailable = (e) => e.data.size && parts.push(e.data)
-      const stopped = new Promise((res) => (rec.onstop = () => res(null)))
-      rec.start(1000)
-
-      const drawFrame = () => {
-        ctx.drawImage(video, 0, 0, W, H)
-        const seg = segRef.current.find((s) => video.currentTime >= s.start && video.currentTime <= s.end)
-        if (seg) {
-          const s2 = styleRef.current
-          const px = Math.round((s2.size / 100) * H)
-          ctx.font = `700 ${px}px "${s2.fontId}"`
-          ctx.textAlign = 'center'
-          ctx.textBaseline = 'middle'
-          const lines = wrapText(ctx, seg.text, W * 0.9)
-          const lh = px * 1.5
-          const totalH = lines.length * lh
-          const y0 = s2.pos === 'bottom' ? H - H * 0.05 - totalH : H * 0.05
-          lines.forEach((ln, i) => {
-            const y = y0 + i * lh + lh / 2
-            if (s2.bgOpacity > 0) {
-              const w = ctx.measureText(ln).width + px
-              ctx.fillStyle = `rgba(0,0,0,${s2.bgOpacity})`
-              ctx.fillRect(W / 2 - w / 2, y - lh / 2, w, lh)
-            }
-            if (s2.outline) {
-              ctx.lineWidth = Math.max(2, px * 0.12)
-              ctx.strokeStyle = '#000'
-              ctx.lineJoin = 'round'
-              ctx.strokeText(ln, W / 2, y)
-            }
-            ctx.fillStyle = s2.color
-            ctx.fillText(ln, W / 2, y)
-          })
-        }
-      }
-
-      let raf = 0
-      const loop = () => {
-        drawFrame()
-        setExpProg(video.duration ? video.currentTime / video.duration : 0)
-        if (!video.ended) raf = requestAnimationFrame(loop)
-      }
-
-      await video.play()
-      raf = requestAnimationFrame(loop)
-      await new Promise((res) => (video.onended = () => res(null)))
-      cancelAnimationFrame(raf)
-      rec.stop()
-      await stopped
-      ac.close()
-
-      const blob = new Blob(parts, { type: mime || 'video/webm' })
-      const ext = (mime || '').includes('mp4') ? 'mp4' : 'webm'
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = `${baseName}.subtitled.${ext}`
-      a.click()
-      setTimeout(() => URL.revokeObjectURL(a.href), 5000)
-    } catch (e: any) {
-      console.error('[export]', e)
-      alert('❌ خروجی ویدیو ناموفق: ' + (e?.message || e))
-    } finally {
-      setExporting(false)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      const v = videoRef.current
+      if (!v) return
+      if (e.code === 'Space') { e.preventDefault(); v.paused ? v.play() : v.pause() }
+      if (e.code === 'ArrowRight') v.currentTime = Math.min(v.duration, v.currentTime + 1)
+      if (e.code === 'ArrowLeft') v.currentTime = Math.max(0, v.currentTime - 1)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo() }
     }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  const seek = (t: number) => { if (videoRef.current) videoRef.current.currentTime = t }
+
+  const onSubPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const stage = stageRef.current
+    if (!stage) return
+    const rect = stage.getBoundingClientRect()
+    const move = (ev: PointerEvent) => {
+      const x = Math.min(95, Math.max(5, ((ev.clientX - rect.left) / rect.width) * 100))
+      const y = Math.min(95, Math.max(5, ((ev.clientY - rect.top) / rect.height) * 100))
+      setStyle((s) => ({ ...s, x, y }))
+    }
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
+  const addCustomFont = async (f: File) => {
+    try {
+      const name = f.name.replace(/\.[^.]+$/, '')
+      const url = URL.createObjectURL(f)
+      const face = new FontFace(name, `url(${url})`)
+      await face.load()
+      ;(document as any).fonts.add(face)
+      setCustomFonts((p) => [...p.filter((x) => x.id !== name), { id: name, label: `${name} (دلخواه)` }])
+      setStyle((s) => ({ ...s, fontId: name }))
+    } catch { alert('❌ فونت نامعتبر') }
+  }
+
+  const updateSeg = (i: number, patch: Partial<Seg>, hist = true) => {
+    if (hist) snapshot()
+    setSegments(segments.map((s, idx) => {
+      if (idx !== i) return s
+      const next = { ...s, ...patch }
+      if (patch.text !== undefined) next.words = mkWords(next.text, next.start, next.end)
+      return next
+    }))
+  }
+  const splitSeg = (i: number) => {
+    const s = segments[i]
+    const toks = s.text.split(/\s+/)
+    if (toks.length < 2) return
+    snapshot()
+    const half = Math.ceil(toks.length / 2)
+    const mid = s.start + (s.end - s.start) * (half / toks.length)
+    const a: Seg = { ...s, text: toks.slice(0, half).join(' '), start: s.start, end: mid, words: [] }
+    const b: Seg = { ...s, text: toks.slice(half).join(' '), start: mid, end: s.end, words: [] }
+    a.words = mkWords(a.text, a.start, a.end); b.words = mkWords(b.text, b.start, b.end)
+    setSegments([...segments.slice(0, i), a, b, ...segments.slice(i + 1)])
+  }
+  const mergeSeg = (i: number) => {
+    if (i >= segments.length - 1) return
+    snapshot()
+    const a = segments[i], b = segments[i + 1]
+    const m: Seg = { ...a, text: a.text + ' ' + b.text, end: b.end, words: [] }
+    m.words = mkWords(m.text, m.start, m.end)
+    setSegments([...segments.slice(0, i), m, ...segments.slice(i + 2)])
+  }
+  const findReplace = () => {
+    if (!findQ) return
+    snapshot()
+    setSegments(segments.map((s) => {
+      const t = s.text.split(findQ).join(replQ)
+      return { ...s, text: t, words: mkWords(t, s.start, s.end) }
+    }))
+  }
+  const applyPreset = (p: (typeof PRESETS)[number]) => {
+    snapshot()
+    setStyle((s) => ({ ...s, fontId: p.fontId, size: p.size, color: p.color, bgOpacity: p.bgOpacity, outline: p.outline, karaoke: p.karaoke, hlColor: p.hlColor }))
+  }
+  const cps = (s: Seg) => s.text.length / Math.max(0.5, s.end - s.start)
+
+  const fxAnim = (seg: Seg) => {
+    const dur = Math.max(0.3, seg.end - seg.start)
+    if (seg.fx === 'pop') return 'subPop 0.35s ease-out both'
+    if (seg.fx === 'zoomIn') return `subZoomIn ${dur}s linear both`
+    if (seg.fx === 'zoomOut') return `subZoomOut ${dur}s linear both`
+    if (seg.fx === 'slide') return 'subSlide 0.4s ease-out both'
+    return undefined
   }
 
   return (
-    <div className="card space-y-4 p-4">
-      <strong className="text-sm">🎬 استودیو زیرنویس</strong>
+    <>
+      <style>{`
+        @keyframes subPop { 0% { transform: scale(0.5); opacity: 0 } 60% { transform: scale(1.1) } 100% { transform: scale(1); opacity: 1 } }
+        @keyframes subZoomIn { from { transform: scale(0.8) } to { transform: scale(1.2) } }
+        @keyframes subZoomOut { from { transform: scale(1.2) } to { transform: scale(0.8) } }
+        @keyframes subSlide { from { transform: translateX(-40px); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
+      `}</style>
 
-      {/* پیش‌نمایش 16:9 */}
-      <div className="relative w-full overflow-hidden rounded-xl bg-black aspect-video">
+      {/* نوار ابزار بالا */}
+      <div className="flex items-center gap-2 text-xs">
+        <button onClick={undo} className="rounded bg-gray-700 px-2 py-1 hover:bg-gray-600">↩ Undo</button>
+        <button onClick={redo} className="rounded bg-gray-700 px-2 py-1 hover:bg-gray-600">↪ Redo</button>
+        <button onClick={() => setShowSafe(!showSafe)} className={`rounded px-2 py-1 ${showSafe ? 'bg-blue-600 text-white' : 'bg-gray-700'}`}>Safe Zone</button>
+        {vidW > 0 && <span className="rounded bg-gray-800 px-2 py-1 text-ink-muted">خروجی: {vidW}×{vidH} (اصلی)</span>}
+      </div>
+
+      {/* پیش‌نمایش */}
+      <div ref={stageRef} className="relative w-full overflow-hidden rounded-xl bg-black aspect-video select-none" style={{ containerType: 'inline-size' }}>
         <video
-          src={videoUrl}
-          controls
-          playsInline
+          ref={videoRef} src={videoUrl} controls playsInline
           onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
+          onLoadedMetadata={(e) => { setDuration(e.currentTarget.duration); setVidW(e.currentTarget.videoWidth); setVidH(e.currentTarget.videoHeight) }}
           className="h-full w-full object-contain"
         />
+        {showSafe && (
+          <>
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-[12%] bg-red-500/20 border-b border-red-500/50" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[22%] bg-red-500/20 border-t border-red-500/50" />
+          </>
+        )}
         {current && (
           <div
-            className="pointer-events-none absolute inset-x-0 flex justify-center px-3"
-            style={style.pos === 'bottom' ? { bottom: '5%' } : { top: '5%' }}
+            onPointerDown={onSubPointerDown}
+            className="absolute cursor-move px-2"
+            style={style.x != null
+              ? { left: `${style.x}%`, top: `${style.y}%`, transform: 'translate(-50%,-50%)', maxWidth: '90%' }
+              : { insetX: 0, bottom: '6%', left: 0, right: 0, display: 'flex', justifyContent: 'center' }}
           >
             <span
-              dir="auto"
-              className="text-center"
+              key={current.start + current.text} dir="rtl" className="text-center"
               style={{
-                fontFamily: `"${style.fontId}"`,
-                fontWeight: 700,
+                fontFamily: `"${style.fontId}"`, fontWeight: 700,
                 fontSize: `clamp(12px, ${style.size}cqi, 60px)`,
                 color: style.color,
-                backgroundColor: style.bgOpacity > 0 ? `rgba(0,0,0,${style.bgOpacity})` : 'transparent',
-                padding: style.bgOpacity > 0 ? '0.2em 0.6em' : 0,
-                borderRadius: '0.5em',
+                backgroundColor: current.hl || (style.bgOpacity > 0 ? `rgba(0,0,0,${style.bgOpacity})` : 'transparent'),
+                padding: '0.2em 0.6em', borderRadius: '0.5em',
                 textShadow: style.outline ? '0 2px 6px rgba(0,0,0,0.9)' : 'none',
+                animation: fxAnim(current),
               }}
             >
-              {current.text}
+              {style.karaoke && current.words?.length ? (
+                current.words.map((wd, i) => {
+                  const active = time >= wd.start && time <= wd.end
+                  return (
+                    <span key={i} style={{ display: 'inline-block', color: active ? style.hlColor : style.color, transform: active ? 'scale(1.15)' : undefined, fontWeight: active ? 800 : 700, transition: 'transform .12s, color .12s' }}>
+                      {wd.w}{' '}
+                    </span>
+                  )
+                })
+              ) : current.text}
             </span>
           </div>
         )}
       </div>
 
-      {/* کنترل استایل */}
-      <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3 lg:grid-cols-6">
-        <div>
-          <div className="mb-1 text-ink-muted">فونت</div>
-          <select
-            value={style.fontId}
-            onChange={(e) => setStyle({ ...style, fontId: e.target.value })}
-            className="w-full rounded bg-gray-700 p-1.5"
-          >
-            {FONTS.map((f) => (
-              <option key={f.id} value={f.id}>{f.label}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <div className="mb-1 text-ink-muted">اندازه: {style.size}٪</div>
-          <input type="range" min={3} max={12} value={style.size} onChange={(e) => setStyle({ ...style, size: Number(e.target.value) })} className="w-full" />
-        </div>
-        <div>
-          <div className="mb-1 text-ink-muted">رنگ متن</div>
-          <div className="flex items-center gap-1">
-            {['#ffffff', '#ffe14d', '#7CFC00', '#ff5555'].map((c) => (
-              <button key={c} onClick={() => setStyle({ ...style, color: c })} className={`h-6 w-6 rounded border-2 ${style.color === c ? 'border-blue-500' : 'border-gray-600'}`} style={{ backgroundColor: c }} />
-            ))}
-            <input type="color" value={style.color} onChange={(e) => setStyle({ ...style, color: e.target.value })} className="h-6 w-6 cursor-pointer rounded border-0 bg-transparent p-0" />
+      {/* Presets + font */}
+      <div className="flex flex-wrap items-center gap-2">
+        {PRESETS.map((p) => (
+          <button key={p.id} onClick={() => applyPreset(p)} className="rounded-lg bg-gray-800 px-3 py-1.5 text-xs hover:bg-gray-700">{p.label}</button>
+        ))}
+        <label className="cursor-pointer rounded-lg bg-purple-600 px-3 py-1.5 text-xs text-white hover:bg-purple-700">
+          ＋ فونت دلخواه
+          <input type="file" accept=".ttf,.otf,.woff,.woff2" className="hidden" onChange={(e) => e.target.files?.[0] && addCustomFont(e.target.files[0])} />
+        </label>
+        <button onClick={() => setShowAdv(!showAdv)} className={`rounded-lg px-3 py-1.5 text-xs ${showAdv ? 'bg-blue-600 text-white' : 'bg-gray-800'}`}>⚙ تنظیمات</button>
+      </div>
+
+      {showAdv && (
+        <div className="card grid grid-cols-2 gap-3 p-3 text-xs sm:grid-cols-4 lg:grid-cols-7">
+          <div>
+            <div className="mb-1 text-ink-muted">فونت</div>
+            <select value={style.fontId} onChange={(e) => setStyle({ ...style, fontId: e.target.value })} className="w-full rounded bg-gray-700 p-1.5">
+              {customFonts.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+              {FONTS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+            </select>
           </div>
-        </div>
-        <div>
-          <div className="mb-1 text-ink-muted">پس‌زمینه: {Math.round(style.bgOpacity * 100)}٪</div>
-          <input type="range" min={0} max={100} value={Math.round(style.bgOpacity * 100)} onChange={(e) => setStyle({ ...style, bgOpacity: Number(e.target.value) / 100 })} className="w-full" />
-        </div>
-        <div>
-          <div className="mb-1 text-ink-muted">حاشیه (outline)</div>
-          <button onClick={() => setStyle({ ...style, outline: !style.outline })} className={`rounded px-3 py-1 ${style.outline ? 'bg-blue-600 text-white' : 'bg-gray-700'}`}>
-            {style.outline ? 'روشن' : 'خاموش'}
-          </button>
-        </div>
-        <div>
-          <div className="mb-1 text-ink-muted">مکان</div>
-          <button onClick={() => setStyle({ ...style, pos: style.pos === 'bottom' ? 'top' : 'bottom' })} className="rounded bg-gray-700 px-3 py-1 hover:bg-gray-600">
-            {style.pos === 'bottom' ? 'پایین' : 'بالا'}
-          </button>
-        </div>
-      </div>
-
-      {/* خروجی‌ها */}
-      <div className="flex flex-wrap items-center gap-2 border-t border-gray-700 pt-3">
-        <button onClick={() => download(`${baseName}.srt`, toSrt(segments), 'text/plain')} className="rounded bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-700">⬇ SRT</button>
-        <button onClick={() => download(`${baseName}.vtt`, toVtt(segments), 'text/vtt')} className="rounded bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-700">⬇ VTT</button>
-        <button onClick={() => download(`${baseName}.txt`, toTxt(segments))} className="rounded bg-gray-700 px-3 py-1.5 text-xs hover:bg-gray-600">⬇ TXT</button>
-        <button
-          onClick={exportVideo}
-          disabled={exporting}
-          className="rounded bg-green-600 px-3 py-1.5 text-xs text-white hover:bg-green-700 disabled:opacity-50"
-        >
-          {exporting ? `⏳ رندر ${Math.round(expProg * 100)}٪` : '🎥 خروجی ویدیو با زیرنویس'}
-        </button>
-        <span className="text-[11px] text-ink-muted">رندر هم‌زمان = کیفیت اصلی، بدون سرور</span>
-      </div>
-
-      {exporting && (
-        <div className="h-2 w-full overflow-hidden rounded bg-gray-700">
-          <div className="h-full bg-green-600 transition-all" style={{ width: `${Math.round(expProg * 100)}%` }} />
+          <div>
+            <div className="mb-1 text-ink-muted">اندازه: {style.size}٪</div>
+            <input type="range" min={3} max={12} value={style.size} onChange={(e) => setStyle({ ...style, size: Number(e.target.value) })} className="w-full" />
+          </div>
+          <div>
+            <div className="mb-1 text-ink-muted">رنگ متن</div>
+            <input type="color" value={style.color} onChange={(e) => setStyle({ ...style, color: e.target.value })} className="h-7 w-full cursor-pointer rounded border-0 bg-transparent p-0" />
+          </div>
+          <div>
+            <div className="mb-1 text-ink-muted">رنگ کاراوکه</div>
+            <input type="color" value={style.hlColor} onChange={(e) => setStyle({ ...style, hlColor: e.target.value })} className="h-7 w-full cursor-pointer rounded border-0 bg-transparent p-0" />
+          </div>
+          <div>
+            <div className="mb-1 text-ink-muted">پس‌زمینه: {Math.round(style.bgOpacity * 100)}٪</div>
+            <input type="range" min={0} max={100} value={Math.round(style.bgOpacity * 100)} onChange={(e) => setStyle({ ...style, bgOpacity: Number(e.target.value) / 100 })} className="w-full" />
+          </div>
+          <div>
+            <div className="mb-1 text-ink-muted">حاشیه</div>
+            <button onClick={() => setStyle({ ...style, outline: !style.outline })} className={`rounded px-3 py-1 ${style.outline ? 'bg-blue-600 text-white' : 'bg-gray-700'}`}>{style.outline ? 'روشن' : 'خاموش'}</button>
+          </div>
+          <div>
+            <div className="mb-1 text-ink-muted">مکان</div>
+            <button onClick={() => setStyle({ ...style, x: null, y: null })} className="rounded bg-gray-700 px-3 py-1">بازگشت به پایین</button>
+          </div>
         </div>
       )}
 
-      {/* ادیتور سگمنت‌ها با زمان قابل ویرایش */}
-      <div className="max-h-[28rem] space-y-2 overflow-y-auto">
-        {segments.map((s, i) => (
-          <div key={i} className="rounded-lg bg-gray-800/50 p-2">
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                step={0.1}
-                min={0}
-                value={Number(s.start.toFixed(1))}
-                onChange={(e) => updateSeg(i, { start: Number(e.target.value) })}
-                className="w-20 rounded bg-gray-700 p-1 font-mono text-[11px]"
-              />
-              <span className="text-[11px] text-ink-muted">تا</span>
-              <input
-                type="number"
-                step={0.1}
-                min={0}
-                value={Number(s.end.toFixed(1))}
-                onChange={(e) => updateSeg(i, { end: Number(e.target.value) })}
-                className="w-20 rounded bg-gray-700 p-1 font-mono text-[11px]"
-              />
-              <span className="text-[11px] text-ink-muted">ثانیه</span>
-              <button onClick={() => removeSeg(i)} className="mr-auto text-red-400 hover:text-red-300" title="حذف">✕</button>
-            </div>
-            <textarea
-              value={s.text}
-              onChange={(e) => updateSeg(i, { text: e.target.value })}
-              rows={1}
-              className="mt-1 w-full resize-y bg-transparent text-sm outline-none"
-            />
+      {/* تایم‌لاین */}
+      {duration > 0 && (
+        <div className="card space-y-2 p-3">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-ink-muted">تایم‌لاین</span>
+            <input type="range" min={10} max={120} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} className="w-32" />
+            <span className="font-mono text-ink-muted">{time.toFixed(1)}s / {duration.toFixed(1)}s</span>
           </div>
-        ))}
+          <div className="overflow-x-auto rounded-lg bg-gray-900 p-2">
+            <div
+              className="relative h-16"
+              style={{ width: Math.max(300, duration * zoom) }}
+              onPointerDown={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect()
+                seek(Math.max(0, Math.min(duration, (e.clientX - rect.left) / zoom)))
+              }}
+            >
+              {segments.map((s, i) => (
+                <div key={i} onPointerDown={(e) => { e.stopPropagation(); setSelected(i); seek(s.start) }}
+                  className={`absolute top-2 h-8 cursor-pointer rounded border text-center text-[10px] leading-8 ${i === selected ? 'border-blue-400 bg-blue-600/60' : 'border-gray-600 bg-gray-700/70'} ${cps(s) > 22 ? '!border-yellow-500' : ''}`}
+                  style={{ left: s.start * zoom, width: Math.max(14, (s.end - s.start) * zoom) }} title={s.text}>
+                  <div
+                    onPointerDown={(e) => {
+                      e.stopPropagation()
+                      const startX = e.clientX, origStart = s.start
+                      const move = (ev: PointerEvent) => updateSeg(i, { start: Math.max(0, origStart + (ev.clientX - startX) / zoom) }, false)
+                      const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
+                      snapshot()
+                      window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
+                    }}
+                    className="absolute right-0 top-0 h-full w-2 cursor-ew-resize bg-white/30" />
+                  <div
+                    onPointerDown={(e) => {
+                      e.stopPropagation()
+                      const startX = e.clientX, origEnd = s.end
+                      const move = (ev: PointerEvent) => updateSeg(i, { end: Math.max(s.start + 0.3, origEnd + (ev.clientX - startX) / zoom) }, false)
+                      const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
+                      snapshot()
+                      window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
+                    }}
+                    className="absolute left-0 top-0 h-full w-2 cursor-ew-resize bg-white/30" />
+                </div>
+              ))}
+              <div className="pointer-events-none absolute top-0 h-full w-0.5 bg-red-500" style={{ left: time * zoom }} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transcript */}
+      <div className="card space-y-2 p-3">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <strong>Transcript ({segments.length})</strong>
+          <input placeholder="جستجو" value={findQ} onChange={(e) => setFindQ(e.target.value)} className="rounded bg-gray-700 px-2 py-1" />
+          <input placeholder="جایگزینی" value={replQ} onChange={(e) => setReplQ(e.target.value)} className="rounded bg-gray-700 px-2 py-1" />
+          <button onClick={findReplace} className="rounded bg-blue-600 px-2 py-1 text-white">اعمال</button>
+        </div>
+        <div className="max-h-[24rem] space-y-2 overflow-y-auto">
+          {segments.map((s, i) => (
+            <div key={i} onClick={() => { setSelected(i); seek(s.start) }}
+              className={`cursor-pointer rounded-lg p-2 ${time >= s.start && time <= s.end ? 'bg-blue-600/20 ring-1 ring-blue-500' : 'bg-gray-800/50 hover:bg-gray-800'}`}>
+              <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                <span className="font-mono text-ink-muted">{s.start.toFixed(1)}–{s.end.toFixed(1)}</span>
+                {cps(s) > 22 && <span className="text-yellow-400" title="سرعت خواندن زیاد">⚠️ تند</span>}
+                <select value={s.fx || 'none'} onChange={(e) => updateSeg(i, { fx: e.target.value as Fx })} className="rounded bg-gray-700 p-0.5">
+                  <option value="none">بدون افکت</option>
+                  <option value="pop">پاپ</option>
+                  <option value="zoomIn">زوم این</option>
+                  <option value="zoomOut">زوم اوت</option>
+                  <option value="slide">اسلاید</option>
+                </select>
+                <div className="flex items-center gap-1">
+                  {HL_COLORS.map((c) => (
+                    <button key={c || 'none'} onClick={() => updateSeg(i, { hl: c || undefined })}
+                      className={`h-4 w-4 rounded border ${(s.hl || '') === c ? 'border-white' : 'border-gray-600'}`}
+                      style={{ backgroundColor: c || 'transparent' }} />
+                  ))}
+                </div>
+                <button onClick={(e) => { e.stopPropagation(); splitSeg(i) }} className="rounded bg-gray-700 px-1.5">✂️</button>
+                <button onClick={(e) => { e.stopPropagation(); mergeSeg(i) }} className="rounded bg-gray-700 px-1.5">🔗</button>
+                <button onClick={(e) => { e.stopPropagation(); snapshot(); setSegments(segments.filter((_, idx) => idx !== i)) }} className="mr-auto text-red-400">✕</button>
+              </div>
+              <textarea value={s.text} rows={1} onClick={(e) => e.stopPropagation()}
+                onChange={(e) => updateSeg(i, { text: e.target.value })}
+                className="mt-1 w-full resize-y bg-transparent text-sm outline-none" />
+            </div>
+          ))}
+        </div>
       </div>
-    </div>
+    </>
   )
 }
