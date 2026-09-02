@@ -3,8 +3,7 @@ import { prisma } from '@/lib/db'
 import { tgSendText, tgSendPhoto, tgSendCode } from '@/lib/telegram'
 import { analyzeWithGemini } from '@/lib/gemini'
 import { isCronAuthorized } from '@/lib/cron-auth'
-import { sendDueTelegram, sendDueInstagram, ensureDailyArticle } from '@/lib/schedule'
-
+import { sendDueTelegram, sendDueInstagram } from '@/lib/schedule'
 
 export const maxDuration = 60
 
@@ -64,7 +63,6 @@ export async function GET(req: Request) {
   await setSetting('tg_update_offset2', String(offset))
 
   if (!posts.length) {
-    await ensureDailyArticle(APP()).catch(() => {})
     
     const scheduledTg = await sendDueTelegram().catch(() => [])
     const scheduledIg = await sendDueInstagram().catch(() => [])
