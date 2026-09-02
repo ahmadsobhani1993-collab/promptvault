@@ -9,11 +9,9 @@ export const TRANSCRIBE_MODEL = 'gemini-3.5-transcribe-live'
 const WS_BASE =
   'wss://gemini-live-proxy.ahmadsobhani1993.workers.dev/gemini-live'
 
+// نگه داشته شده برای سازگاری — دیگر استفاده نمی‌شود
 export async function getGeminiKey(): Promise<string> {
-  const res = await fetch('/api/gemini/key')
-  if (!res.ok) throw new Error('Gemini key fetch failed')
-  const data = await res.json()
-  return data.key
+  return ''
 }
 
 export class LiveTranscriber {
@@ -27,13 +25,12 @@ export class LiveTranscriber {
   onClose: () => void = () => {}
   onRawMessage: (msg: any) => void = () => {}
 
-  constructor(private apiKey: string = '', private model: string = TRANSCRIBE_MODEL) {}
+  constructor(private model: string = TRANSCRIBE_MODEL) {}
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const wsUrl = this.apiKey
-        ? `${WS_BASE}?key=${encodeURIComponent(this.apiKey)}`
-        : WS_BASE
+      // 🔒 کلید در URL نیست — فقط Worker آن را از env می‌خواند
+      const wsUrl = WS_BASE
 
       this.ws = new WebSocket(wsUrl)
       let settled = false
