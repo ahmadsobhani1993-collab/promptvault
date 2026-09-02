@@ -244,17 +244,27 @@ export default function VideoSubtitleClient() {
         const r = await fetch(`${WORKER}/transcribe`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ audioBase64: parts[i].data }),
+          body: JSON.stringify({
+            system_instruction: {
+              parts: [
+                {
+                  text: 'Transcribe the audio verbatim, word for word, in the original spoken language (Persian, English, or any other). Do not translate, summarize, or omit anything.',
+                },
+              ],
+            },
+            contents: [{ parts: [{ inline_data: { mime_type: 'audio/wav', data: parts[i].data } }] }],
+          }),
         })
-        const j = await r.json()
+        const j = await r.json().catch(() => null)
+        console.log(`[transcribe] part ${i}: HTTP ${r.status}`, JSON.stringify(j).slice(0, 300))
 
-        // خطای Gemini را کامل نمایش بده (برای دیباگ)
-        if (!r.ok || j.error) {
-          const errMsg = j.error || `HTTP ${r.status}`
-          throw new Error(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg))
+        if (!r.ok || !j || j.error) {
+          throw new Error(j?.error?.message || `HTTP ${r.status}`)
         }
 
-        const text: string = (j.text || '').trim()
+        const text: string = (
+          j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join(' ') || ''
+        ).trim()
 
         if (text) {
           const sentences = text.match(/[^.!?؟\n]+[.!?؟]?/g) || [text]
