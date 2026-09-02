@@ -1,39 +1,9 @@
 import { useRef, useState } from 'react'
 import { LiveTranscriber, type TranscriptSegment } from './live-transcribe'
 import { decodeToPcm16k } from './audio'
-import { prepareChunks, getSpeechRegions } from './audio-enhance'
+import { prepareChunks } from './audio-enhance'
+import { alignSegments } from './align'
 import { mkWords, type Seg } from './subtitle-studio'
-
-/**
- * هم‌ترازی جملات روی بازه‌های گفتار:
- * کلمات به‌ترتیب روی زمانِ واقعی صحبت (انرژی صدا) نشسته‌اند،
- * نه روی کل طول ویدیو → مکث‌ها حفظ می‌شوند.
- */
-const retimeToSpeech = (segs: Seg[], regions: { start: number; end: number }[]): Seg[] => {
-  const count = (s: string) => s.split(/\s+/).filter(Boolean).length
-  const totalWords = segs.reduce((a, s) => a + count(s.text), 0) || 1
-  const totalSpeech = regions.reduce((a, r) => a + (r.end - r.start), 0)
-
-  const timeAtWord = (w: number) => {
-    const target = (w / totalWords) * totalSpeech
-    let acc = 0
-    for (const r of regions) {
-      const d = r.end - r.start
-      if (acc + d >= target) return r.start + (target - acc)
-      acc += d
-    }
-    return regions[regions.length - 1].end
-  }
-
-  let cursor = 0
-  return segs.map((s) => {
-    const w = count(s.text)
-    const start = timeAtWord(cursor)
-    const end = Math.max(start + 0.4, timeAtWord(cursor + w))
-    cursor += w
-    return { ...s, start, end, words: mkWords(s.text, start, end) }
-  })
-}
 
 export const useVideoTranscribe = () => {
   const [status, setStatus] = useState('')
@@ -57,10 +27,6 @@ export const useVideoTranscribe = () => {
       console.log('[audio] avg:', avg, 'chunks:', chunks.length)
       if (avg < 0.001) { setStatus('❌ صدای قابل استفاده ندارد'); setBusy(false); return }
 
-      // 🔑 بازه‌های گفتار برای هم‌ترازی نهایی
-      const regions = await getSpeechRegions(pcm)
-      console.log('[align] speech regions:', regions.length)
-
       setStatus('۲. اتصال WebSocket…')
       const t = new LiveTranscriber()
       tRef.current = t
@@ -83,15 +49,14 @@ export const useVideoTranscribe = () => {
         await new Promise((r) => setTimeout(r, 1000 / speed))
       }
 
-      setStatus('۴. هم‌ترازی زیرنویس با صدا…')
+      setStatus('۴. هم‌ترازی دقیق زیرنویس با صدا…')
       await t.finish()
 
       if (acc.length === 0) {
         setStatus('⚠️ متنی دریافت نشد — با سرعت 1x دوباره تلاش کن')
       } else {
-        // 🔑 هم‌ترازی نهایی روی انرژی صدا
-        const aligned = retimeToSpeech([...acc], regions)
-        setSegments(aligned)
+        // 🔑 هم‌ترازی حرفه‌ای: DP روی مکث‌ها + نگاشت معکوس voiced + snap به onset
+        setSegments(alignSegments([...acc], pcm))
         setStatus('✅ آماده — ادیت کن و خروجی بگیر')
       }
     } catch (err: any) {
