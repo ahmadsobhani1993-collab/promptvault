@@ -1,0 +1,15 @@
+name: publish-prompts
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish 5 pending prompts
+        run: |
+          curl -sS "https://promptsfa.ir/api/cron/publish" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
