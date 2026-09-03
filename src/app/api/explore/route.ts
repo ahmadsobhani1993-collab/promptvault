@@ -1,8 +1,24 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 
-export const dynamic = 'force-dynamic'
 const PAGE_SIZE = 20
+
+const CARD_SELECT = {
+  slug: true,
+  titleFa: true,
+  titleEn: true,
+  img: true,
+  model: true,
+  type: true,
+  views: true,
+  likes: true,
+  stars: true,
+  tagsFa: true,
+  tagsEn: true,
+  createdAt: true,
+  category: { select: { slug: true, fa: true, en: true } },
+  sub: { select: { slug: true, fa: true, en: true } },
+}
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
@@ -23,7 +39,6 @@ export async function GET(req: Request) {
     where.OR = [
       { titleFa: { contains: q, mode: 'insensitive' } },
       { titleEn: { contains: q, mode: 'insensitive' } },
-      { prompt: { contains: q, mode: 'insensitive' } },
       { tagsFa: { hasSome: [q] } },
       { tagsEn: { hasSome: [q] } },
     ]
@@ -32,7 +47,12 @@ export async function GET(req: Request) {
   const orderBy = sort === 'likes' ? { likes: 'desc' } : sort === 'views' ? { views: 'desc' } : { createdAt: 'desc' }
 
   const [rows, total] = await Promise.all([
-    prisma.prompt.findMany({ where, orderBy, skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE, include: { category: true, sub: true } }),
+    prisma.prompt.findMany({
+      where, orderBy,
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
+      select: CARD_SELECT, // 🔑 فیلدهای محدود
+    }),
     prisma.prompt.count({ where }),
   ])
 
