@@ -16,8 +16,8 @@ const CARD_SELECT = {
   tagsFa: true,
   tagsEn: true,
   createdAt: true,
-  category: { select: { slug: true, fa: true, en: true } },
-  sub: { select: { slug: true, fa: true, en: true } },
+  category: true,
+  sub: true,
 }
 
 export async function GET(req: Request) {
@@ -48,10 +48,11 @@ export async function GET(req: Request) {
 
   const [rows, total] = await Promise.all([
     prisma.prompt.findMany({
-      where, orderBy,
+      where,
+      orderBy,
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
-      select: CARD_SELECT, // 🔑 فیلدهای محدود
+      select: CARD_SELECT,
     }),
     prisma.prompt.count({ where }),
   ])
