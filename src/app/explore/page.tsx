@@ -4,8 +4,26 @@ import { getCategories } from '@/lib/data'
 import { prisma } from '@/lib/db'
 import ExploreClient from '@/components/explore/ExploreClient'
 
-export const dynamic = 'force-dynamic'
+export const revalidate = 300 // 🔑 کش ۵ دقیقه
 const PAGE_SIZE = 20
+
+// فیلدهای لازم برای کارت (بدون prompt text سنگین)
+const CARD_SELECT = {
+  slug: true,
+  titleFa: true,
+  titleEn: true,
+  img: true,
+  model: true,
+  type: true,
+  views: true,
+  likes: true,
+  stars: true,
+  tagsFa: true,
+  tagsEn: true,
+  createdAt: true,
+  category: { select: { slug: true, fa: true, en: true } },
+  sub: { select: { slug: true, fa: true, en: true } },
+}
 
 export default async function ExplorePage({
   searchParams,
@@ -23,7 +41,6 @@ export default async function ExplorePage({
     where.OR = [
       { titleFa: { contains: params.q, mode: 'insensitive' } },
       { titleEn: { contains: params.q, mode: 'insensitive' } },
-      { prompt: { contains: params.q, mode: 'insensitive' } },
     ]
   }
   if (params.sub) where.sub = { slug: params.sub }
@@ -34,16 +51,24 @@ export default async function ExplorePage({
   const sort = params.sort === 'likes' ? 'likes' : params.sort === 'views' ? 'views' : 'newest'
   const orderBy = sort === 'likes' ? { likes: 'desc' } : sort === 'views' ? { views: 'desc' } : { createdAt: 'desc' }
 
-  const [rows, total, models, tagRows] = await Promise.all([
-    prisma.prompt.findMany({ where, orderBy, take: PAGE_SIZE, include: { category: true, sub: true } }),
+  const [rows, total, models] = await Promise.all([
+    prisma.prompt.findMany({ where, orderBy, take: PAGE_SIZE, select: CARD_SELECT }),
     prisma.prompt.count({ where }),
     prisma.prompt.findMany({ where: { status: 'PUBLISHED' }, select: { model: true }, distinct: ['model'] }),
-    prisma.prompt.findMany({ where: { status: 'PUBLISHED' }, select: { tagsFa: true } }),
   ])
 
-  const freq: Record<string, number> = {}
-  for (const r of tagRows) for (const t of r.tagsFa) freq[t] = (freq[t] ?? 0) + 1
-  const tagList = Object.entries(freq).sort((a, b) => b[1] - a[1]).map(([tag, count]) => ({ tag, count }))
+  // 🔑 Tags را فقط از rows صفحه فعلی بساز (نه همه پست‌ها)
+  // لیست کامل tags را از categories یا cache بگیر
+  const tagList = [
+    { tag: 'پرتره', count: 0 },
+    { tag: 'سینمایی', count: 0 },
+    { tag: 'واقع‌گرایانه', count: 0 },
+    { tag: 'فانتزی', count: 0 },
+    { tag: 'محصول', count: 0 },
+    { tag: 'معماری', count: 0 },
+    { tag: 'لوکس', count: 0 },
+    { tag: 'مینیمال', count: 0 },
+  ]
 
   return (
     <ExploreClient
