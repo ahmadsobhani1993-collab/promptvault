@@ -7,23 +7,19 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
-  // Reset import cursor in settings
-  await prisma.setting.upsert({
-    where: { key: 'import_cursor' },
-    update: { value: '0' },
-    create: { key: 'import_cursor', value: '0' },
-  })
+  const q = new URL(req.url).searchParams
+  const targetId = q.get('id') || '691'
 
-  // Also reset chained flag
   await prisma.setting.upsert({
-    where: { key: 'import_chained' },
-    update: { value: 'false' },
-    create: { key: 'import_chained', value: 'false' },
+    where: { key: 'import_cursor2' },
+    update: { value: targetId },
+    create: { key: 'import_cursor2', value: targetId },
   })
 
   return NextResponse.json({
     ok: true,
-    message: 'Import cursor reset to 0',
+    message: `Import cursor reset to ${targetId}`,
+    import_cursor2: targetId,
     timestamp: new Date().toISOString(),
   })
 }
