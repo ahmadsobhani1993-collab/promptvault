@@ -37,6 +37,35 @@ export async function uploadFromUrl(
   return uploadToCloudinary(buf, folder)
 }
 
+export async function uploadRemoteDirectly(
+  remoteUrl: string,
+  folder = 'promptsfa/prompts'
+): Promise<{ url: string; publicId: string }> {
+  const cloud = process.env.CLOUDINARY_CLOUD_NAME
+  const key = process.env.CLOUDINARY_API_KEY
+  const secret = process.env.CLOUDINARY_API_SECRET
+  if (!cloud || !key || !secret) throw new Error('Cloudinary env missing')
+
+  const form = new URLSearchParams()
+  form.set('file', remoteUrl)
+  form.set('folder', folder)
+  form.set('resource_type', 'auto')
+  form.set('transformation', 'q_auto:good,f_auto')
+
+  const r = await fetch(`https://api.cloudinary.com/v1_1/${cloud}/image/upload`, {
+    method: 'POST',
+    headers: {
+      Authorization: 'Basic ' + Buffer.from(`${key}:${secret}`).toString('base64'),
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: form.toString(),
+    signal: AbortSignal.timeout(60000),
+  })
+  const j: any = await r.json()
+  if (!r.ok) throw new Error('cloudinary remote upload failed: ' + (j.error?.message || r.status))
+  return { url: j.secure_url, publicId: j.public_id }
+}
+
 export async function ensureCloudinary(
   url: string,
   folder = 'promptsfa/articles'
