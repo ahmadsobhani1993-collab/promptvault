@@ -84,7 +84,7 @@ export async function GET(req: Request) {
         tagsFa: ai.tagsFa,
         tagsEn: ai.tagsEn,
         prompt: raw,
-        views: Math.floor(Math.random() * 20) + 0,  // 100-2000      },
+        views: Math.floor(Math.random() * 10) + 1,  // 100-2000      },
     })
     log('prisma_save', true, `${Date.now() - t}ms`)
 
