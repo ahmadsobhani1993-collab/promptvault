@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { isCronAuthorized } from '@/lib/cron-auth'
 import { analyzeWithGemini } from '@/lib/gemini'
 import { uploadRemoteDirectly } from '@/lib/cloudinary'
+import { normalizePrompt } from '@/lib/gemini'
 
 export const maxDuration = 60
 
@@ -42,10 +43,12 @@ export async function GET(req: Request) {
     t = Date.now()
     const up = await uploadRemoteDirectly(tgUrl, 'promptsfa/prompts')
     log('cloudinary', true, `${Date.now() - t}ms`)
-
-    // 4. Clean text
-    const raw = (item.text ?? '').slice(0, 800)
-    log('clean', true, `${raw.length} chars`)
+    
+    // 4. Clean text (normalize with Gemini)
+    const rawText = item.text ?? ''
+    const cleanedText = await normalizePrompt(rawText)
+    const raw = cleanedText.slice(0, 800)
+    log('clean', true, `${raw.length} chars (normalized from ${rawText.length})`)
 
     // 5. Gemini analyze
     t = Date.now()
