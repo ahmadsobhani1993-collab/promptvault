@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { isCronAuthorized } from '@/lib/cron-auth'
 import { analyzeWithGemini } from '@/lib/gemini'
-import { uploadFromRemoteUrl } from '@/lib/cloudinary'
+import { uploadRemoteDirectly } from '@/lib/cloudinary'
 
 export const maxDuration = 60
 
@@ -26,7 +26,7 @@ export async function GET(req: Request) {
     if (!item) return NextResponse.json({ ok: false, error: 'no PENDING items', logs })
     log('prisma_find', true, `msgId=${item.id}`)
 
-    // 2. Telegram getFile
+    // 2. Telegram getFile (فقط برای گرفتن URL فایل)
     t = Date.now()
     const gf = await (await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${item.img}`, {
       signal: AbortSignal.timeout(5000),
@@ -35,25 +35,19 @@ export async function GET(req: Request) {
       log('tg_getFile', false, gf.description)
       return NextResponse.json({ ok: false, logs })
     }
+    const tgUrl = `https://api.telegram.org/file/bot${token}/${gf.result.file_path}`
     log('tg_getFile', true, `${Date.now() - t}ms`)
 
-    // 3. Telegram download
+    // 3. Cloudinary upload (مستقیم از URL — بدون egress Vercel)
     t = Date.now()
-    const tgUrl = `https://api.telegram.org/file/bot${token}/${gf.result.file_path}`
-    const r = await fetch(tgUrl, { signal: AbortSignal.timeout(8000) })
-    const buf = Buffer.from(await r.arrayBuffer())
-    log('tg_download', true, `${buf.length} bytes, ${Date.now() - t}ms`)
-
-    // 4. Cloudinary upload
-    t = Date.now()
-    const up = await uploadFromRemoteUrl(tgUrl, 'promptsfa/prompts')
+    const up = await uploadRemoteDirectly(tgUrl, 'promptsfa/prompts')
     log('cloudinary', true, `${Date.now() - t}ms`)
 
-    // 5. Clean text
+    // 4. Clean text
     const raw = (item.text ?? '').slice(0, 800)
     log('clean', true, `${raw.length} chars`)
 
-    // 6. Gemini analyze
+    // 5. Gemini analyze
     t = Date.now()
     const categories = await prisma.category.findMany({ include: { subs: true } })
     log('prisma_categories', true, `${categories.length} cats`)
@@ -62,7 +56,7 @@ export async function GET(req: Request) {
     const ai = await analyzeWithGemini({ text: raw, imgBase64: null, categories })
     log('gemini', true, `${Date.now() - t}ms`)
 
-    // 7. Save to DB
+    // 6. Save to DB
     t = Date.now()
     const cat = categories.find((c) => c.slug === ai.categorySlug) ?? categories[0]
     const sub = ai.subSlug ? cat.subs.find((s) => s.slug === ai.subSlug) ?? null : null
@@ -91,7 +85,7 @@ export async function GET(req: Request) {
     })
     log('prisma_save', true, `${Date.now() - t}ms`)
 
-    // 8. Mark DONE
+    // 7. Mark DONE
     await prisma.telegramQueue.update({ where: { id: item.id }, data: { status: 'DONE' } })
     log('queue_done', true)
 
