@@ -85,9 +85,9 @@ export async function GET(req: Request) {
         tagsEn: ai.tagsEn,
         prompt: raw,
         views: Math.floor(Math.random() * 10) + 1,  // 1-10
+      },
     })
     log('prisma_save', true, `${Date.now() - t}ms`)
-
     // 7. Mark DONE
     await prisma.telegramQueue.update({ where: { id: item.id }, data: { status: 'DONE' } })
     log('queue_done', true)
