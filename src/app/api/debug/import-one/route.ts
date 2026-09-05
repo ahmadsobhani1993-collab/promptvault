@@ -47,7 +47,7 @@ export async function GET(req: Request) {
     // 4. Clean text (normalize with Gemini)
     const rawText = item.text ?? ''
     const cleanedText = await normalizePrompt(rawText)
-    const raw = cleanedText.slice(0, 800)
+    const raw = cleanedText.slice(0, 4000)
     log('clean', true, `${raw.length} chars (normalized from ${rawText.length})`)
 
     // 5. Gemini analyze
