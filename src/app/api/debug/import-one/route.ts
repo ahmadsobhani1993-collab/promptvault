@@ -77,14 +77,14 @@ export async function GET(req: Request) {
         img: up.url,
         model: /--v\s?\d|--ar|midjourney/i.test(raw) ? 'Midjourney' : 'AI',
         type: 'IMAGE',
-        status: 'PENDING',
+        status: 'PUBLISHED',
+        publishedAt: new Date(),
         categoryId: cat.id,
         subId: sub?.id ?? null,
         tagsFa: ai.tagsFa,
         tagsEn: ai.tagsEn,
         prompt: raw,
-        views: 1,
-      },
+        views: Math.floor(Math.random() * 20) + 0,  // 100-2000      },
     })
     log('prisma_save', true, `${Date.now() - t}ms`)
 
