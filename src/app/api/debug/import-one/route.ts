@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { isCronAuthorized } from '@/lib/cron-auth'
-import { analyzeWithGemini } from '@/lib/gemini'
+import { analyzeWithGemini, normalizePrompt } from '@/lib/gemini'
 import { uploadRemoteDirectly } from '@/lib/cloudinary'
-import { normalizePrompt } from '@/lib/gemini'
 
 export const maxDuration = 60
 
@@ -21,14 +20,11 @@ export async function GET(req: Request) {
   }
 
   try {
-    // 1. پیدا کردن پرامپت بعدی
-    let t = Date.now()
     const item = await prisma.telegramQueue.findFirst({ where: { status: 'PENDING' }, orderBy: { id: 'asc' } })
     if (!item) return NextResponse.json({ ok: false, error: 'no PENDING items', logs })
     log('prisma_find', true, `msgId=${item.id}`)
 
-    // 2. Telegram getFile (فقط برای گرفتن URL فایل)
-    t = Date.now()
+    let t = Date.now()
     const gf = await (await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${item.img}`, {
       signal: AbortSignal.timeout(5000),
     })).json()
@@ -39,18 +35,15 @@ export async function GET(req: Request) {
     const tgUrl = `https://api.telegram.org/file/bot${token}/${gf.result.file_path}`
     log('tg_getFile', true, `${Date.now() - t}ms`)
 
-    // 3. Cloudinary upload (مستقیم از URL — بدون egress Vercel)
     t = Date.now()
     const up = await uploadRemoteDirectly(tgUrl, 'promptsfa/prompts')
     log('cloudinary', true, `${Date.now() - t}ms`)
-    
-    // 4. Clean text (normalize with Gemini)
+
     const rawText = item.text ?? ''
     const cleanedText = await normalizePrompt(rawText)
-    const raw = cleanedText.slice(0, 4000)
+    const raw = cleanedText.slice(0, 3000)
     log('clean', true, `${raw.length} chars (normalized from ${rawText.length})`)
 
-    // 5. Gemini analyze
     t = Date.now()
     const categories = await prisma.category.findMany({ include: { subs: true } })
     log('prisma_categories', true, `${categories.length} cats`)
@@ -59,7 +52,6 @@ export async function GET(req: Request) {
     const ai = await analyzeWithGemini({ text: raw, imgBase64: null, categories })
     log('gemini', true, `${Date.now() - t}ms`)
 
-    // 6. Save to DB
     t = Date.now()
     const cat = categories.find((c) => c.slug === ai.categorySlug) ?? categories[0]
     const sub = ai.subSlug ? cat.subs.find((s) => s.slug === ai.subSlug) ?? null : null
@@ -78,17 +70,16 @@ export async function GET(req: Request) {
         model: /--v\s?\d|--ar|midjourney/i.test(raw) ? 'Midjourney' : 'AI',
         type: 'IMAGE',
         status: 'PUBLISHED',
-        publishedAt: new Date(),
         categoryId: cat.id,
         subId: sub?.id ?? null,
         tagsFa: ai.tagsFa,
         tagsEn: ai.tagsEn,
         prompt: raw,
-        views: Math.floor(Math.random() * 10) + 1,  // 1-10
+        views: Math.floor(Math.random() * 10) + 1,
       },
     })
     log('prisma_save', true, `${Date.now() - t}ms`)
-    // 7. Mark DONE
+
     await prisma.telegramQueue.update({ where: { id: item.id }, data: { status: 'DONE' } })
     log('queue_done', true)
 
