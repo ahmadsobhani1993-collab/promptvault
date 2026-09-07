@@ -24,17 +24,10 @@ export async function GET(req: Request) {
     if (!item) return NextResponse.json({ ok: false, error: 'no PENDING items', logs })
     log('prisma_find', true, `msgId=${item.id}`)
 
-    const slug = 'tg-' + item.id
+    // هیچ duplicate check ای — همه چیز ایمپورت می‌شود
+    let slug = 'tg-' + item.id
 
-    // 1. چک duplicate با slug
-    const bySlug = await prisma.prompt.findUnique({ where: { slug } })
-    if (bySlug) {
-      log('duplicate_skip', true, `slug exists: ${slug}`)
-      await prisma.telegramQueue.update({ where: { id: item.id }, data: { status: 'DONE' } })
-      return NextResponse.json({ ok: true, skipped: 'duplicate', slug, existing: slug, logs })
-    }
-
-    // 2. Telegram getFile
+    // Telegram getFile
     let t = Date.now()
     const gf = await (await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${item.img}`, {
       signal: AbortSignal.timeout(5000),
@@ -46,31 +39,18 @@ export async function GET(req: Request) {
     const tgUrl = `https://api.telegram.org/file/bot${token}/${gf.result.file_path}`
     log('tg_getFile', true, `${Date.now() - t}ms`)
 
-    // 3. Cloudinary upload
+    // Cloudinary upload
     t = Date.now()
     const up = await uploadRemoteDirectly(tgUrl, 'promptsfa/prompts')
     log('cloudinary', true, `${Date.now() - t}ms`)
 
-    // 4. Clean text
+    // Clean text
     const rawText = item.text ?? ''
     const cleanedText = await normalizePrompt(rawText)
     const raw = cleanedText.slice(0, 3000)
     log('clean', true, `${raw.length} chars (normalized from ${rawText.length})`)
 
-    // 5. چک duplicate با متن
-    if (raw.length > 50) {
-      const searchText = raw.slice(0, 100).trim()
-      const byText = await prisma.prompt.findFirst({
-        where: { prompt: { contains: searchText, mode: 'insensitive' } }
-      })
-      if (byText) {
-        log('duplicate_skip', true, `text match: ${byText.slug}`)
-        await prisma.telegramQueue.update({ where: { id: item.id }, data: { status: 'DONE' } })
-        return NextResponse.json({ ok: true, skipped: 'duplicate', slug, existing: byText.slug, logs })
-      }
-    }
-
-    // 6. Gemini
+    // Gemini
     t = Date.now()
     const categories = await prisma.category.findMany({ include: { subs: true } })
     log('prisma_categories', true, `${categories.length} cats`)
@@ -79,45 +59,47 @@ export async function GET(req: Request) {
     const ai = await analyzeWithGemini({ text: raw, imgBase64: null, categories })
     log('gemini', true, `${Date.now() - t}ms`)
 
-    // 7. Save with try/catch
+    // Save — بدون duplicate check، فقط retry با slug یکتا در صورت خطا
     t = Date.now()
     const cat = categories.find((c) => c.slug === ai.categorySlug) ?? categories[0]
     const sub = ai.subSlug ? cat.subs.find((s) => s.slug === ai.subSlug) ?? null : null
 
+    const makeData = (s: string) => ({
+      slug: s,
+      titleFa: ai.titleFa,
+      titleEn: ai.titleEn,
+      descFa: ai.descFa,
+      descEn: ai.descEn,
+      usageFa: ai.usageFa,
+      usageEn: ai.usageEn,
+      img: up.url,
+      model: /--v\s?\d|--ar|midjourney/i.test(raw) ? 'Midjourney' : 'AI',
+      type: 'IMAGE',
+      status: 'PUBLISHED',
+      categoryId: cat.id,
+      subId: sub?.id ?? null,
+      tagsFa: ai.tagsFa,
+      tagsEn: ai.tagsEn,
+      prompt: raw,
+      views: Math.floor(Math.random() * 10) + 1,
+    })
+
     try {
-      await prisma.prompt.create({
-        data: {
-          slug,
-          titleFa: ai.titleFa,
-          titleEn: ai.titleEn,
-          descFa: ai.descFa,
-          descEn: ai.descEn,
-          usageFa: ai.usageFa,
-          usageEn: ai.usageEn,
-          img: up.url,
-          model: /--v\s?\d|--ar|midjourney/i.test(raw) ? 'Midjourney' : 'AI',
-          type: 'IMAGE',
-          status: 'PUBLISHED',
-          categoryId: cat.id,
-          subId: sub?.id ?? null,
-          tagsFa: ai.tagsFa,
-          tagsEn: ai.tagsEn,
-          prompt: raw,
-          views: Math.floor(Math.random() * 10) + 1,
-        },
-      })
+      await prisma.prompt.create({ data: makeData(slug) })
       log('prisma_save', true, `${Date.now() - t}ms`)
     } catch (createErr: any) {
       const msg = String(createErr?.message || '')
       if (msg.includes('Unique constraint')) {
-        log('duplicate_skip_catch', true, `caught unique constraint`)
-        await prisma.telegramQueue.update({ where: { id: item.id }, data: { status: 'DONE' } })
-        return NextResponse.json({ ok: true, skipped: 'duplicate', slug, logs })
+        // slug تکراری بود — با slug یکتا تلاش مجدد
+        slug = `tg-${item.id}-${Date.now()}`
+        await prisma.prompt.create({ data: makeData(slug) })
+        log('prisma_save_retry', true, `retry with unique slug: ${slug}`)
+      } else {
+        throw createErr
       }
-      throw createErr
     }
 
-    // 8. Mark DONE
+    // Mark DONE
     await prisma.telegramQueue.update({ where: { id: item.id }, data: { status: 'DONE' } })
     log('queue_done', true)
 
