@@ -93,34 +93,46 @@ export async function GET(req: Request) {
     for (const id of [fwd1, fwd2]) if (id) await fetch(api('deleteMessage', {
       chat_id: privChat, message_id: String(id)
     })).catch(() => {})
-
+    
     if (promptText.length < 20) continue
-
+    
+    // چک duplicate — اگر slug در DB هست، skip 
+    const slug = 'tg-' + msgId
+    const existing = await prisma.prompt.findUnique({ where: { slug } })
+    if (existing) {
+        // قبلاً ایمپورت شده — skip
+        continue
+      }
+    // چک duplicate 
+    const searchText = promptText.slice(0, 100)
+    const textDuplicate = await prisma.prompt.findFirst({
+        where: { prompt: { contains: searchText, mode: 'insensitive' } }
+      })
+    if (textDuplicate) {
+        // متن تکراری — skip
+        continue
+      }
     const fileId = photoMsg.photo
-      ? photoMsg.photo[photoMsg.photo.length - 1].file_id
-      : photoMsg.video[photoMsg.video.length - 1].file_id
-
+        ? photoMsg.photo[photoMsg.photo.length - 1].file_id
+        : photoMsg.video[photoMsg.video.length - 1].file_id
     await prisma.telegramQueue.upsert({
-      where: { id: msgId },
-      update: { text: promptText, img: fileId, status: 'PENDING' },
-      create: { id: msgId, text: promptText, img: fileId, status: 'PENDING' },
-    })
-
-    collected.push({
-      msgId,
-      captionLen: caption.length,
-      source: caption.length <= CAPTION_THRESHOLD ? 'reply' : 'caption',
-      preview: promptText.slice(0, 80),
-    })
+        where: { id: msgId },
+        update: { text: promptText, img: fileId, status: 'PENDING' },
+        create: { id: msgId, text: promptText, img: fileId, status: 'PENDING' },
+      })
+        collected.push({
+                msgId,
+                captionLen: caption.length,
+                source: caption.length <= CAPTION_THRESHOLD ? 'reply' : 'caption',
+                preview: promptText.slice(0, 80),
+              })
+      }
+    await setSetting('import_cursor2', String(cursor + processed))
+    return NextResponse.json({
+          ok: true,
+          collected: collected.length,
+          nextCursor: cursor + processed,
+          processed,
+          items: collected,
+        })
   }
-
-  await setSetting('import_cursor2', String(cursor + processed))
-
-  return NextResponse.json({
-    ok: true,
-    collected: collected.length,
-    nextCursor: cursor + processed,
-    processed,
-    items: collected,
-  })
-}
