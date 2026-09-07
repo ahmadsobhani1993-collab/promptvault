@@ -43,6 +43,19 @@ export async function GET(req: Request) {
     const cleanedText = await normalizePrompt(rawText)
     const raw = cleanedText.slice(0, 3000)
     log('clean', true, `${raw.length} chars (normalized from ${rawText.length})`)
+    
+    // چک duplicate با متن (نه فقط slug)
+    if (raw.length > 50) {
+        const searchText = raw.slice(0, 100)
+        const duplicate = await prisma.prompt.findFirst({
+              where: { prompt: { contains: searchText, mode: 'insensitive' } }
+            })
+        if (duplicate) {
+              log('duplicate_skip', true, `text match: ${duplicate.slug}`)
+              await prisma.telegramQueue.update({ where: { id: item.id }, data: { status: 'DONE' } })
+              return NextResponse.json({ ok: true, skipped: 'duplicate', existing: duplicate.slug, logs })
+            }
+      }
 
     t = Date.now()
     const categories = await prisma.category.findMany({ include: { subs: true } })
