@@ -50,7 +50,7 @@ export async function GET(req: Request) {
     if (!f1.ok) {
       if (f1.description?.includes('MESSAGE_ID_INVALID') || f1.description?.includes('message not found')) {
         consecutiveEmpty++
-        if (consecutiveEmpty > 20) break
+        if (consecutiveEmpty > 100) break  // تحمل ۱۰۰ پست خالی
         continue
       }
       consecutiveEmpty++
