@@ -19,7 +19,11 @@ type P = {
   stars: number
 }
 
-const fmt = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1).replace('.0', '') + 'K' : String(n))
+// فیکس: undefined/NaN → 0
+const fmt = (n: number) => {
+  const v = Number.isFinite(n) ? n : 0
+  return v >= 1000 ? (v / 1000).toFixed(1).replace('.0', '') + 'K' : String(v)
+}
 
 export default function ExploreCard({ item, locale, bookmark }: { item: P; locale: Locale; bookmark: React.ReactNode }) {
   return (
@@ -30,9 +34,7 @@ export default function ExploreCard({ item, locale, bookmark }: { item: P; local
           alt={L(locale, item.titleFa, item.titleEn)}
           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
         />
-        <span className="absolute left-2 top-2 rounded-full border border-line/60 bg-[#0b0b0b]/80 px-2 py-0.5 text-[10px] font-semibold text-gold-bright backdrop-blur">
-          ★ {(item.stars || 0).toFixed(1)}
-        </span>
+        {/* ★ badge حذف شد */}
         <div className="absolute right-2 top-2">{bookmark}</div>
       </Link>
 
