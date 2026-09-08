@@ -19,6 +19,8 @@ const splitIntoSentences = (text: string, start: number, end: number): Seg[] => 
   return out
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
 export const useVideoTranscribe = () => {
   const [status, setStatus] = useState('')
   const [progress, setProgress] = useState(0)
@@ -33,6 +35,38 @@ export const useVideoTranscribe = () => {
     setBusy(true)
     stopRef.current = false
     const acc: Seg[] = []
+    const flag = { closed: false }
+
+    const wire = (t: LiveTranscriber) => {
+      flag.closed = false
+      t.onSegment = (seg: TranscriptSegment) => {
+        acc.push(...splitIntoSentences(seg.text, seg.start, seg.end))
+        setSegments([...acc])
+      }
+      t.onError = (m) => setStatus('❌ ' + m)
+      t.onClose = () => { flag.closed = true }
+    }
+
+    // اتصال با ۳ بار retry + offset زمانی برای ادامه پس از قطعی
+    const connect = async (offset: number) => {
+      let lastErr: any = null
+      for (let a = 0; a < 3; a++) {
+        const t = new LiveTranscriber(undefined, offset)
+        tRef.current = t
+        wire(t)
+        try {
+          await Promise.race([
+            t.connect(),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout اتصال')), 15000)),
+          ])
+          return t
+        } catch (e) {
+          lastErr = e
+          await sleep(1500)
+        }
+      }
+      throw lastErr || new Error('اتصال برقرار نشد')
+    }
 
     try {
       setStatus('۱. دیکود صدا (محلی)…')
@@ -41,26 +75,22 @@ export const useVideoTranscribe = () => {
       if (avg < 0.001) { setStatus('❌ صدای قابل استفاده ندارد'); setBusy(false); return }
 
       setStatus('۲. اتصال WebSocket…')
-      const t = new LiveTranscriber()
-      tRef.current = t
-      t.onSegment = (seg: TranscriptSegment) => {
-        const broken = splitIntoSentences(seg.text, seg.start, seg.end)
-        acc.push(...broken)
-        setSegments([...acc])
-      }
-      t.onError = (m) => setStatus('❌ ' + m)
-
-      await Promise.race([
-        t.connect(),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout اتصال')), 20000)),
-      ])
+      let t = await connect(0)
 
       setStatus('۳. ترنسکریپت زنده…')
+      let sentSeconds = 0
       for (let i = 0; i < chunks.length; i++) {
         if (stopRef.current) break
+        if (flag.closed) {
+          setStatus('🔄 اتصال مجدد…')
+          t = await connect(sentSeconds)
+          setStatus('۳. ترنسکریپت زنده…')
+        }
         t.sendChunk(chunks[i].data, chunks[i].seconds)
+        sentSeconds += chunks[i].seconds
         setProgress(Math.round(((i + 1) / chunks.length) * 100))
-        await new Promise((r) => setTimeout(r, 1000 / speed))
+        // ✅ pacing درست: انتظار متناسب با طول chunk
+        await sleep((chunks[i].seconds * 1000) / speed)
       }
 
       setStatus('۴. پایان…')

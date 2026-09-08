@@ -25,7 +25,7 @@ export class LiveTranscriber {
   onClose: () => void = () => {}
   onRawMessage: (msg: any) => void = () => {}
 
-  constructor(private model: string = TRANSCRIBE_MODEL) {}
+  constructor(private model: string = TRANSCRIBE_MODEL, offset = 0) { this.secondsSent = offset; this.lastEnd = offset }
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
