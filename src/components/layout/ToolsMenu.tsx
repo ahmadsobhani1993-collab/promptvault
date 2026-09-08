@@ -1,16 +1,35 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 export default function ToolsMenu() {
   const [open, setOpen] = useState(false)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const cancelClose = () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current)
+      closeTimer.current = null
+    }
+  }
+
+  // ۵۰۰ms تأخیر قبل از بستن — فرصت کافی برای رسیدن به منو
+  const scheduleClose = () => {
+    cancelClose()
+    closeTimer.current = setTimeout(() => setOpen(false), 500)
+  }
+
+  useEffect(() => () => cancelClose(), [])
 
   return (
     <div
       className="relative"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
+      onMouseEnter={() => {
+        cancelClose()
+        setOpen(true)
+      }}
+      onMouseLeave={scheduleClose}
     >
       <button
         onClick={() => setOpen(!open)}
@@ -21,7 +40,11 @@ export default function ToolsMenu() {
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-xl border border-white/10 bg-zinc-900/95 p-1.5 shadow-2xl shadow-black/60 backdrop-blur">
+        <div
+          className="absolute left-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-xl border border-white/10 bg-zinc-900/95 p-1.5 shadow-2xl shadow-black/60 backdrop-blur"
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
+        >
           <Link
             href="/transcribe"
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-white/80 transition hover:bg-amber-500/10 hover:text-amber-300"
