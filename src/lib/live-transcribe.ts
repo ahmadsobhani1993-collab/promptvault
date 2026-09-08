@@ -122,8 +122,8 @@ export class LiveTranscriber {
     })
   }
 
-  sendChunk(base64: string, seconds: number) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
+  sendChunk(base64: string, seconds: number): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
     this.ws.send(
       JSON.stringify({
         realtimeInput: {
@@ -132,6 +132,7 @@ export class LiveTranscriber {
       })
     )
     this.secondsSent += seconds
+    return true
   }
 
   async finish(): Promise<void> {
@@ -141,6 +142,10 @@ export class LiveTranscriber {
     } catch {}
     await new Promise((r) => setTimeout(r, 8000))
     this.ws?.close()
+  }
+
+  isConnected(): boolean {
+    return !!this.ws && this.ws.readyState === WebSocket.OPEN
   }
 
   getSegments() {

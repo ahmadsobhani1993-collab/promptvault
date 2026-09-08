@@ -82,14 +82,35 @@ export const useVideoTranscribe = () => {
 
       setStatus('۳. ترنسکریپت زنده…')
       let sentSeconds = 0
+
+      const ensureConn = async (): Promise<LiveTranscriber> => {
+        if (t.isConnected()) return t
+        setStatus('🔄 اتصال مجدد…')
+        const nt = await connect(sentSeconds)
+        t = nt
+        setStatus('۳. ترنسکریپت زنده…')
+        return nt
+      }
+
       for (let i = 0; i < chunks.length; i++) {
         if (stopRef.current) break
-        if (flag.closed) {
-          setStatus('🔄 اتصال مجدد…')
-          t = await connect(sentSeconds)
-          setStatus('۳. ترنسکریپت زنده…')
+
+        // قبل از هر chunk چک کن وصلیم
+        t = await ensureConn()
+
+        const ok = t.sendChunk(chunks[i].data, chunks[i].seconds)
+        if (!ok) {
+          // silent drop نشد → reconnect و retry
+          setStatus(`⚠️ ارسال ${i + 1} ناموفق — reconnect`)
+          await sleep(800)
+          t = await ensureConn()
+          const retry = t.sendChunk(chunks[i].data, chunks[i].seconds)
+          if (!retry) {
+            setStatus(`❌ chunk ${i + 1} اصلاً ارسال نشد`)
+            break
+          }
         }
-        t.sendChunk(chunks[i].data, chunks[i].seconds)
+
         sentSeconds += chunks[i].seconds
         setProgress(Math.round(((i + 1) / chunks.length) * 100))
         await sleep((chunks[i].seconds * 1000) / speed)
