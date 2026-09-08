@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react'
 import { LiveTranscriber, type TranscriptSegment } from './live-transcribe'
-import { decodeToPcm16k } from './audio'
-import { prepareChunks } from './audio-enhance'
+import { decodeToPcm16k, bufferToBase64Chunks } from './audio'
 import { mkWords, type Seg } from './subtitle-studio'
 
 const splitIntoSentences = (text: string, start: number, end: number): Seg[] => {
@@ -70,7 +69,12 @@ export const useVideoTranscribe = () => {
     try {
       setStatus('۱. دیکود صدا (محلی)…')
       const pcm = await decodeToPcm16k(file)
-      const { chunks, avg } = await prepareChunks(pcm)
+      const chunks = bufferToBase64Chunks(pcm, 2)
+      const d0 = pcm.getChannelData(0)
+      let sum = 0
+      let n = 0
+      for (let i = 0; i < d0.length; i += 997) { sum += Math.abs(d0[i]); n++ }
+      const avg = n ? sum / n : 0
       if (avg < 0.001) { setStatus('❌ صدای قابل استفاده ندارد'); setBusy(false); return }
 
       setStatus('۲. اتصال WebSocket…')
