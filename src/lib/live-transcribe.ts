@@ -1,17 +1,9 @@
-export interface TranscriptSegment {
+import { TRANSCRIBE_MODEL } from './gemini-config'
+
+export type TranscriptSegment = {
   text: string
   start: number
   end: number
-}
-
-export const TRANSCRIBE_MODEL = 'gemini-3.5-transcribe-live'
-
-const WS_BASE =
-  'wss://gemini-live-proxy.ahmadsobhani1993.workers.dev/gemini-live'
-
-// نگه داشته شده برای سازگاری — دیگر استفاده نمی‌شود
-export async function getGeminiKey(): Promise<string> {
-  return ''
 }
 
 export class LiveTranscriber {
@@ -19,20 +11,18 @@ export class LiveTranscriber {
   private secondsSent = 0
   private lastEnd = 0
   private segments: TranscriptSegment[] = []
+  onSegment?: (seg: TranscriptSegment) => void
+  onError?: (msg: string) => void
+  onClose?: () => void
 
-  onSegment: (seg: TranscriptSegment) => void = () => {}
-  onError: (msg: string) => void = () => {}
-  onClose: () => void = () => {}
-  onRawMessage: (msg: any) => void = () => {}
-
-  constructor(private model: string = TRANSCRIBE_MODEL, offset = 0) { this.secondsSent = offset; this.lastEnd = offset }
+  constructor(private model: string = TRANSCRIBE_MODEL, offset = 0) {
+    this.secondsSent = offset
+    this.lastEnd = offset
+  }
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
-      // 🔒 کلید در URL نیست — فقط Worker آن را از env می‌خواند
-      const wsUrl = WS_BASE
-
-      this.ws = new WebSocket(wsUrl)
+      this.ws = new WebSocket('wss://gemini-live-proxy.ahmadsobhani1993.workers.dev/gemini-live')
       let settled = false
 
       this.ws.onopen = () => {
@@ -44,7 +34,7 @@ export class LiveTranscriber {
                 parts: [
                   {
                     text:
-                      'Transcribe the audio verbatim, word for word, in the original spoken language (Persian, English, or any other). Do not translate, summarize, or omit anything.',
+                      'You are a professional speech-to-text transcriber. Transcribe the audio verbatim, word for word, in the original spoken language (Persian, English, or any other). Do not translate, summarize, or add commentary. Output only the exact transcription. If you cannot hear clearly, output <unclear>. Do not generate greetings, questions, or responses.',
                   },
                 ],
               },
@@ -62,11 +52,9 @@ export class LiveTranscriber {
           return
         }
 
-        this.onRawMessage(msg)
-
         if (msg?.error) {
           const errText = msg.error?.message || JSON.stringify(msg.error)
-          this.onError('Gemini: ' + errText)
+          this.onError?.('Gemini: ' + errText)
           if (!settled) {
             settled = true
             reject(new Error('Gemini: ' + errText))
@@ -99,12 +87,12 @@ export class LiveTranscriber {
           }
           this.lastEnd = seg.end
           this.segments.push(seg)
-          this.onSegment(seg)
+          this.onSegment?.(seg)
         }
       }
 
       this.ws.onerror = () => {
-        this.onError('WebSocket error')
+        this.onError?.('WebSocket error')
         if (!settled) {
           settled = true
           reject(new Error('WebSocket error'))
@@ -117,7 +105,7 @@ export class LiveTranscriber {
           settled = true
           reject(new Error(`اتصال بسته شد (کد ${e.code}) — دوباره تلاش کن`))
         }
-        this.onClose()
+        this.onClose?.()
       }
     })
   }
