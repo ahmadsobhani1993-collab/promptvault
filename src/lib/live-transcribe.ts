@@ -13,7 +13,7 @@ export class LiveTranscriber {
   private segments: TranscriptSegment[] = []
   private generationComplete = false
   private pendingInterim: { text: string; start: number } | null = null
-  private messageCount = 0
+  private lastActivityEnd = 0
   
   onSegment?: (seg: TranscriptSegment) => void
   onError?: (msg: string) => void
@@ -49,24 +49,12 @@ export class LiveTranscriber {
       }
 
       this.ws.onmessage = (ev) => {
-        this.messageCount++
         let msg: any
         try {
           msg = JSON.parse(ev.data as string)
         } catch {
-          console.log('[live] ❌ parse error:', ev.data.slice(0, 100))
           return
         }
-
-        // Log every message type
-        const msgType = msg.serverContent?.generationComplete ? 'GENERATION_COMPLETE' :
-                       msg.serverContent?.inputTranscription ? 'FINAL' :
-                       msg.serverContent?.interimInputTranscription ? 'INTERIM' :
-                       msg.serverContent?.modelTurn ? 'MODEL_TURN' :
-                       msg.setupComplete ? 'SETUP_COMPLETE' :
-                       msg.error ? 'ERROR' : 'OTHER'
-
-        console.log(`[live] msg #${this.messageCount} [${msgType}]`, JSON.stringify(msg).slice(0, 150))
 
         if (msg?.error) {
           const errText = msg.error?.message || JSON.stringify(msg.error)
@@ -87,11 +75,38 @@ export class LiveTranscriber {
           return
         }
 
+        // Track voice activity
+        if (msg.voiceActivity) {
+          if (msg.voiceActivity.type === 'ACTIVITY_START') {
+            // New speech started — reset generationComplete for this turn
+            this.generationComplete = false
+            console.log('[live] 🎤 Speech started at', msg.voiceActivity.audioOffset)
+          } else if (msg.voiceActivity.type === 'ACTIVITY_END') {
+            this.lastActivityEnd = parseFloat(msg.voiceActivity.audioOffset) || 0
+            console.log('[live] 🔇 Speech ended at', msg.voiceActivity.audioOffset, '| Flushing pending:', this.pendingInterim?.text?.slice(0, 50))
+            
+            // Flush pending interim when speech ends
+            if (this.pendingInterim) {
+              const seg: TranscriptSegment = {
+                text: this.pendingInterim.text,
+                start: this.pendingInterim.start,
+                end: Math.max(this.pendingInterim.start + 0.1, this.secondsSent),
+              }
+              this.lastEnd = seg.end
+              this.segments.push(seg)
+              console.log('[live] 💾 Flushed segment:', seg.text.slice(0, 50), 'at', seg.start.toFixed(1))
+              this.onSegment?.(seg)
+              this.pendingInterim = null
+            }
+          }
+          return
+        }
+
         if (msg.serverContent?.generationComplete) {
-          console.log('[live] 🏁 Generation complete! Pending interim:', this.pendingInterim?.text?.slice(0, 50))
+          console.log('[live] 🏁 Generation complete')
           this.generationComplete = true
           
-          // Flush pending interim
+          // Flush any remaining pending
           if (this.pendingInterim) {
             const seg: TranscriptSegment = {
               text: this.pendingInterim.text,
@@ -100,7 +115,7 @@ export class LiveTranscriber {
             }
             this.lastEnd = seg.end
             this.segments.push(seg)
-            console.log('[live] 💾 Flushed pending interim:', seg.text.slice(0, 50))
+            console.log('[live] 💾 Final flush:', seg.text.slice(0, 50))
             this.onSegment?.(seg)
             this.pendingInterim = null
           }
@@ -125,7 +140,7 @@ export class LiveTranscriber {
           }
           this.lastEnd = seg.end
           this.segments.push(seg)
-          console.log('[live]  Final segment:', seg.text.slice(0, 50), 'at', seg.start.toFixed(1))
+          console.log('[live] 📝 Final:', seg.text.slice(0, 50), 'at', seg.start.toFixed(1))
           this.onSegment?.(seg)
           this.pendingInterim = null
           return
@@ -138,7 +153,6 @@ export class LiveTranscriber {
             text: interimText.trim(),
             start: this.lastEnd,
           }
-          console.log('[live] ⏳ Interim:', interimText.slice(0, 50))
         }
       }
 
@@ -152,7 +166,7 @@ export class LiveTranscriber {
       }
 
       this.ws.onclose = (e) => {
-        console.log('[live] 🔒 WebSocket closed:', e.code, e.reason, '| Total messages:', this.messageCount, '| Segments:', this.segments.length)
+        console.log('[live] 🔒 Closed:', e.code, '| Segments:', this.segments.length)
         if (!settled) {
           settled = true
           reject(new Error(`اتصال بسته شد (کد ${e.code})`))
@@ -164,7 +178,7 @@ export class LiveTranscriber {
 
   sendChunk(base64: string, seconds: number): boolean {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.log('[live] ⚠️ sendChunk failed: WS not open')
+      console.log('[live] ️ sendChunk failed')
       return false
     }
     this.ws.send(
@@ -179,22 +193,22 @@ export class LiveTranscriber {
   }
 
   async finish(): Promise<void> {
-    console.log('[live] 🛑 finish() called, waiting for generationComplete...')
+    console.log('[live] 🛑 finish() called')
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.log('[live] ⚠️ WS not open in finish()')
+      console.log('[live] ️ WS not open')
       return
     }
     try {
       this.ws.send(JSON.stringify({ clientContent: { turnComplete: true } }))
       console.log('[live] 📤 Sent turnComplete')
     } catch (e) {
-      console.log('[live] ❌ Error sending turnComplete:', e)
+      console.log('[live] ❌ Error:', e)
     }
     
     // Wait for generationComplete or timeout (30s)
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(() => {
-        console.log('[live] ⏰ Timeout after 30s, generationComplete:', this.generationComplete, '| Pending:', this.pendingInterim?.text?.slice(0, 50))
+        console.log('[live]  Timeout 30s | Pending:', this.pendingInterim?.text?.slice(0, 50))
         resolve()
       }, 30000)
       
@@ -210,7 +224,21 @@ export class LiveTranscriber {
       checkComplete()
     })
     
-    console.log('[live] 🔌 Closing WebSocket...')
+    // Final flush
+    if (this.pendingInterim) {
+      const seg: TranscriptSegment = {
+        text: this.pendingInterim.text,
+        start: this.pendingInterim.start,
+        end: Math.max(this.pendingInterim.start + 0.1, this.secondsSent),
+      }
+      this.lastEnd = seg.end
+      this.segments.push(seg)
+      console.log('[live] 💾 Final flush in finish():', seg.text.slice(0, 50))
+      this.onSegment?.(seg)
+      this.pendingInterim = null
+    }
+    
+    console.log('[live] 🔌 Closing...')
     this.ws?.close()
   }
 
