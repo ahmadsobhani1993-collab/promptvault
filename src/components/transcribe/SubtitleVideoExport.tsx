@@ -2,7 +2,6 @@
 
 import { useRef, useState } from 'react'
 import { FFmpeg } from '@ffmpeg/ffmpeg'
-import { fetchFile } from '@ffmpeg/util'
 import { wrapText, easeOutBack, loadFont, type Seg, type Style } from '@/lib/subtitle-studio'
 
 type Props = {
@@ -25,11 +24,10 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
     if (exporting || !videoUrl) return
     setExporting(true)
     setProgress(0)
-    setStatus('آماده‌سازی...')
+    setStatus('آماده‌سازی ویدیو...')
 
     try {
-      // ۱. ساخت ویدیو المنت
-      setStatus('لود ویدیو...')
+      // ۱. ساخت المنت ویدیو
       const video = document.createElement('video')
       video.src = videoUrl
       video.playsInline = true
@@ -40,7 +38,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       await new Promise((res, rej) => {
         video.onloadeddata = () => res(null)
         video.onerror = () => rej(new Error('لود ویدیو شکست خورد'))
-        setTimeout(() => rej(new Error('تایم‌اوت')), 15000)
+        setTimeout(() => rej(new Error('تایم‌اوت لود ویدیو')), 15000)
       })
 
       const W = video.videoWidth || 1920
@@ -49,12 +47,12 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       canvas.width = W
       canvas.height = H
       const ctx = canvas.getContext('2d')
-      if (!ctx) throw new Error('Canvas failed')
+      if (!ctx) throw new Error('Canvas context failed')
 
       setStatus('لود فونت...')
       await loadFont(styleRef.current?.fontId || 'Vazirmatn')
 
-      // . ضبط ویدیو با Canvas
+      // ۲. ضبط با MediaRecorder
       setStatus('رندر فریم‌ها...')
       const stream = canvas.captureStream(30)
       
@@ -74,8 +72,11 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       })
       
       const chunks: Blob[] = []
+      // ✅ فیکس قطعی: بررسی صریح وجود e.data
       recorder.ondataavailable = (e) => {
-        if (e.data?.size > 0) chunks.push(e.data)
+        if (e.data && e.data.size > 0) {
+          chunks.push(e.data)
+        }
       }
 
       const renderFrame = () => {
@@ -139,9 +140,9 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       recorder.stop()
       
       setProgress(60)
-      setStatus('تبدیل به MP4...')
+      setStatus('تبدیل به MP4 (این مرحله ممکن است کمی طول بکشد)...')
 
-      // . تبدیل WebM به MP4 با FFmpeg.wasm (در مرورگر)
+      // ۳. تبدیل با FFmpeg.wasm (بدون استفاده از @ffmpeg/util برای جلوگیری از باگ Next.js)
       const ffmpeg = new FFmpeg()
       
       ffmpeg.on('progress', ({ progress: p }) => {
@@ -149,13 +150,20 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       })
 
       const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
+      
+      // ✅ فیکس قطعی: استفاده از fetch مرورگر به جای import ماژول
+      const coreBlob = await (await fetch(`${baseURL}/ffmpeg-core.js`)).blob()
+      const wasmBlob = await (await fetch(`${baseURL}/ffmpeg-core.wasm`)).blob()
+      
       await ffmpeg.load({
-        coreURL: await fetchFile(`${baseURL}/ffmpeg-core.js`),
-        wasmURL: await fetchFile(`${baseURL}/ffmpeg-core.wasm`),
+        coreURL: URL.createObjectURL(coreBlob),
+        wasmURL: URL.createObjectURL(wasmBlob),
       })
 
       const webmBlob = new Blob(chunks, { type: 'video/webm' })
-      await ffmpeg.writeFile('input.webm', await fetchFile(webmBlob))
+      // ✅ فیکس قطعی: تبدیل مستقیم Blob به Uint8Array
+      const arrayBuffer = await webmBlob.arrayBuffer()
+      await ffmpeg.writeFile('input.webm', new Uint8Array(arrayBuffer))
 
       await ffmpeg.exec([
         '-i', 'input.webm',
@@ -167,11 +175,11 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         'output.mp4'
       ])
 
-      const mp4Data = await ffmpeg.readFile('output.mp4')
+      const mp4Data = await ffmpeg.readFile('output.mp4') as Uint8Array
       const mp4Blob = new Blob([mp4Data], { type: 'video/mp4' })
 
-      // ۴. دانلود
-      setStatus('دانلود...')
+      // ۴. دانلود و پاکسازی
+      setStatus('دانلود فایل...')
       const url = URL.createObjectURL(mp4Blob)
       const a = document.createElement('a')
       a.href = url
@@ -180,16 +188,16 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
 
       setTimeout(() => {
         URL.revokeObjectURL(url)
-        ffmpeg.deleteFile('input.webm')
-        ffmpeg.deleteFile('output.mp4')
+        ffmpeg.deleteFile('input.webm').catch(() => {})
+        ffmpeg.deleteFile('output.mp4').catch(() => {})
       }, 5000)
 
       document.body.removeChild(video)
-      setStatus('✅ کامل شد!')
+      setStatus('✅ با موفقیت انجام شد!')
       
     } catch (e: any) {
-      console.error('[Export]', e)
-      alert('❌ خطا: ' + (e?.message || 'Unknown'))
+      console.error('[Export Error]', e)
+      alert('❌ خطا در خروجی: ' + (e?.message || 'Unknown error'))
     } finally {
       setExporting(false)
     }
@@ -214,7 +222,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
             <span className="text-xs">{Math.round(progress)}%</span>
           </div>
         ) : (
-          ' خروجی MP4 با زیرنویس'
+          '📹 خروجی MP4 با زیرنویس'
         )}
       </button>
     </div>
