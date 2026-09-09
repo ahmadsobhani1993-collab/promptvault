@@ -23,6 +23,9 @@ const DEFAULT_STYLE: Style = {
   karaoke: false
 } as any
 
+// ✅ عرض مرجع برای محاسبه سایز فونت (همان عرض تقریبی container در ادیتور)
+const REFERENCE_WIDTH = 640
+
 export default function SubtitleVideoExport({ videoUrl, baseName, segments, style }: Props) {
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -53,10 +56,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       document.body.appendChild(video)
 
       await new Promise((res, rej) => {
-        video.onloadedmetadata = () => {
-          console.log('[Export] Metadata:', video.videoWidth, 'x', video.videoHeight, 'Duration:', video.duration)
-          res(null)
-        }
+        video.onloadedmetadata = () => res(null)
         video.onerror = () => rej(new Error('لود ویدیو شکست خورد'))
         setTimeout(() => rej(new Error('تایم‌اوت')), 15000)
       })
@@ -68,14 +68,13 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       const canvas = document.createElement('canvas')
       canvas.width = W
       canvas.height = H
-      const ctx = canvas.getContext('2d', { alpha: false })
-      if (!ctx) throw new Error('Canvas failed')
+      const ctx = canvas.getContext('2d')!
 
       setStatus('لود فونت...')
       await loadFont(styleRef.current?.fontId || 'Vazirmatn')
 
-      setStatus('شروع رندر...')
-      const stream = canvas.captureStream(30)  // کاهش به 30fps برای پایداری
+      setStatus('رندر ویدیو...')
+      const stream = canvas.captureStream(30)
       
       try {
         const audioCtx = new AudioContext()
@@ -88,13 +87,13 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       }
 
       const recorder = new MediaRecorder(stream, { 
-        mimeType: 'video/webm;codecs=vp8',  // vp8 به جای vp9 برای سازگاری بیشتر
-        videoBitsPerSecond: 8_000_000  // 8Mbps برای پایداری
+        mimeType: 'video/webm;codecs=vp8',
+        videoBitsPerSecond: 8_000_000
       })
       
       const chunks: Blob[] = []
-      recorder.ondataavailable = (e: any) => {
-        if (e?.data?.size > 0) chunks.push(e.data)
+      recorder.ondataavailable = (e) => {
+        if (e.data?.size > 0) chunks.push(e.data)
       }
 
       let frameCount = 0
@@ -115,18 +114,17 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           if (seg.fx === 'zoomIn') scale = 0.8 + 0.35 * prog
           if (seg.fx === 'zoomOut') scale = 1.15 - 0.35 * prog
 
-          // ✅ فرمول جدید: هماهنگ با ادیتور
-          // در ادیتور: clamp(12px, size*cqi, 60px) که cqi بر اساس عرض container است
-          // در رندر: (size / 10) * (W / 100) * scale
-          // برای W=1920, size=5: (5/10) * 19.2 = 9.6px -> خیلی کوچک!
-          // پس از ضریب 10 استفاده می‌کنیم: (size * W) / 1000
-          const fontSize = Math.max(20, Math.round((s2.size * W) / 1000 * scale))
+          // ✅ فرمول درست: محاسبه بر اساس نسبت به عرض مرجع
+          // در ادیتور: size cqi = (size/100) × REFERENCE_WIDTH
+          // در رندر: همان مقدار را بر اساس عرض واقعی ویدیو scale می‌کنیم
+          const baseFontSize = (s2.size / 100) * REFERENCE_WIDTH
+          const fontSize = Math.max(16, Math.round(baseFontSize * (W / REFERENCE_WIDTH) * scale))
           
           ctx.font = `700 ${fontSize}px "${s2.fontId || 'Vazirmatn'}"`
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
 
-          const lines = wrapText(ctx, seg.text, W * 0.85)  // کاهش از 0.9 به 0.85
+          const lines = wrapText(ctx, seg.text, W * 0.85)
           const lh = fontSize * 1.4
           const totalH = lines.length * lh
 
@@ -136,6 +134,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           const maxLineWidth = Math.max(...lines.map(l => ctx.measureText(l).width))
           const padding = fontSize * 0.3
           
+          // ✅ clamping برای جلوگیری از خروج
           const minX = maxLineWidth / 2 + padding
           const maxX = W - maxLineWidth / 2 - padding
           const finalX = Math.max(minX, Math.min(maxX, anchorX))
@@ -162,14 +161,14 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         }
 
         frameCount++
-        setProgress((t / duration) * 50)
+        setProgress((t / duration) * 100)
       }
 
       console.log('[Export] Starting...')
       await video.play()
       
       recorder.start(1000)
-      console.log('[Export] Recording started')
+      console.log('[Export] Recording...')
 
       const renderInterval = setInterval(() => {
         try {
@@ -199,9 +198,14 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       recorder.stop()
       console.log('[Export] Stopped, chunks:', chunks.length)
       
-      setProgress(60)
+      if (chunks.length === 0) {
+        throw new Error('هیچ داده‌ای ضبط نشد')
+      }
+      
+      setProgress(100)
       setStatus('تبدیل به MP4...')
 
+      // تبدیل با FFmpeg
       const ffmpeg = new FFmpeg()
       
       ffmpeg.on('progress', ({ progress: p }) => {
@@ -223,7 +227,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       await ffmpeg.exec([
         '-i', 'input.webm',
         '-c:v', 'libx264',
-        '-preset', 'ultrafast',  // سریع‌ترین preset
+        '-preset', 'ultrafast',
         '-crf', '23',
         '-pix_fmt', 'yuv420p',
         '-c:a', 'aac',
