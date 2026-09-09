@@ -22,31 +22,58 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
     if (exporting || !videoUrl) return
     setExporting(true); setExpProg(0)
     try {
+      // ساخت video و اضافه کردن به DOM
       const video = document.createElement('video')
-      video.src = videoUrl; video.playsInline = true; video.muted = true
-      video.style.position = 'fixed'; video.style.left = '-9999px'; video.style.top = '-9999px'
+      video.src = videoUrl
+      video.playsInline = true
+      video.muted = true
+      video.style.position = 'fixed'
+      video.style.left = '-9999px'
+      video.style.top = '-9999px'
       document.body.appendChild(video)
-      await new Promise((res, rej) => { video.onloadedmetadata = () => res(null); video.onerror = () => rej(new Error('load failed')) })
 
-      const W = video.videoWidth, H = video.videoHeight
+      // صبر برای لود کامل
+      await new Promise((res, rej) => {
+        video.onloadedmetadata = () => res(null)
+        video.onerror = () => rej(new Error('Video load failed'))
+        video.onloadeddata = () => res(null)
+      })
+
+      const W = video.videoWidth || 1920
+      const H = video.videoHeight || 1080
       const canvas = document.createElement('canvas')
-      canvas.width = W; canvas.height = H
+      canvas.width = W
+      canvas.height = H
       const ctx = canvas.getContext('2d')!
+      if (!ctx) throw new Error('Canvas context failed')
 
       const ac = new AudioContext()
       const srcNode = ac.createMediaElementSource(video)
       const dest = ac.createMediaStreamDestination()
       srcNode.connect(dest)
 
-      await loadFont((styleRef.current?.fontId || "Vazirmatn"))
+      // لود فونت
+      await loadFont(styleRef.current?.fontId || 'Vazirmatn')
 
       const stream = canvas.captureStream(30)
       dest.stream.getAudioTracks().forEach((t) => stream.addTrack(t))
 
-      const mime = MIME_CANDIDATES.find((m) => MediaRecorder.isTypeSupported(m)) || ''
-      const rec = new MediaRecorder(stream, { mimeType: mime || undefined, videoBitsPerSecond: Math.max(8_000_000, W * H * 10) })
+      // پیدا کردن MIME type پشتیبانی شده
+      const mime = MIME_CANDIDATES.find((m) => MediaRecorder.isTypeSupported(m)) || 'video/webm'
+      console.log('[Export] Using MIME:', mime)
+
+      const rec = new MediaRecorder(stream, { 
+        mimeType: mime,
+        videoBitsPerSecond: Math.max(8_000_000, W * H * 10)
+      })
+      
       const parts: Blob[] = []
-      rec.ondataavailable = (e) => e.data?.size && parts.push(e.data)
+      rec.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          parts.push(e.data)
+        }
+      }
+      
       const stopped = new Promise((res) => (rec.onstop = () => res(null)))
       rec.start(1000)
 
@@ -79,7 +106,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         ctx.textBaseline = 'middle'
 
         if (s2.karaoke && seg.words?.length) {
-          ctx.font = `700 ${px}px "${((s2.fontId || "Vazirmatn") || "Vazirmatn")}"`
+          ctx.font = `700 ${px}px "${(s2.fontId || "Vazirmatn")}"`
           const spaceW = ctx.measureText(' ').width
           const ws = seg.words.map((wd) => ({ ...wd, width: ctx.measureText(wd.w).width }))
           const total = ws.reduce((a, b) => a + b.width, 0) + spaceW * (ws.length - 1)
@@ -94,7 +121,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           for (const wd of ws) {
             const active = t >= wd.start && t <= wd.end
             const wpx = active ? Math.round(px * 1.15) : px
-            ctx.font = `${active ? 800 : 700} ${wpx}px "${((s2.fontId || "Vazirmatn") || "Vazirmatn")}"`
+            ctx.font = `${active ? 800 : 700} ${wpx}px "${(s2.fontId || "Vazirmatn")}"`
             const x = cx - wd.width
             if (s2.outline) { ctx.lineWidth = Math.max(2, wpx * 0.12); ctx.strokeStyle = '#000'; ctx.lineJoin = 'round'; ctx.strokeText(wd.w, x, anchor.y) }
             ctx.fillStyle = active ? s2.hlColor : s2.color
@@ -102,7 +129,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
             cx -= wd.width + spaceW
           }
         } else {
-          ctx.font = `700 ${px}px "${((s2.fontId || "Vazirmatn") || "Vazirmatn")}"`
+          ctx.font = `700 ${px}px "${(s2.fontId || "Vazirmatn")}"`
           ctx.textAlign = 'center'
           const lines = wrapText(ctx, seg.text, W * 0.9)
           const lh = px * 1.5
@@ -130,29 +157,34 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         if (!video.ended) raf = requestAnimationFrame(loop)
       }
 
+      // شروع پخش
       await video.play()
-      // صبر کن تا ویدیو واقعاً شروع به پخش کند
-      await new Promise((res) => {
-        if (video.readyState >= 2) res(null)
-        else video.oncanplay = () => res(null)
-      })
-      await new Promise((r) => setTimeout(r, 200))
+      await new Promise((r) => setTimeout(r, 300))
       raf = requestAnimationFrame(loop)
+      
+      // صبر برای پایان
       await new Promise((res) => (video.onended = () => res(null)))
+      
+      // cleanup
       cancelAnimationFrame(raf)
       rec.stop()
       await stopped
       ac.close()
       document.body.removeChild(video)
 
-      const blob = new Blob(parts, { type: mime || 'video/webm' })
-      const ext = (mime || '').includes('mp4') ? 'mp4' : 'webm'
+      if (parts.length === 0) {
+        throw new Error('No video data recorded. Try a different browser.')
+      }
+
+      const blob = new Blob(parts, { type: mime })
+      const ext = mime.includes('mp4') ? 'mp4' : 'webm'
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
       a.download = `${baseName}.subtitled.${ext}`
       a.click()
       setTimeout(() => URL.revokeObjectURL(a.href), 5000)
     } catch (e: any) {
+      console.error('[Export Error]', e)
       alert('❌ خروجی ناموفق: ' + (e?.message || e))
     } finally {
       setExporting(false)
@@ -160,22 +192,14 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
   }
 
   return (
-    <div>
+    <div className="fixed bottom-0 left-0 right-0 p-4 bg-black/80">
       <button
         onClick={exportVideo}
-        disabled={exporting || segments.length === 0}
-        className="block w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-bold text-black shadow-lg shadow-amber-500/20 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
+        disabled={exporting}
+        className="w-full py-3 bg-orange-500 text-white rounded disabled:opacity-50"
       >
-        {exporting ? `⏳ در حال رندر… ${Math.round(expProg * 100)}٪` : '🎥 خروجی ویدیو با زیرنویس'}
+        {exporting ? `در حال رندر... ${Math.round(expProg * 100)}%` : 'خروجی ویدیو با زیرنویس'}
       </button>
-      {exporting && (
-        <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/10">
-          <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${Math.round(expProg * 100)}%` }} />
-        </div>
-      )}
-      {segments.length === 0 && !exporting && (
-        <p className="mt-2 text-center text-[10px] text-white/30">ابتدا ویدیو را پردازش کن</p>
-      )}
     </div>
   )
 }

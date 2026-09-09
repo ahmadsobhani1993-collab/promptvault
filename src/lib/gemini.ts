@@ -19,6 +19,11 @@ export type GeminiResult = {
 const cleanTitle = (t: string) => t.replace(/^([\u0600-\u06FF\w]+)\s+\1/, '$1')
 
 export const MODEL_CHAIN = [
+  'gemini-3.5-flash-lite',
+  // بقیه مدل‌ها غیرفعال برای جلوگیری از timeout
+  // 'gemini-3.7-flash',
+  // 'gemini-3.6-flash',
+  // 'gemini-3.5-flash',
   'gemini-3.7-flash',
   'gemini-3.6-flash',
   'gemini-3.5-flash',
@@ -55,7 +60,7 @@ export async function generateText(opts: {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: [{ parts }] }),
-            signal: AbortSignal.timeout(10000),
+            signal: AbortSignal.timeout(5000),
           }
         )
 
