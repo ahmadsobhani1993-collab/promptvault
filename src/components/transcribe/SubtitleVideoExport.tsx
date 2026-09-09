@@ -74,7 +74,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       setStatus('لود فونت...')
       await loadFont(styleRef.current?.fontId || 'Vazirmatn')
 
-      setStatus('شروع رندر فریم‌ها...')
+      setStatus('شروع رندر...')
       const stream = canvas.captureStream(60)
       
       try {
@@ -89,7 +89,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
 
       const recorder = new MediaRecorder(stream, { 
         mimeType: 'video/webm;codecs=vp9',
-        videoBitsPerSecond: 50_000_000
+        videoBitsPerSecond: 25_000_000  // کاهش بیت‌ریت برای جلوگیری از crash
       })
       
       const chunks: Blob[] = []
@@ -99,6 +99,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         }
       }
 
+      let frameCount = 0
       const renderFrame = () => {
         const t = video.currentTime
         const seg = segRef.current.find(s => t >= s.start && t <= s.end)
@@ -116,6 +117,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           if (seg.fx === 'zoomIn') scale = 0.8 + 0.35 * prog
           if (seg.fx === 'zoomOut') scale = 1.15 - 0.35 * prog
 
+          // ✅ محاسبه سایز فونت بر اساس عرض ویدیو (هماهنگ با ادیتور)
           const fontSize = Math.max(24, Math.round((s2.size / 100) * W * scale))
           ctx.font = `700 ${fontSize}px "${s2.fontId || 'Vazirmatn'}"`
           ctx.textAlign = 'center'
@@ -125,15 +127,14 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           const lh = fontSize * 1.5
           const totalH = lines.length * lh
 
-          // ✅ محاسبه موقعیت بر اساس درصد (مشابه ادیتور)
+          // ✅ محاسبه موقعیت با محدودیت سخت‌گیرانه
           const anchorX = s2.x != null ? (s2.x / 100) * W : W / 2
           const anchorY = s2.y != null ? (s2.y / 100) * H : H - H * 0.1
 
-          // ✅ محاسبه عرض واقعی متن
           const maxLineWidth = Math.max(...lines.map(l => ctx.measureText(l).width))
-          
-          // ✅ محدودیت سخت‌گیرانه: جلوگیری کامل از خروج از کادر
           const padding = fontSize * 0.5
+          
+          // clamping برای جلوگیری از خروج
           const minX = maxLineWidth / 2 + padding
           const maxX = W - maxLineWidth / 2 - padding
           const finalX = Math.max(minX, Math.min(maxX, anchorX))
@@ -142,13 +143,12 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           const maxY = H - totalH / 2 - padding
           const finalY = Math.max(minY, Math.min(maxY, anchorY))
 
-          // رسم background
+          // رسم
           if (s2.bgOpacity > 0) {
             ctx.fillStyle = `rgba(0,0,0,${s2.bgOpacity})`
             ctx.fillRect(finalX - maxLineWidth / 2 - padding / 2, finalY - totalH / 2 - padding / 2, maxLineWidth + padding, totalH + padding)
           }
 
-          // رسم خطوط
           lines.forEach((line, i) => {
             const y = finalY + (i - (lines.length - 1) / 2) * lh
             if (s2.outline) {
@@ -161,10 +161,11 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           })
         }
 
+        frameCount++
         setProgress((t / duration) * 50)
       }
 
-      console.log('[Export] Starting video playback...')
+      console.log('[Export] Starting playback...')
       await video.play()
       
       recorder.start(1000)
@@ -174,19 +175,24 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         try {
           renderFrame()
         } catch (err) {
-          console.error('[Export] Render frame error:', err)
+          console.error('[Export] Render error:', err)
         }
         
         if (video.ended) {
+          console.log('[Export] Video ended, frameCount:', frameCount)
           clearInterval(renderInterval)
         }
       }, 1000 / 60)
 
       await new Promise((res) => {
-        video.onended = () => res(null)
+        video.onended = () => {
+          console.log('[Export] onended fired')
+          res(null)
+        }
         const maxTime = duration + 2
         const checkTimeout = setInterval(() => {
           if (video.currentTime >= maxTime) {
+            console.log('[Export] Timeout reached')
             clearInterval(checkTimeout)
             res(null)
           }
@@ -196,14 +202,21 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       clearInterval(renderInterval)
       await new Promise(r => setTimeout(r, 500))
       recorder.stop()
-      console.log('[Export] Recorder stopped, total chunks:', chunks.length)
+      console.log('[Export] Recorder stopped, chunks:', chunks.length, 'frames:', frameCount)
       
       setProgress(60)
-      setStatus('تبدیل به MP4...')
+      setStatus('تبدیل به MP4 (این مرحله ممکن است چند دقیقه طول بکشد)...')
 
+      // تبدیل با FFmpeg
       const ffmpeg = new FFmpeg()
-      ffmpeg.on('progress', ({ progress: p }) => {
+      
+      ffmpeg.on('progress', ({ progress: p, time }) => {
         setProgress(60 + Math.round(p * 40))
+        console.log('[FFmpeg] Progress:', p, 'time:', time)
+      })
+
+      ffmpeg.on('log', ({ message }) => {
+        console.log('[FFmpeg]', message)
       })
 
       const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
@@ -219,14 +232,15 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       const arrayBuffer = await webmBlob.arrayBuffer()
       await ffmpeg.writeFile('input.webm', new Uint8Array(arrayBuffer))
 
+      console.log('[FFmpeg] Starting conversion...')
       await ffmpeg.exec([
         '-i', 'input.webm',
         '-c:v', 'libx264',
-        '-preset', 'slow',
-        '-crf', '18',
+        '-preset', 'medium',  // کاهش از slow به medium برای سرعت بیشتر
+        '-crf', '23',         // افزایش از 18 به 23 برای حجم کمتر
         '-pix_fmt', 'yuv420p',
         '-c:a', 'aac',
-        '-b:a', '192k',
+        '-b:a', '128k',
         'output.mp4'
       ])
 
@@ -276,7 +290,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
             <span className="text-xs">{Math.round(progress)}%</span>
           </div>
         ) : (
-          '📹 خروجی MP4 با زیرنویس'
+          ' خروجی MP4 با زیرنویس'
         )}
       </button>
     </div>
