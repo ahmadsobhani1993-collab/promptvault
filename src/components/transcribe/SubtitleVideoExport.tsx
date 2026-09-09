@@ -44,7 +44,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       const mime = MIME_CANDIDATES.find((m) => MediaRecorder.isTypeSupported(m)) || ''
       const rec = new MediaRecorder(stream, { mimeType: mime || undefined, videoBitsPerSecond: Math.max(8_000_000, W * H * 10) })
       const parts: Blob[] = []
-      rec.ondataavailable = (e) => e.data.size && parts.push(e.data)
+      rec.ondataavailable = (e) => e.data?.size && parts.push(e.data)
       const stopped = new Promise((res) => (rec.onstop = () => res(null)))
       rec.start(1000)
 
@@ -129,6 +129,12 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       }
 
       await video.play()
+      // صبر کن تا ویدیو واقعاً شروع به پخش کند
+      await new Promise((res) => {
+        if (video.readyState >= 2) res(null)
+        else video.oncanplay = () => res(null)
+      })
+      await new Promise((r) => setTimeout(r, 200))
       raf = requestAnimationFrame(loop)
       await new Promise((res) => (video.onended = () => res(null)))
       cancelAnimationFrame(raf)
