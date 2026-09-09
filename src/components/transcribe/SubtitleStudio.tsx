@@ -83,8 +83,11 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     if (!stage) return
     const rect = stage.getBoundingClientRect()
     const move = (ev: PointerEvent) => {
-      const x = Math.min(95, Math.max(5, ((ev.clientX - rect.left) / rect.width) * 100))
-      const y = Math.min(95, Math.max(5, ((ev.clientY - rect.top) / rect.height) * 100))
+      // محدود کردن موقعیت برای جلوگیری از خروج از کادر ویدیو
+      const rawX = ((ev.clientX - rect.left) / rect.width) * 100
+      const rawY = ((ev.clientY - rect.top) / rect.height) * 100
+      const x = Math.min(90, Math.max(10, rawX))
+      const y = Math.min(90, Math.max(10, rawY))
       setStyle((s) => ({ ...s, x, y }))
     }
     const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }

@@ -125,14 +125,14 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           const lh = fontSize * 1.5
           const totalH = lines.length * lh
 
-          // ✅ استفاده از موقعیت کاربر (s2.x و s2.y)
+          // ✅ محاسبه موقعیت بر اساس درصد (مشابه ادیتور)
           const anchorX = s2.x != null ? (s2.x / 100) * W : W / 2
           const anchorY = s2.y != null ? (s2.y / 100) * H : H - H * 0.1
 
-          // ✅ محاسبه عرض متن برای جلوگیری از خروج از کادر
+          // ✅ محاسبه عرض واقعی متن
           const maxLineWidth = Math.max(...lines.map(l => ctx.measureText(l).width))
           
-          // ✅ clamping: اطمینان از اینکه زیرنویس از کادر ویدیو بیرون نمی‌زند
+          // ✅ محدودیت سخت‌گیرانه: جلوگیری کامل از خروج از کادر
           const padding = fontSize * 0.5
           const minX = maxLineWidth / 2 + padding
           const maxX = W - maxLineWidth / 2 - padding
