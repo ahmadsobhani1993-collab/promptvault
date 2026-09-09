@@ -13,6 +13,7 @@ export class LiveTranscriber {
   private segments: TranscriptSegment[] = []
   private generationComplete = false
   private pendingInterim: { text: string; start: number } | null = null
+  private messageCount = 0
   
   onSegment?: (seg: TranscriptSegment) => void
   onError?: (msg: string) => void
@@ -29,6 +30,7 @@ export class LiveTranscriber {
       let settled = false
 
       this.ws.onopen = () => {
+        console.log('[live] ✅ WebSocket opened')
         this.ws?.send(
           JSON.stringify({
             setup: {
@@ -47,12 +49,24 @@ export class LiveTranscriber {
       }
 
       this.ws.onmessage = (ev) => {
+        this.messageCount++
         let msg: any
         try {
           msg = JSON.parse(ev.data as string)
         } catch {
+          console.log('[live] ❌ parse error:', ev.data.slice(0, 100))
           return
         }
+
+        // Log every message type
+        const msgType = msg.serverContent?.generationComplete ? 'GENERATION_COMPLETE' :
+                       msg.serverContent?.inputTranscription ? 'FINAL' :
+                       msg.serverContent?.interimInputTranscription ? 'INTERIM' :
+                       msg.serverContent?.modelTurn ? 'MODEL_TURN' :
+                       msg.setupComplete ? 'SETUP_COMPLETE' :
+                       msg.error ? 'ERROR' : 'OTHER'
+
+        console.log(`[live] msg #${this.messageCount} [${msgType}]`, JSON.stringify(msg).slice(0, 150))
 
         if (msg?.error) {
           const errText = msg.error?.message || JSON.stringify(msg.error)
@@ -65,6 +79,7 @@ export class LiveTranscriber {
         }
 
         if (msg.setupComplete) {
+          console.log('[live] ✅ Setup complete')
           if (!settled) {
             settled = true
             resolve()
@@ -73,7 +88,9 @@ export class LiveTranscriber {
         }
 
         if (msg.serverContent?.generationComplete) {
+          console.log('[live] 🏁 Generation complete! Pending interim:', this.pendingInterim?.text?.slice(0, 50))
           this.generationComplete = true
+          
           // Flush pending interim
           if (this.pendingInterim) {
             const seg: TranscriptSegment = {
@@ -83,6 +100,7 @@ export class LiveTranscriber {
             }
             this.lastEnd = seg.end
             this.segments.push(seg)
+            console.log('[live] 💾 Flushed pending interim:', seg.text.slice(0, 50))
             this.onSegment?.(seg)
             this.pendingInterim = null
           }
@@ -107,6 +125,7 @@ export class LiveTranscriber {
           }
           this.lastEnd = seg.end
           this.segments.push(seg)
+          console.log('[live]  Final segment:', seg.text.slice(0, 50), 'at', seg.start.toFixed(1))
           this.onSegment?.(seg)
           this.pendingInterim = null
           return
@@ -119,10 +138,12 @@ export class LiveTranscriber {
             text: interimText.trim(),
             start: this.lastEnd,
           }
+          console.log('[live] ⏳ Interim:', interimText.slice(0, 50))
         }
       }
 
       this.ws.onerror = () => {
+        console.log('[live] ❌ WebSocket error')
         this.onError?.('WebSocket error')
         if (!settled) {
           settled = true
@@ -131,7 +152,7 @@ export class LiveTranscriber {
       }
 
       this.ws.onclose = (e) => {
-        console.log('[live] ws close:', e.code, e.reason)
+        console.log('[live] 🔒 WebSocket closed:', e.code, e.reason, '| Total messages:', this.messageCount, '| Segments:', this.segments.length)
         if (!settled) {
           settled = true
           reject(new Error(`اتصال بسته شد (کد ${e.code})`))
@@ -142,7 +163,10 @@ export class LiveTranscriber {
   }
 
   sendChunk(base64: string, seconds: number): boolean {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.log('[live] ⚠️ sendChunk failed: WS not open')
+      return false
+    }
     this.ws.send(
       JSON.stringify({
         realtimeInput: {
@@ -155,29 +179,38 @@ export class LiveTranscriber {
   }
 
   async finish(): Promise<void> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
+    console.log('[live] 🛑 finish() called, waiting for generationComplete...')
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.log('[live] ⚠️ WS not open in finish()')
+      return
+    }
     try {
       this.ws.send(JSON.stringify({ clientContent: { turnComplete: true } }))
-    } catch {}
+      console.log('[live] 📤 Sent turnComplete')
+    } catch (e) {
+      console.log('[live] ❌ Error sending turnComplete:', e)
+    }
     
     // Wait for generationComplete or timeout (30s)
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(() => {
-        console.log('[live] finish timeout after 30s')
+        console.log('[live] ⏰ Timeout after 30s, generationComplete:', this.generationComplete, '| Pending:', this.pendingInterim?.text?.slice(0, 50))
         resolve()
       }, 30000)
       
       const checkComplete = () => {
         if (this.generationComplete) {
           clearTimeout(timeout)
+          console.log('[live] ✅ generationComplete received')
           resolve()
         } else {
-          setTimeout(checkComplete, 200)
+          setTimeout(checkComplete, 500)
         }
       }
       checkComplete()
     })
     
+    console.log('[live] 🔌 Closing WebSocket...')
     this.ws?.close()
   }
 
