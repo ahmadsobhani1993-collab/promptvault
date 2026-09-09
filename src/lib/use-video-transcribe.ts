@@ -3,6 +3,8 @@ import { LiveTranscriber, type TranscriptSegment } from './live-transcribe'
 import { decodeToPcm16k, bufferToBase64Chunks } from './audio'
 import { mkWords, type Seg } from './subtitle-studio'
 
+const SESSION_SECONDS = 60  // هر ۶۰ ثانیه یک session جدید
+
 const splitIntoSentences = (text: string, start: number, end: number): Seg[] => {
   const sentences = text.match(/[^.!?؟\n]+[.!?؟]?/g)?.map((s) => s.trim()).filter(Boolean) || [text]
   const words = sentences.map((s) => s.split(/\s+/).filter(Boolean).length)
@@ -25,125 +27,90 @@ export const useVideoTranscribe = () => {
   const [progress, setProgress] = useState(0)
   const [busy, setBusy] = useState(false)
   const [segments, setSegments] = useState<Seg[]>([])
-  const tRef = useRef<LiveTranscriber | null>(null)
   const stopRef = useRef(false)
 
   const run = async (file: File, speed: number) => {
-    setSegments([])
-    setProgress(0)
-    setBusy(true)
-    stopRef.current = false
+    setSegments([]); setProgress(0); setBusy(true); stopRef.current = false
     const acc: Seg[] = []
-    const flag = { closed: false, closeTime: 0 }
 
     const wire = (t: LiveTranscriber, offset: number) => {
-      flag.closed = false
-      flag.closeTime = 0
       t.onSegment = (seg: TranscriptSegment) => {
         const broken = splitIntoSentences(seg.text, seg.start + offset, seg.end + offset)
         acc.push(...broken)
         setSegments([...acc])
-        console.log('[transcribe] segment:', seg.text.slice(0, 50), 'at', seg.start.toFixed(1))
       }
-      t.onError = (m) => {
-        console.error('[transcribe] error:', m)
-        setStatus('❌ ' + m)
-      }
-      t.onClose = (e?: { code?: number; reason?: string }) => {
-        flag.closed = true
-        flag.closeTime = Date.now()
-        console.warn('[transcribe] ws closed:', e?.code, e?.reason)
-      }
+      t.onError = (m) => setStatus('❌ ' + m)
     }
 
     const connect = async (offset: number): Promise<LiveTranscriber> => {
-      let lastErr: any = null
       for (let a = 0; a < 3; a++) {
         const t = new LiveTranscriber(undefined, offset)
-        tRef.current = t
         wire(t, offset)
         try {
-          setStatus(`اتصال ${a + 1}/3…`)
-          await Promise.race([
-            t.connect(),
-            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000)),
-          ])
-          console.log('[transcribe] connected at offset', offset)
+          await Promise.race([t.connect(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000))])
           return t
-        } catch (e) {
-          lastErr = e
-          console.warn('[transcribe] connect attempt', a + 1, 'failed:', e)
-          await sleep(1500)
-        }
+        } catch (e) { await sleep(1500) }
       }
-      throw lastErr || new Error('اتصال برقرار نشد')
+      throw new Error('اتصال برقرار نشد')
     }
 
     try {
       setStatus('۱. دیکود صدا…')
       const pcm = await decodeToPcm16k(file)
       const chunks = bufferToBase64Chunks(pcm, 1)
-      console.log('[transcribe] total chunks:', chunks.length, 'duration:', chunks.reduce((s, c) => s + c.seconds, 0).toFixed(1) + 's')
+      const totalDuration = chunks.reduce((s, c) => s + c.seconds, 0)
+      setStatus(`۲. ${chunks.length} بخش — ${totalDuration.toFixed(0)}s`)
 
-      const d0 = pcm.getChannelData(0)
-      let sum = 0, n = 0
-      for (let i = 0; i < d0.length; i += 997) { sum += Math.abs(d0[i]); n++ }
-      const avg = n ? sum / n : 0
-      if (avg < 0.001) { setStatus('❌ صدا ندارد'); setBusy(false); return }
+      // گروه‌بندی به session های ۶۰ ثانیه‌ای
+      const sessions: { chunks: typeof chunks; offset: number }[] = []
+      let current: typeof chunks = []
+      let currentSec = 0
+      let sessionOffset = 0
+      for (const c of chunks) {
+        current.push(c)
+        currentSec += c.seconds
+        if (currentSec >= SESSION_SECONDS) {
+          sessions.push({ chunks: current, offset: sessionOffset })
+          sessionOffset += currentSec
+          current = []; currentSec = 0
+        }
+      }
+      if (current.length) sessions.push({ chunks: current, offset: sessionOffset })
 
-      setStatus('۲. اتصال WebSocket…')
-      let t = await connect(0)
+      setStatus(`۳. ${sessions.length} session ترنسکریپت…`)
+      let totalChunks = 0
+      const totalAllChunks = chunks.length
 
-      setStatus('۳. ترنسکریپت…')
-      let sentSeconds = 0
-      let sentChunks = 0
-      let reconnects = 0
-
-      for (let i = 0; i < chunks.length; i++) {
+      for (let s = 0; s < sessions.length; s++) {
         if (stopRef.current) break
-
-        // چک اتصال قبل از هر chunk
-        if (flag.closed || !t.isConnected()) {
-          reconnects++
-          console.log('[transcribe] reconnecting after chunk', i, 'at', sentSeconds.toFixed(1) + 's')
-          setStatus(`🔄 اتصال مجدد (${reconnects})…`)
-          t = await connect(sentSeconds)
-          setStatus('۳. ترنسکریپت…')
+        const sess = sessions[s]
+        setStatus(`session ${s + 1}/${sessions.length} (از ${sess.offset.toFixed(0)}s)…`)
+        
+        const t = await connect(sess.offset)
+        
+        for (let i = 0; i < sess.chunks.length; i++) {
+          if (stopRef.current) break
+          if (!t.sendChunk(sess.chunks[i].data, sess.chunks[i].seconds)) {
+            setStatus(`❌ chunk ${i + 1} session ${s + 1} ارسال نشد`)
+            break
+          }
+          totalChunks++
+          setProgress(Math.round((totalChunks / totalAllChunks) * 100))
+          await sleep(sess.chunks[i].seconds * 1000)
         }
-
-        const ok = t.sendChunk(chunks[i].data, chunks[i].seconds)
-        if (!ok) {
-          console.error('[transcribe] send failed at chunk', i)
-          setStatus(`❌ ارسال chunk ${i + 1} ناموفق`)
-          break
-        }
-
-        sentSeconds += chunks[i].seconds
-        sentChunks++
-        setProgress(Math.round(((i + 1) / chunks.length) * 100))
-
-        if (i % 10 === 0) {
-          console.log('[transcribe] progress:', i + 1, '/', chunks.length, 'sent:', sentSeconds.toFixed(1) + 's')
-        }
-
-        // pacing: real-time
-        await sleep(chunks[i].seconds * 1000)
+        
+        // پایان session — صبر برای جواب Gemini
+        await t.finish(15000)
       }
 
-      console.log('[transcribe] finished:', sentChunks, 'chunks sent,', reconnects, 'reconnects')
-      setStatus('۴. پایان…')
-      await t.finish()
-
-      setStatus(acc.length === 0 ? '⚠️ متنی دریافت نشد' : `✅ ${acc.length} کپشن — ${sentSeconds.toFixed(0)}s از ${chunks.reduce((s, c) => s + c.seconds, 0).toFixed(0)}s`)
+      setStatus(acc.length === 0 ? '️ متنی دریافت نشد' : `✅ ${acc.length} کپشن — ${totalDuration.toFixed(0)}s`)
     } catch (err: any) {
-      console.error('[transcribe] fatal error:', err)
       setStatus('❌ ' + (err?.message || String(err)))
     } finally {
       setBusy(false)
     }
   }
 
-  const stop = () => { stopRef.current = true; tRef.current?.finish() }
-
+  const stop = () => { stopRef.current = true }
   return { status, progress, busy, segments, setSegments, run, stop }
 }
