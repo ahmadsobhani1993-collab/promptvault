@@ -23,7 +23,9 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
     setExporting(true); setExpProg(0)
     try {
       const video = document.createElement('video')
-      video.src = videoUrl; video.playsInline = true
+      video.src = videoUrl; video.playsInline = true; video.muted = true
+      video.style.position = 'fixed'; video.style.left = '-9999px'; video.style.top = '-9999px'
+      document.body.appendChild(video)
       await new Promise((res, rej) => { video.onloadedmetadata = () => res(null); video.onerror = () => rej(new Error('load failed')) })
 
       const W = video.videoWidth, H = video.videoHeight
@@ -141,6 +143,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       rec.stop()
       await stopped
       ac.close()
+      document.body.removeChild(video)
 
       const blob = new Blob(parts, { type: mime || 'video/webm' })
       const ext = (mime || '').includes('mp4') ? 'mp4' : 'webm'
