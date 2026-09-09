@@ -263,7 +263,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
               </div>
               <div>
                 <div className="mb-1 text-white/40">اندازه: {style.size}٪</div>
-                <input type="range" min={3} max={12} value={style.size} onChange={(e) => setStyle({ ...style, size: Number(e.target.value) })} className="w-full accent-amber-500" />
+                <input type="range" min={1} max={20} step={0.5} value={style.size} onChange={(e) => setStyle({ ...style, size: Number(e.target.value) })} className="w-full accent-amber-500" />
               </div>
               <div>
                 <div className="mb-1 text-white/40">رنگ متن</div>
