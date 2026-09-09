@@ -8,15 +8,30 @@ type Props = {
   videoUrl: string
   baseName: string
   segments: Seg[]
-  style: Style
+  style?: Style
 }
+
+const DEFAULT_STYLE: Style = {
+  size: 5,
+  color: '#ffffff',
+  bgOpacity: 0.6,
+  outline: true,
+  fontId: 'Vazirmatn',
+  x: 50,
+  y: 90,
+  hlColor: '#f59e0b',
+  karaoke: false
+} as any
 
 export default function SubtitleVideoExport({ videoUrl, baseName, segments, style }: Props) {
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState('')
-  const styleRef = useRef(style)
-  styleRef.current = style
+  
+  const currentStyle = style || DEFAULT_STYLE
+  const styleRef = useRef(currentStyle)
+  styleRef.current = currentStyle
+  
   const segRef = useRef(segments)
   segRef.current = segments
 
@@ -27,7 +42,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
     setStatus('آماده‌سازی...')
 
     try {
-      // ۱. ساخت ویدیو المنت
       const video = document.createElement('video')
       video.src = videoUrl
       video.playsInline = true
@@ -38,13 +52,12 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       video.style.top = '-9999px'
       document.body.appendChild(video)
 
-      // ۲. صبر برای لود کامل متادیتا
       await new Promise((res, rej) => {
         video.onloadedmetadata = () => {
           console.log('[Export] Metadata loaded:', video.videoWidth, 'x', video.videoHeight, 'Duration:', video.duration)
           res(null)
         }
-        video.onerror = (e) => rej(new Error('لود ویدیو شکست خورد'))
+        video.onerror = () => rej(new Error('لود ویدیو شکست خورد'))
         setTimeout(() => rej(new Error('تایم‌اوت لود')), 15000)
       })
 
@@ -61,7 +74,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       setStatus('لود فونت...')
       await loadFont(styleRef.current?.fontId || 'Vazirmatn')
 
-      // ۳. ضبط ویدیو
       setStatus('شروع رندر فریم‌ها...')
       const stream = canvas.captureStream(60)
       
@@ -83,26 +95,20 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       const chunks: Blob[] = []
       recorder.ondataavailable = (e: any) => {
         if (e && e.data && typeof e.data.size === 'number' && e.data.size > 0) {
-          console.log('[Export] Chunk recorded:', e.data.size, 'bytes')
           chunks.push(e.data)
         }
       }
 
-      // ۴. تابع رندر فریم
       const renderFrame = () => {
         const t = video.currentTime
         const seg = segRef.current.find(s => t >= s.start && t <= s.end)
 
-        // پاک کردن canvas
         ctx.fillStyle = '#000'
         ctx.fillRect(0, 0, W, H)
-        
-        // رسم فریم فعلی ویدیو
         ctx.drawImage(video, 0, 0, W, H)
 
-        // رسم زیرنویس اگر وجود دارد
         if (seg) {
-          const s2 = styleRef.current
+          const s2 = styleRef.current || DEFAULT_STYLE
           const prog = Math.min(1, (t - seg.start) / Math.max(0.1, seg.end - seg.start))
           
           let scale = 1
@@ -110,7 +116,10 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           if (seg.fx === 'zoomIn') scale = 0.8 + 0.35 * prog
           if (seg.fx === 'zoomOut') scale = 1.15 - 0.35 * prog
 
-          const fontSize = Math.max(10, Math.round((s2.size / 100) * H * scale))
+          // ✅ فیکس قطعی: محاسبه سایز بر اساس عرض (W) دقیقاً مانند cqi در ادیتور
+          // این باعث می‌شود نسبت اندازه فونت به ویدیو در رندر دقیقاً مشابه ادیتور باشد
+          const fontSize = Math.max(24, Math.round((s2.size / 100) * W * scale))
+          
           ctx.font = `700 ${fontSize}px "${s2.fontId || 'Vazirmatn'}"`
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
@@ -137,46 +146,38 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           })
         }
 
-        // آپدیت پیشرفت
         setProgress((t / duration) * 50)
       }
 
-      // ۵. شروع پخش ویدیو
       console.log('[Export] Starting video playback...')
       await video.play()
-      console.log('[Export] Video playing, currentTime:', video.currentTime)
-
-      // ۶. شروع ریکوردر
+      
       recorder.start(1000)
       console.log('[Export] Recorder started')
 
-      // ۷. لوپ رندر با setInterval برای اطمینان از اجرا
       const renderInterval = setInterval(() => {
-        renderFrame()
+        try {
+          renderFrame()
+        } catch (err) {
+          console.error('[Export] Render frame error:', err)
+        }
+        
         if (video.ended) {
-          console.log('[Export] Video ended')
           clearInterval(renderInterval)
         }
-      }, 1000 / 60) // 60 FPS
+      }, 1000 / 60)
 
-      // ۸. صبر برای پایان ویدیو
       await new Promise((res) => {
-        video.onended = () => {
-          console.log('[Export] onended fired')
-          res(null)
-        }
-        // فallback: اگر ویدیو به هر دلیلی ended نشد
+        video.onended = () => res(null)
         const maxTime = duration + 2
         const checkTimeout = setInterval(() => {
           if (video.currentTime >= maxTime) {
-            console.log('[Export] Timeout reached, forcing end')
             clearInterval(checkTimeout)
             res(null)
           }
         }, 1000)
       })
 
-      // ۹. توقف رندر و ریکوردر
       clearInterval(renderInterval)
       await new Promise(r => setTimeout(r, 500))
       recorder.stop()
@@ -185,9 +186,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       setProgress(60)
       setStatus('تبدیل به MP4...')
 
-      // ۱۰. تبدیل با FFmpeg
       const ffmpeg = new FFmpeg()
-      
       ffmpeg.on('progress', ({ progress: p }) => {
         setProgress(60 + Math.round(p * 40))
       })
