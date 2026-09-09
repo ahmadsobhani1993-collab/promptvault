@@ -12,12 +12,11 @@ export class LiveTranscriber {
   private lastEnd = 0
   private segments: TranscriptSegment[] = []
   private generationComplete = false
-  private pendingText = ''
+  private pendingInterim: { text: string; start: number } | null = null
   
   onSegment?: (seg: TranscriptSegment) => void
   onError?: (msg: string) => void
   onClose?: () => void
-  onGenerationComplete?: () => void
 
   constructor(private model: string = TRANSCRIBE_MODEL, offset = 0) {
     this.secondsSent = offset
@@ -73,52 +72,52 @@ export class LiveTranscriber {
           return
         }
 
-        // Track generation complete
         if (msg.serverContent?.generationComplete) {
           this.generationComplete = true
-          this.onGenerationComplete?.()
-          
-          // Flush pending text
-          if (this.pendingText.trim()) {
+          // Flush pending interim
+          if (this.pendingInterim) {
             const seg: TranscriptSegment = {
-              text: this.pendingText.trim(),
-              start: this.lastEnd,
-              end: Math.max(this.lastEnd + 0.1, this.secondsSent),
+              text: this.pendingInterim.text,
+              start: this.pendingInterim.start,
+              end: Math.max(this.pendingInterim.start + 0.1, this.secondsSent),
             }
             this.lastEnd = seg.end
             this.segments.push(seg)
             this.onSegment?.(seg)
-            this.pendingText = ''
+            this.pendingInterim = null
           }
           return
         }
 
-        // Get text from any source
         const text: string =
           msg?.serverContent?.modelTurn?.parts
             ?.map((p: any) => p.text)
             ?.filter(Boolean)
             ?.join(' ') ||
           msg?.serverContent?.inputTranscription?.text ||
-          msg?.serverContent?.interimInputTranscription?.text ||
           msg?.serverContent?.outputTranscription?.text ||
           ''
 
-        if (text.trim()) {
-          // If it's interim, just update pending
-          if (msg.serverContent?.interimInputTranscription) {
-            this.pendingText = text.trim()
-          } else {
-            // Final transcription
-            const seg: TranscriptSegment = {
-              text: text.trim(),
-              start: this.lastEnd,
-              end: Math.max(this.lastEnd + 0.1, this.secondsSent),
-            }
-            this.lastEnd = seg.end
-            this.segments.push(seg)
-            this.onSegment?.(seg)
-            this.pendingText = ''
+        // Final transcription
+        if (text.trim() && msg.serverContent?.inputTranscription) {
+          const seg: TranscriptSegment = {
+            text: text.trim(),
+            start: this.lastEnd,
+            end: Math.max(this.lastEnd + 0.1, this.secondsSent),
+          }
+          this.lastEnd = seg.end
+          this.segments.push(seg)
+          this.onSegment?.(seg)
+          this.pendingInterim = null
+          return
+        }
+
+        // Interim transcription
+        const interimText: string = msg?.serverContent?.interimInputTranscription?.text || ''
+        if (interimText.trim()) {
+          this.pendingInterim = {
+            text: interimText.trim(),
+            start: this.lastEnd,
           }
         }
       }
@@ -161,19 +160,19 @@ export class LiveTranscriber {
       this.ws.send(JSON.stringify({ clientContent: { turnComplete: true } }))
     } catch {}
     
-    // Wait for generationComplete or timeout
+    // Wait for generationComplete or timeout (30s)
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(() => {
-        console.log('[live] finish timeout after 15s')
+        console.log('[live] finish timeout after 30s')
         resolve()
-      }, 15000)
+      }, 30000)
       
       const checkComplete = () => {
         if (this.generationComplete) {
           clearTimeout(timeout)
           resolve()
         } else {
-          setTimeout(checkComplete, 100)
+          setTimeout(checkComplete, 200)
         }
       }
       checkComplete()
