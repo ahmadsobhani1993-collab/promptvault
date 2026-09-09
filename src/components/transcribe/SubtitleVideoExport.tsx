@@ -116,10 +116,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           if (seg.fx === 'zoomIn') scale = 0.8 + 0.35 * prog
           if (seg.fx === 'zoomOut') scale = 1.15 - 0.35 * prog
 
-          // ✅ فیکس قطعی: محاسبه سایز بر اساس عرض (W) دقیقاً مانند cqi در ادیتور
-          // این باعث می‌شود نسبت اندازه فونت به ویدیو در رندر دقیقاً مشابه ادیتور باشد
           const fontSize = Math.max(24, Math.round((s2.size / 100) * W * scale))
-          
           ctx.font = `700 ${fontSize}px "${s2.fontId || 'Vazirmatn'}"`
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
@@ -127,22 +124,40 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           const lines = wrapText(ctx, seg.text, W * 0.9)
           const lh = fontSize * 1.5
           const totalH = lines.length * lh
-          const y = H - H * 0.1 - totalH / 2
 
+          // ✅ استفاده از موقعیت کاربر (s2.x و s2.y)
+          const anchorX = s2.x != null ? (s2.x / 100) * W : W / 2
+          const anchorY = s2.y != null ? (s2.y / 100) * H : H - H * 0.1
+
+          // ✅ محاسبه عرض متن برای جلوگیری از خروج از کادر
+          const maxLineWidth = Math.max(...lines.map(l => ctx.measureText(l).width))
+          
+          // ✅ clamping: اطمینان از اینکه زیرنویس از کادر ویدیو بیرون نمی‌زند
+          const padding = fontSize * 0.5
+          const minX = maxLineWidth / 2 + padding
+          const maxX = W - maxLineWidth / 2 - padding
+          const finalX = Math.max(minX, Math.min(maxX, anchorX))
+
+          const minY = totalH / 2 + padding
+          const maxY = H - totalH / 2 - padding
+          const finalY = Math.max(minY, Math.min(maxY, anchorY))
+
+          // رسم background
           if (s2.bgOpacity > 0) {
             ctx.fillStyle = `rgba(0,0,0,${s2.bgOpacity})`
-            const maxW = Math.max(...lines.map(l => ctx.measureText(l).width))
-            ctx.fillRect(W/2 - maxW/2 - 10, y - totalH/2 - 10, maxW + 20, totalH + 20)
+            ctx.fillRect(finalX - maxLineWidth / 2 - padding / 2, finalY - totalH / 2 - padding / 2, maxLineWidth + padding, totalH + padding)
           }
 
+          // رسم خطوط
           lines.forEach((line, i) => {
+            const y = finalY + (i - (lines.length - 1) / 2) * lh
             if (s2.outline) {
               ctx.strokeStyle = '#000'
               ctx.lineWidth = Math.max(2, fontSize * 0.1)
-              ctx.strokeText(line, W/2, y + i * lh)
+              ctx.strokeText(line, finalX, y)
             }
             ctx.fillStyle = s2.color
-            ctx.fillText(line, W/2, y + i * lh)
+            ctx.fillText(line, finalX, y)
           })
         }
 
