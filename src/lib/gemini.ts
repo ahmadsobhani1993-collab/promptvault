@@ -62,7 +62,7 @@ export async function generateText(opts: {
         const body = await res.text()
 
         if (res.status === 429) {
-          console.warn(`[Gemini] Key ${i + 1} quota exhausted. Trying next...`)
+          console.warn(`[Gemini] Key ${i + 1} quota exhausted.`)
           lastErrorDetail = `HTTP 429 Quota Exceeded`
           continue
         }
@@ -70,7 +70,7 @@ export async function generateText(opts: {
         if (res.status === 400 || res.status === 404 || res.status === 401) {
           console.warn(`[Gemini] Model ${model} failed with HTTP ${res.status}. Body:`, body.slice(0, 300))
           lastErrorDetail = `HTTP ${res.status}: ${body.slice(0, 300)}`
-          break // Model invalid or key invalid, skip to next model
+          break
         }
 
         if (!res.ok) {
@@ -82,7 +82,7 @@ export async function generateText(opts: {
         const raw: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
 
         if (!raw) {
-          lastErrorDetail = 'Empty response from Gemini'
+          lastErrorDetail = 'Empty response from Gemini (check instruction)'
           continue
         }
 
@@ -101,13 +101,7 @@ export async function generateText(opts: {
 export async function normalizePrompt(raw: string): Promise<string> {
   if (!raw || !raw.trim()) return raw
   const instruction =
-    'You are a prompt cleaning assistant. Return ONLY the cleaned prompt itself. No explanations, no quotes, no labels.\n\n' +
-    'Cleaning rules:\n' +
-    '1. REMOVE all promotional noise: Telegram usernames/IDs, Telegram channel names, website names and URLs, "follow/subscribe" sentences, contact info.\n' +
-    '2. PRESERVE the original language of the prompt.\n' +
-    '3. Keep all technical parameters (--v, --ar, --style, etc.).\n' +
-    '4. Output raw prompt text only. No markdown, no code blocks.\n\n' +
-    'TEXT TO CLEAN:\n' + raw
+    'Clean this AI prompt. Remove Telegram usernames, URLs, "follow us" text. Keep only the prompt. Return ONLY the cleaned text:\n\n' + raw
 
   try {
     const { text } = await generateText({ instruction })
@@ -135,24 +129,11 @@ export async function analyzeWithGemini(opts: {
   imgMime?: string
   categories: Cat[]
 }): Promise<GeminiResult> {
-  const catTree = opts.categories
-    .map((c) => `- ${c.slug} (${c.fa} / ${c.en}): ` + (c.subs.length ? c.subs.map((s) => `${s.slug}(${s.fa}/${s.en})`).join(', ') : '(no subcategories)'))
-    .join('\n')
+  const catSlugs = opts.categories.map(c => c.slug).join(', ')
+  
+  const instruction = `Analyze this AI prompt. Return JSON with these keys: titleFa, titleEn, descFa, descEn, usageFa, usageEn, categorySlug (choose from: ${catSlugs}), subSlug (or null), tagsFa (2-4 from: ${TAG_VOCAB.map(t => t.fa).join(', ')}), tagsEn, promptEn.
 
-  const instruction =
-    'You are an AI prompt curator. Read the given AI prompt.\n' +
-    'Return ONLY a valid JSON object (no markdown, no code blocks) with EXACTLY these keys:\n' +
-    '"titleFa","titleEn","descFa","descEn","usageFa","usageEn","categorySlug","subSlug","tagsFa","tagsEn","promptEn"\n\n' +
-    'Rules:\n' +
-    '- titleFa/titleEn: short catchy title (fa/en).\n' +
-    '- descFa/descEn: ONE short sentence describing what this prompt does.\n' +
-    '- usageFa/usageEn: 2-3 sentences explaining HOW to use this prompt.\n' +
-    '- promptEn: FULL prompt text translated to English. Keep every detail.\n' +
-    '- categorySlug: choose ONE EXACT slug from the categories below.\n' +
-    '- subSlug: choose ONE EXACT sub slug FROM THE SELECTED CATEGORY, or null.\n' +
-    '- tagsFa: JSON ARRAY of 2-4 items ONLY from this vocabulary: ' + TAG_VOCAB.map((t) => t.fa).join('، ') + '\n' +
-    '- tagsEn: English equivalents in SAME ORDER.\n\n' +
-    'CATEGORIES & SUBCATEGORIES:\n' + catTree + '\n\nTHE PROMPT TEXT:\n' + (opts.text || '(no text)')
+Prompt: ${opts.text.slice(0, 1000)}`
 
   const { text: raw } = await generateText({ instruction, imgBase64: opts.imgBase64, imgMime: opts.imgMime })
 

@@ -77,7 +77,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         ctx.textBaseline = 'middle'
 
         if (s2.karaoke && seg.words?.length) {
-          ctx.font = `700 ${px}px "${(s2.fontId || "Vazirmatn")}"`
+          ctx.font = `700 ${px}px "${((s2.fontId || "Vazirmatn") || "Vazirmatn")}"`
           const spaceW = ctx.measureText(' ').width
           const ws = seg.words.map((wd) => ({ ...wd, width: ctx.measureText(wd.w).width }))
           const total = ws.reduce((a, b) => a + b.width, 0) + spaceW * (ws.length - 1)
@@ -92,7 +92,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           for (const wd of ws) {
             const active = t >= wd.start && t <= wd.end
             const wpx = active ? Math.round(px * 1.15) : px
-            ctx.font = `${active ? 800 : 700} ${wpx}px "${(s2.fontId || "Vazirmatn")}"`
+            ctx.font = `${active ? 800 : 700} ${wpx}px "${((s2.fontId || "Vazirmatn") || "Vazirmatn")}"`
             const x = cx - wd.width
             if (s2.outline) { ctx.lineWidth = Math.max(2, wpx * 0.12); ctx.strokeStyle = '#000'; ctx.lineJoin = 'round'; ctx.strokeText(wd.w, x, anchor.y) }
             ctx.fillStyle = active ? s2.hlColor : s2.color
@@ -100,7 +100,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
             cx -= wd.width + spaceW
           }
         } else {
-          ctx.font = `700 ${px}px "${(s2.fontId || "Vazirmatn")}"`
+          ctx.font = `700 ${px}px "${((s2.fontId || "Vazirmatn") || "Vazirmatn")}"`
           ctx.textAlign = 'center'
           const lines = wrapText(ctx, seg.text, W * 0.9)
           const lh = px * 1.5
