@@ -18,7 +18,6 @@ export type GeminiResult = {
 
 const cleanTitle = (t: string) => t.replace(/^([\u0600-\u06FF\w]+)\s+\1/, '$1')
 
-// Highest to lowest priority
 export const MODEL_CHAIN = [
   'gemini-3.7-flash',
   'gemini-3.6-flash',
@@ -45,8 +44,6 @@ export async function generateText(opts: {
   if (keys.length === 0) throw new Error('No Gemini API keys configured')
 
   for (const model of MODEL_CHAIN) {
-    console.log(`[Gemini] Attempting model: ${model}`)
-    
     for (let i = 0; i < keys.length; i++) {
       const apiKey = keys[i]
       try {
@@ -56,7 +53,7 @@ export async function generateText(opts: {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: [{ parts }] }),
-            signal: AbortSignal.timeout(30000),
+            signal: AbortSignal.timeout(30000), // 30 seconds is safe for images
           }
         )
 
@@ -68,9 +65,10 @@ export async function generateText(opts: {
           continue
         }
 
-        // 2. Model invalid/deprecated -> ABANDON this model, try NEXT MODEL
-        if (res.status === 404 || res.status === 400) {
-          console.warn(`[Gemini] Model ${model} is invalid or deprecated (HTTP ${res.status}). Skipping model entirely.`)
+        // 2. Model invalid/deprecated or Bad Request (e.g., image too large) -> ABANDON this model
+        if (res.status === 400 || res.status === 404) {
+          console.warn(`[Gemini] Model ${model} rejected request (HTTP ${res.status}). Skipping model.`)
+          console.warn(`[Gemini] Response body:`, body.slice(0, 200))
           break 
         }
 
