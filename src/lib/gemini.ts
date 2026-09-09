@@ -43,6 +43,8 @@ export async function generateText(opts: {
   const keys = getGeminiKeys()
   if (keys.length === 0) throw new Error('No Gemini API keys configured')
 
+  let lastErrorDetail = 'Unknown error'
+
   for (const model of MODEL_CHAIN) {
     for (let i = 0; i < keys.length; i++) {
       const apiKey = keys[i]
@@ -53,28 +55,26 @@ export async function generateText(opts: {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: [{ parts }] }),
-            signal: AbortSignal.timeout(30000), // 30 seconds is safe for images
+            signal: AbortSignal.timeout(30000),
           }
         )
 
         const body = await res.text()
 
-        // 1. Quota exhausted -> Try next KEY for the SAME model
         if (res.status === 429) {
-          console.warn(`[Gemini] Key ${i + 1}/${keys.length} quota exhausted for ${model}. Trying next key...`)
+          console.warn(`[Gemini] Key ${i + 1} quota exhausted. Trying next...`)
+          lastErrorDetail = `HTTP 429 Quota Exceeded`
           continue
         }
 
-        // 2. Model invalid/deprecated or Bad Request (e.g., image too large) -> ABANDON this model
-        if (res.status === 400 || res.status === 404) {
-          console.warn(`[Gemini] Model ${model} rejected request (HTTP ${res.status}). Skipping model.`)
-          console.warn(`[Gemini] Response body:`, body.slice(0, 200))
-          break 
+        if (res.status === 400 || res.status === 404 || res.status === 401) {
+          console.warn(`[Gemini] Model ${model} failed with HTTP ${res.status}. Body:`, body.slice(0, 300))
+          lastErrorDetail = `HTTP ${res.status}: ${body.slice(0, 300)}`
+          break // Model invalid or key invalid, skip to next model
         }
 
-        // 3. Other HTTP errors -> Try next KEY
         if (!res.ok) {
-          console.warn(`[Gemini] Key ${i + 1} failed for ${model} with HTTP ${res.status}. Trying next key...`)
+          lastErrorDetail = `HTTP ${res.status}: ${body.slice(0, 300)}`
           continue
         }
 
@@ -82,21 +82,20 @@ export async function generateText(opts: {
         const raw: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
 
         if (!raw) {
-          console.warn(`[Gemini] Model ${model} returned empty text. Trying next key...`)
+          lastErrorDetail = 'Empty response from Gemini'
           continue
         }
 
-        console.log(`[Gemini] ✅ Success with model: ${model} using key ${i + 1}`)
         return { text: raw, model }
 
       } catch (e: any) {
-        console.warn(`[Gemini] Key ${i + 1} threw error for ${model}: ${e?.message ?? e}. Trying next key...`)
+        lastErrorDetail = e?.message ?? String(e)
         continue
       }
     }
   }
 
-  throw new Error(`GEMINI_QUOTA_EXHAUSTED :: All ${keys.length} keys failed across all models.`)
+  throw new Error(`GEMINI_FAILED :: ${lastErrorDetail}`)
 }
 
 export async function normalizePrompt(raw: string): Promise<string> {
@@ -141,19 +140,19 @@ export async function analyzeWithGemini(opts: {
     .join('\n')
 
   const instruction =
-    'You are an AI prompt curator. Read the given AI prompt (and image if provided).\n' +
+    'You are an AI prompt curator. Read the given AI prompt.\n' +
     'Return ONLY a valid JSON object (no markdown, no code blocks) with EXACTLY these keys:\n' +
     '"titleFa","titleEn","descFa","descEn","usageFa","usageEn","categorySlug","subSlug","tagsFa","tagsEn","promptEn"\n\n' +
     'Rules:\n' +
-    '- titleFa/titleEn: short catchy title (fa/en). NEVER repeat a word twice at the start.\n' +
+    '- titleFa/titleEn: short catchy title (fa/en).\n' +
     '- descFa/descEn: ONE short sentence describing what this prompt does.\n' +
     '- usageFa/usageEn: 2-3 sentences explaining HOW to use this prompt.\n' +
-    '- promptEn: FULL prompt text translated to English. Keep every detail. If already English, return unchanged.\n' +
+    '- promptEn: FULL prompt text translated to English. Keep every detail.\n' +
     '- categorySlug: choose ONE EXACT slug from the categories below.\n' +
-    '- subSlug: choose ONE EXACT sub slug FROM THE SELECTED CATEGORY, or null if none fits.\n' +
+    '- subSlug: choose ONE EXACT sub slug FROM THE SELECTED CATEGORY, or null.\n' +
     '- tagsFa: JSON ARRAY of 2-4 items ONLY from this vocabulary: ' + TAG_VOCAB.map((t) => t.fa).join('، ') + '\n' +
     '- tagsEn: English equivalents in SAME ORDER.\n\n' +
-    'CATEGORIES & SUBCATEGORIES:\n' + catTree + '\n\nTHE PROMPT TEXT:\n' + (opts.text || '(no text, look at image)')
+    'CATEGORIES & SUBCATEGORIES:\n' + catTree + '\n\nTHE PROMPT TEXT:\n' + (opts.text || '(no text)')
 
   const { text: raw } = await generateText({ instruction, imgBase64: opts.imgBase64, imgMime: opts.imgMime })
 
