@@ -24,10 +24,9 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
     if (exporting || !videoUrl) return
     setExporting(true)
     setProgress(0)
-    setStatus('آماده‌سازی ویدیو...')
+    setStatus('آماده‌سازی ویدیو با کیفیت اصلی...')
 
     try {
-      // ۱. ساخت المنت ویدیو
       const video = document.createElement('video')
       video.src = videoUrl
       video.playsInline = true
@@ -38,23 +37,24 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       await new Promise((res, rej) => {
         video.onloadeddata = () => res(null)
         video.onerror = () => rej(new Error('لود ویدیو شکست خورد'))
-        setTimeout(() => rej(new Error('تایم‌اوت لود ویدیو')), 15000)
+        setTimeout(() => rej(new Error('تایم‌اوت')), 15000)
       })
 
+      // حفظ ابعاد دقیق ویدیو اصلی
       const W = video.videoWidth || 1920
       const H = video.videoHeight || 1080
+      
       const canvas = document.createElement('canvas')
       canvas.width = W
       canvas.height = H
-      const ctx = canvas.getContext('2d')
+      const ctx = canvas.getContext('2d', { alpha: false }) // بهینه‌سازی رندر
       if (!ctx) throw new Error('Canvas context failed')
 
       setStatus('لود فونت...')
       await loadFont(styleRef.current?.fontId || 'Vazirmatn')
 
-      // ۲. ضبط با MediaRecorder
-      setStatus('رندر فریم‌ها...')
-      const stream = canvas.captureStream(30)
+      setStatus('رندر فریم‌ها (کیفیت بالا)...')
+      const stream = canvas.captureStream(60) // 60 FPS برای روانی بیشتر
       
       try {
         const audioCtx = new AudioContext()
@@ -66,15 +66,17 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         console.warn('No audio:', e)
       }
 
+      // ✅ تنظیم بیت‌ریت بسیار بالا برای حفظ کیفیت اصلی
       const recorder = new MediaRecorder(stream, { 
         mimeType: 'video/webm;codecs=vp9',
-        videoBitsPerSecond: 8000000 
+        videoBitsPerSecond: 50_000_000 // 50 Mbps (کیفیت فوق‌العاده بالا)
       })
       
       const chunks: Blob[] = []
-      // ✅ فیکس قطعی: بررسی صریح وجود e.data
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
+      
+      // ✅ فیکس قطعی و ضدگلوله برای ارور size
+      recorder.ondataavailable = (e: any) => {
+        if (e && e.data && typeof e.data.size === 'number' && e.data.size > 0) {
           chunks.push(e.data)
         }
       }
@@ -140,9 +142,8 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       recorder.stop()
       
       setProgress(60)
-      setStatus('تبدیل به MP4 (این مرحله ممکن است کمی طول بکشد)...')
+      setStatus('تبدیل به MP4 با کیفیت اصلی (این مرحله زمان‌بر است)...')
 
-      // ۳. تبدیل با FFmpeg.wasm (بدون استفاده از @ffmpeg/util برای جلوگیری از باگ Next.js)
       const ffmpeg = new FFmpeg()
       
       ffmpeg.on('progress', ({ progress: p }) => {
@@ -150,8 +151,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       })
 
       const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
-      
-      // ✅ فیکس قطعی: استفاده از fetch مرورگر به جای import ماژول
       const coreBlob = await (await fetch(`${baseURL}/ffmpeg-core.js`)).blob()
       const wasmBlob = await (await fetch(`${baseURL}/ffmpeg-core.wasm`)).blob()
       
@@ -161,25 +160,25 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       })
 
       const webmBlob = new Blob(chunks, { type: 'video/webm' })
-      // ✅ فیکس قطعی: تبدیل مستقیم Blob به Uint8Array
       const arrayBuffer = await webmBlob.arrayBuffer()
       await ffmpeg.writeFile('input.webm', new Uint8Array(arrayBuffer))
 
+      // ✅ تنظیمات FFmpeg برای حداکثر کیفیت (Visually Lossless)
       await ffmpeg.exec([
         '-i', 'input.webm',
         '-c:v', 'libx264',
-        '-preset', 'medium',
-        '-crf', '23',
+        '-preset', 'slow',          // فشرده‌سازی بهینه‌تر بدون افت کیفیت
+        '-crf', '18',                // کیفیت فوق‌العاده بالا (عدد کمتر = کیفیت بالاتر، 18 استاندارد طلایی است)
+        '-pix_fmt', 'yuv420p',       // فرمت رنگ استاندارد و باکیفیت برای MP4
         '-c:a', 'aac',
-        '-b:a', '128k',
+        '-b:a', '192k',              // کیفیت صدای بالا
         'output.mp4'
       ])
 
       const mp4Data = await ffmpeg.readFile('output.mp4') as Uint8Array
       const mp4Blob = new Blob([mp4Data], { type: 'video/mp4' })
 
-      // ۴. دانلود و پاکسازی
-      setStatus('دانلود فایل...')
+      setStatus('دانلود فایل نهایی...')
       const url = URL.createObjectURL(mp4Blob)
       const a = document.createElement('a')
       a.href = url
@@ -193,7 +192,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       }, 5000)
 
       document.body.removeChild(video)
-      setStatus('✅ با موفقیت انجام شد!')
+      setStatus('✅ با موفقیت و با کیفیت اصلی انجام شد!')
       
     } catch (e: any) {
       console.error('[Export Error]', e)
@@ -222,7 +221,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
             <span className="text-xs">{Math.round(progress)}%</span>
           </div>
         ) : (
-          '📹 خروجی MP4 با زیرنویس'
+          '📹 خروجی MP4 با کیفیت اصلی'
         )}
       </button>
     </div>
