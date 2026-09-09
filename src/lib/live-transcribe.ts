@@ -55,6 +55,7 @@ export class LiveTranscriber {
       }
 
       this.ws.onmessage = (ev) => {
+        console.log('[live] raw message:', ev.data.slice(0, 200))
         let msg: any
         try {
           msg = JSON.parse(ev.data as string)
