@@ -1,0 +1,182 @@
+[1mdiff --git a/src/components/transcribe/SubtitleStudio.tsx b/src/components/transcribe/SubtitleStudio.tsx[m
+[1mindex 428ade8..5c5578e 100644[m
+[1m--- a/src/components/transcribe/SubtitleStudio.tsx[m
+[1m+++ b/src/components/transcribe/SubtitleStudio.tsx[m
+[36m@@ -31,15 +31,101 @@[m [mexport default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop[m
+   const [showAdv, setShowAdv] = useState(false)[m
+   const [findQ, setFindQ] = useState('')[m
+   const [replQ, setReplQ] = useState('')[m
+[32m+[m[32m  const [stageSize, setStageSize] = useState({ width: 0, height: 0 })[m
+ [m
+   const videoRef = useRef<HTMLVideoElement>(null)[m
+   const stageRef = useRef<HTMLDivElement>(null)[m
+   const histRef = useRef<string[]>([])[m
+   const futRef = useRef<string[]>([])[m
+[32m+[m[32m  const skipPersistRef = useRef(true)[m
+ [m
+   useEffect(() => { loadFont(style.fontId) }, [style.fontId])[m
+[32m+[m
+[32m+[m[32m  // Keep the current subtitle style available to the browser-side exporter.[m
+[32m+[m[32m  // This does not change the existing UI or parent component API.[m
+[32m+[m[32m  useEffect(() => {[m
+[32m+[m[32m    try {[m
+[32m+[m[32m      const raw = localStorage.getItem('promptvault.subtitle.style')[m
+[32m+[m[32m      if (raw) {[m
+[32m+[m[32m        const saved = JSON.parse(raw)[m
+[32m+[m[32m        if (saved && typeof saved === 'object') {[m
+[32m+[m[32m          setStyle((s) => ({ ...s, ...saved }))[m
+[32m+[m[32m        }[m
+[32m+[m[32m      }[m
+[32m+[m[32m    } catch {}[m
+[32m+[m[32m  }, [])[m
+[32m+[m
+[32m+[m[32m  useEffect(() => {[m
+[32m+[m[32m    if (skipPersistRef.current) {[m
+[32m+[m[32m      skipPersistRef.current = false[m
+[32m+[m[32m      return[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    try {[m
+[32m+[m[32m      localStorage.setItem([m
+[32m+[m[32m        'promptvault.subtitle.style',[m
+[32m+[m[32m        JSON.stringify(style)[m
+[32m+[m[32m      )[m
+[32m+[m[32m    } catch {}[m
+[32m+[m[32m  }, [style])[m
+[32m+[m
+[32m+[m[32m  // The black stage is NOT necessarily the video frame.[m
+[32m+[m[32m  // object-contain can create empty space around portrait/square videos.[m
+[32m+[m[32m  // Measure the real displayed video rectangle inside the stage.[m
+[32m+[m[32m  useEffect(() => {[m
+[32m+[m[32m    const stage = stageRef.current[m
+[32m+[m[32m    if (!stage) return[m
+[32m+[m
+[32m+[m[32m    const update = () => {[m
+[32m+[m[32m      const r = stage.getBoundingClientRect()[m
+[32m+[m[32m      setStageSize({[m
+[32m+[m[32m        width: r.width,[m
+[32m+[m[32m        height: r.height,[m
+[32m+[m[32m      })[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    update()[m
+[32m+[m
+[32m+[m[32m    const ro = new ResizeObserver(update)[m
+[32m+[m[32m    ro.observe(stage)[m
+[32m+[m
+[32m+[m[32m    window.addEventListener('resize', update)[m
+[32m+[m
+[32m+[m[32m    return () => {[m
+[32m+[m[32m      ro.disconnect()[m
+[32m+[m[32m      window.removeEventListener('resize', update)[m
+[32m+[m[32m    }[m
+[32m+[m[32m  }, [])[m
+[32m+[m
+   const current = segments.find((s) => time >= s.start && time <= s.end)[m
+ [m
+[32m+[m[32m  // Exact displayed rectangle of the actual video inside object-contain.[m
+[32m+[m[32m  const videoFrame = (() => {[m
+[32m+[m[32m    const sw = stageSize.width || stageRef.current?.clientWidth || 0[m
+[32m+[m[32m    const sh = stageSize.height || stageRef.current?.clientHeight || 0[m
+[32m+[m
+[32m+[m[32m    if (!sw || !sh || !vidW || !vidH) {[m
+[32m+[m[32m      return {[m
+[32m+[m[32m        left: 0,[m
+[32m+[m[32m        top: 0,[m
+[32m+[m[32m        width: sw,[m
+[32m+[m[32m        height: sh,[m
+[32m+[m[32m      }[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    const scale = Math.min(sw / vidW, sh / vidH)[m
+[32m+[m
+[32m+[m[32m    const width = vidW * scale[m
+[32m+[m[32m    const height = vidH * scale[m
+[32m+[m
+[32m+[m[32m    return {[m
+[32m+[m[32m      left: (sw - width) / 2,[m
+[32m+[m[32m      top: (sh - height) / 2,[m
+[32m+[m[32m      width,[m
+[32m+[m[32m      height,[m
+[32m+[m[32m    }[m
+[32m+[m[32m  })()[m
+[32m+[m
+   const snapshot = () => {[m
+     histRef.current.push(JSON.stringify({ segments, style }))[m
+     if (histRef.current.length > 60) histRef.current.shift()[m
+[36m@@ -79,18 +165,43 @@[m [mexport default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop[m
+ [m
+   const onSubPointerDown = (e: React.PointerEvent) => {[m
+     e.preventDefault()[m
+[32m+[m
+     const stage = stageRef.current[m
+[31m-    if (!stage) return[m
+[32m+[m
+[32m+[m[32m    if (!stage || !videoFrame.width || !videoFrame.height) return[m
+[32m+[m
+     const rect = stage.getBoundingClientRect()[m
+[32m+[m
+[32m+[m[32m    const frame = {[m
+[32m+[m[32m      left: rect.left + videoFrame.left,[m
+[32m+[m[32m      top: rect.top + videoFrame.top,[m
+[32m+[m[32m      width: videoFrame.width,[m
+[32m+[m[32m      height: videoFrame.height,[m
+[32m+[m[32m    }[m
+[32m+[m
+     const move = (ev: PointerEvent) => {[m
+[31m-      // محدود کردن سخت‌گیرانه: 15% تا 85% برای جلوگیری کامل از خروج[m
+[31m-      const rawX = ((ev.clientX - rect.left) / rect.width) * 100[m
+[31m-      const rawY = ((ev.clientY - rect.top) / rect.height) * 100[m
+[31m-      const x = Math.min(85, Math.max(15, rawX))[m
+[31m-      const y = Math.min(85, Math.max(15, rawY))[m
+[31m-      setStyle((s) => ({ ...s, x, y }))[m
+[32m+[m[32m      const rawX =[m
+[32m+[m[32m        ((ev.clientX - frame.left) / frame.width) * 100[m
+[32m+[m
+[32m+[m[32m      const rawY =[m
+[32m+[m[32m        ((ev.clientY - frame.top) / frame.height) * 100[m
+[32m+[m
+[32m+[m[32m      // Keep the anchor inside the actual video frame.[m
+[32m+[m[32m      const x = Math.min(98, Math.max(2, rawX))[m
+[32m+[m[32m      const y = Math.min(98, Math.max(2, rawY))[m
+[32m+[m
+[32m+[m[32m      setStyle((s) => ({[m
+[32m+[m[32m        ...s,[m
+[32m+[m[32m        x,[m
+[32m+[m[32m        y,[m
+[32m+[m[32m      }))[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    const up = () => {[m
+[32m+[m[32m      window.removeEventListener('pointermove', move)[m
+[32m+[m[32m      window.removeEventListener('pointerup', up)[m
+     }[m
+[31m-    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }[m
+[32m+[m
+     window.addEventListener('pointermove', move)[m
+     window.addEventListener('pointerup', up)[m
+   }[m
+[36m@@ -203,26 +314,71 @@[m [mexport default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop[m
+                 <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[22%] border-t border-amber-500/30 bg-amber-500/10" />[m
+               </>[m
+             )}[m
+[31m-            {current && ([m
+[32m+[m[32m            {current && videoFrame.width > 0 && ([m
+               <div[m
+                 onPointerDown={onSubPointerDown}[m
+[31m-                className="absolute cursor-move px-2"[m
+[31m-                style={style.x != null[m
+[31m-                  ? { left: `${style.x}%`, top: `${style.y}%`, transform: 'translate(-50%,-50%)', maxWidth: '90%' }[m
+[31m-                  : { insetX: 0, bottom: '6%', left: 0, right: 0, display: 'flex', justifyContent: 'center' }}[m
+[32m+[m[32m                className="absolute cursor-move overflow-hidden"[m
+[32m+[m[32m                style={{[m
+[32m+[m[32m                  left: videoFrame.left,[m
+[32m+[m[32m                  top: videoFrame.top,[m
+[32m+[m[32m                  width: videoFrame.width,[m
+[32m+[m[32m                  height: videoFrame.height,[m
+[32m+[m[32m                }}[m
+               >[m
+[31m-                <span[m
+[31m-                  key={current.start + current.text} dir="rtl" className="text-center"[m
+[32m+[m[32m                <div[m
+[32m+[m[32m            

@@ -31,100 +31,14 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
   const [showAdv, setShowAdv] = useState(false)
   const [findQ, setFindQ] = useState('')
   const [replQ, setReplQ] = useState('')
-  const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const histRef = useRef<string[]>([])
   const futRef = useRef<string[]>([])
-  const skipPersistRef = useRef(true)
 
   useEffect(() => { loadFont(style.fontId) }, [style.fontId])
-
-  // Keep the current subtitle style available to the browser-side exporter.
-  // This does not change the existing UI or parent component API.
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem('promptvault.subtitle.style')
-      if (raw) {
-        const saved = JSON.parse(raw)
-        if (saved && typeof saved === 'object') {
-          setStyle((s) => ({ ...s, ...saved }))
-        }
-      }
-    } catch {}
-  }, [])
-
-  useEffect(() => {
-    if (skipPersistRef.current) {
-      skipPersistRef.current = false
-      return
-    }
-
-    try {
-      localStorage.setItem(
-        'promptvault.subtitle.style',
-        JSON.stringify(style)
-      )
-    } catch {}
-  }, [style])
-
-  // The black stage is NOT necessarily the video frame.
-  // object-contain can create empty space around portrait/square videos.
-  // Measure the real displayed video rectangle inside the stage.
-  useEffect(() => {
-    const stage = stageRef.current
-    if (!stage) return
-
-    const update = () => {
-      const r = stage.getBoundingClientRect()
-      setStageSize({
-        width: r.width,
-        height: r.height,
-      })
-    }
-
-    update()
-
-    const ro = new ResizeObserver(update)
-    ro.observe(stage)
-
-    window.addEventListener('resize', update)
-
-    return () => {
-      ro.disconnect()
-      window.removeEventListener('resize', update)
-    }
-  }, [])
-
   const current = segments.find((s) => time >= s.start && time <= s.end)
-
-  // Exact displayed rectangle of the actual video inside object-contain.
-  const videoFrame = (() => {
-    const sw = stageSize.width || stageRef.current?.clientWidth || 0
-    const sh = stageSize.height || stageRef.current?.clientHeight || 0
-
-    if (!sw || !sh || !vidW || !vidH) {
-      return {
-        left: 0,
-        top: 0,
-        width: sw,
-        height: sh,
-      }
-    }
-
-    const scale = Math.min(sw / vidW, sh / vidH)
-
-    const width = vidW * scale
-    const height = vidH * scale
-
-    return {
-      left: (sw - width) / 2,
-      top: (sh - height) / 2,
-      width,
-      height,
-    }
-  })()
 
   const snapshot = () => {
     histRef.current.push(JSON.stringify({ segments, style }))
@@ -165,43 +79,18 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
 
   const onSubPointerDown = (e: React.PointerEvent) => {
     e.preventDefault()
-
     const stage = stageRef.current
-
-    if (!stage || !videoFrame.width || !videoFrame.height) return
-
+    if (!stage) return
     const rect = stage.getBoundingClientRect()
-
-    const frame = {
-      left: rect.left + videoFrame.left,
-      top: rect.top + videoFrame.top,
-      width: videoFrame.width,
-      height: videoFrame.height,
-    }
-
     const move = (ev: PointerEvent) => {
-      const rawX =
-        ((ev.clientX - frame.left) / frame.width) * 100
-
-      const rawY =
-        ((ev.clientY - frame.top) / frame.height) * 100
-
-      // Keep the anchor inside the actual video frame.
-      const x = Math.min(98, Math.max(2, rawX))
-      const y = Math.min(98, Math.max(2, rawY))
-
-      setStyle((s) => ({
-        ...s,
-        x,
-        y,
-      }))
+      // محدود کردن سخت‌گیرانه: 15% تا 85% برای جلوگیری کامل از خروج
+      const rawX = ((ev.clientX - rect.left) / rect.width) * 100
+      const rawY = ((ev.clientY - rect.top) / rect.height) * 100
+      const x = Math.min(85, Math.max(15, rawX))
+      const y = Math.min(85, Math.max(15, rawY))
+      setStyle((s) => ({ ...s, x, y }))
     }
-
-    const up = () => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-    }
-
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
   }
@@ -314,71 +203,26 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[22%] border-t border-amber-500/30 bg-amber-500/10" />
               </>
             )}
-            {current && videoFrame.width > 0 && (
+            {current && (
               <div
                 onPointerDown={onSubPointerDown}
-                className="absolute cursor-move overflow-hidden"
-                style={{
-                  left: videoFrame.left,
-                  top: videoFrame.top,
-                  width: videoFrame.width,
-                  height: videoFrame.height,
-                }}
+                className="absolute cursor-move px-2"
+                style={style.x != null
+                  ? { left: `${style.x}%`, top: `${style.y}%`, transform: 'translate(-50%,-50%)', maxWidth: '90%' }
+                  : { insetX: 0, bottom: '6%', left: 0, right: 0, display: 'flex', justifyContent: 'center' }}
               >
-                <div
-                  className="absolute"
+                <span
+                  key={current.start + current.text} dir="rtl" className="text-center"
                   style={{
-                    left: `${style.x ?? 50}%`,
-                    top: `${style.y ?? 90}%`,
-                    transform: 'translate(-50%,-50%)',
-
-                    // The available subtitle width follows the anchor.
-                    // Moving toward an edge reduces the available area
-                    // instead of allowing the caption to leave the frame.
-                    width: `${Math.max(
-                      8,
-                      Math.min(
-                        96,
-                        2 * Math.min(
-                          style.x ?? 50,
-                          100 - (style.x ?? 50)
-                        )
-                      )
-                    )}%`,
+                    fontFamily: `"${style.fontId}"`, fontWeight: 700,
+                    fontSize: `clamp(12px, ${style.size}cqi, 60px)`,
+                    color: style.color,
+                    backgroundColor: current.hl || (style.bgOpacity > 0 ? `rgba(0,0,0,${style.bgOpacity})` : 'transparent'),
+                    padding: '0.2em 0.6em', borderRadius: '0.5em',
+                    textShadow: style.outline ? '0 2px 6px rgba(0,0,0,0.9)' : 'none',
+                    animation: fxAnim(current),
                   }}
                 >
-                  <span
-                    key={current.start + current.text}
-                    dir="rtl"
-                    className="block w-full text-center whitespace-pre-wrap break-words"
-                    style={{
-                      fontFamily: `"${style.fontId}"`,
-                      fontWeight: 700,
-
-                      // Same percentage model as export:
-                      // size 5 = 5% of the actual displayed video width.
-                      fontSize: `${(style.size / 100) * videoFrame.width}px`,
-
-                      lineHeight: 1.25,
-                      color: style.color,
-
-                      backgroundColor:
-                        current.hl ||
-                        (style.bgOpacity > 0
-                          ? `rgba(0,0,0,${style.bgOpacity})`
-                          : 'transparent'),
-
-                      padding: '0.2em 0.6em',
-                      borderRadius: '0.5em',
-                      boxSizing: 'border-box',
-
-                      textShadow: style.outline
-                        ? '0 2px 6px rgba(0,0,0,0.9)'
-                        : 'none',
-
-                      animation: fxAnim(current),
-                    }}
-                  >
                   {style.karaoke && current.words?.length ? (
                     current.words.map((wd, i) => {
                       const active = time >= wd.start && time <= wd.end
@@ -389,8 +233,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                       )
                     })
                   ) : current.text}
-                  </span>
-                </div>
+                </span>
               </div>
             )}
           </div>
