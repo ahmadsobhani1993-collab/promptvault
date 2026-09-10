@@ -1,56 +1,57 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { prisma } from '@/lib/prisma'
 import { analyzeWithGemini } from '@/lib/gemini'
-import { tgSendPhoto, tgSendCode } from '@/lib/telegram'
 import { isCronAuthorized } from '@/lib/cron-auth'
 
 export const maxDuration = 60
 
-export async function GET(req: Request) {
-  if (!isCronAuthorized(req)) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
-  const id = new URL(req.url).searchParams.get('id')
-  if (!id) return NextResponse.json({ error: 'no id' }, { status: 400 })
-  const p = await prisma.prompt.findUnique({ where: { id } })
-  if (!p) return NextResponse.json({ error: 'not found' }, { status: 404 })
-
-  let imgBase64: string | null = null
+export async function POST(req: Request) {
   try {
-    const ir = await fetch(p.img, { signal: AbortSignal.timeout(15000), redirect: 'follow' })
-    const buf = Buffer.from(await ir.arrayBuffer())
-    if (ir.ok && buf.length > 5000 && buf.length < 2_500_000) imgBase64 = buf.toString('base64')
-  } catch {}
+    const body = await req.json()
+    const { prompt, titleFa, titleEn, descFa, descEn, usageFa, usageEn, imgBase64 } = body
 
-  const categories = await prisma.category.findMany()
-  let ai
-  try { ai = await analyzeWithGemini({ text: p.prompt, imgBase64, categories }) }
-  catch { ai = await analyzeWithGemini({ text: p.prompt, imgBase64: null, categories }) }
+    if (!prompt) return NextResponse.json({ ok: false, error: 'Prompt is required' }, { status: 400 })
 
-  const finalPrompt = (ai.promptEn || p.prompt).trim()
-  await prisma.prompt.update({
-    where: { id },
-    data: {
-      titleFa: ai.titleFa, titleEn: ai.titleEn,
-      descFa: ai.descFa, descEn: ai.descEn,
-      usageFa: ai.usageFa, usageEn: ai.usageEn,
-      tagsFa: ai.tagsFa, tagsEn: ai.tagsEn,
-      prompt: finalPrompt,
-      status: 'PUBLISHED',
-    },
-  })
+    const categories = await prisma.category.findMany({ include: { subs: true } })
+    
+    // فراخوانی جمینای فقط برای دریافت تگ‌ها (حالت user-submit)
+    const ai = await analyzeWithGemini({ 
+      text: prompt, 
+      imgBase64: imgBase64 || null, 
+      categories,
+      mode: 'user-submit' // این خط حیاتی است
+    })
 
-  const out = process.env.TELEGRAM_OUTPUT
-  let tg: any = null
-  if (out) {
-    const tagLine = ai.tagsFa.map((t) => '#' + t.replace(/\s+/g, '_')).join(' ')
-    const usageFa = (ai.usageFa || '').trim()
-    const full = '✨ ' + ai.titleFa + '\n\n📘 ' + usageFa + '\n\n📝 ' + finalPrompt + '\n\n' + tagLine + '\n\n@Prompts_fa'
-    const short = '✨ ' + ai.titleFa + '\n\n📘 ' + usageFa + '\n\n' + tagLine + '\n\n@Prompts_fa'
-    if (full.length <= 1024) tg = await tgSendPhoto(out, p.img, full)
-    else {
-      tg = await tgSendPhoto(out, p.img, short)
-      await tgSendCode(out, finalPrompt, '\n\n@Prompts_fa')
-    }
+    // ذخیره در دیتابیس با وضعیت در انتظار تایید (PENDING)
+    // توجه: اگر در schema شما فیلد status وجود ندارد، باید آن را اضافه کنید (PENDING, APPROVED, REJECTED)
+    const newPrompt = await prisma.prompt.create({
+      data: {
+        prompt: prompt, // متن اصلی کاربر بدون تغییر
+        titleFa: titleFa || ai.titleFa, // اولویت با متن کاربر
+        titleEn: titleEn || ai.titleEn,
+        descFa: descFa || ai.descFa,
+        descEn: descEn || ai.descEn,
+        usageFa: usageFa || ai.usageFa,
+        usageEn: usageEn || ai.usageEn,
+        categorySlug: ai.categorySlug,
+        subSlug: ai.subSlug,
+        tagsFa: ai.tagsFa, // فقط تگ‌ها از جمینای گرفته می‌شود
+        tagsEn: ai.tagsEn,
+        status: 'PENDING', // ارسال به صف انتظار تایید مدیریت
+        source: 'user_submit'
+      }
+    })
+
+    // ⛔️ هیچ کدی برای ارسال به تلگرام (tgSendPhoto و ...) در اینجا وجود ندارد.
+
+    return NextResponse.json({ 
+      ok: true, 
+      message: 'پرامپت با موفقیت ثبت شد و در صف انتظار تایید مدیریت قرار گرفت.',
+      id: newPrompt.id
+    })
+
+  } catch (e: any) {
+    console.error('[Submit Error]', e)
+    return NextResponse.json({ ok: false, error: e.message }, { status: 500 })
   }
-
-  return NextResponse.json({ ok: true, slug: p.slug, tg })
 }
