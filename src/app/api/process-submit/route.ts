@@ -24,10 +24,14 @@ export async function POST(req: Request) {
       mode: 'user-submit'
     })
 
+    // اگر کاربر عکس فرستاده بود، اینجا باید آپلود شود. 
+    // فعلاً برای جلوگیری از خطای Prisma، یک تصویر پیش‌فرض قرار می‌دهیم.
+    const defaultImg = "https://placehold.co/600x400/1a1a1a/FFF/png?text=Prompt"
+
     // ذخیره در دیتابیس با وضعیت PENDING
     const newPrompt = await prisma.prompt.create({
       data: {
-        slug: slug, // ✅ فیلد اجباری اضافه شد
+        slug: slug,
         prompt: prompt,
         titleFa: titleFa || ai.titleFa || 'پرامپت جدید',
         titleEn: titleEn || ai.titleEn || 'New Prompt',
@@ -39,7 +43,8 @@ export async function POST(req: Request) {
         subSlug: ai.subSlug,
         tagsFa: ai.tagsFa,
         tagsEn: ai.tagsEn,
-        status: 'PENDING', // وضعیت در انتظار تایید
+        img: defaultImg, // ✅ فیلد اجباری img اضافه شد
+        status: 'PENDING',
         source: 'user_submit',
         type: 'IMAGE',
         model: 'AI'

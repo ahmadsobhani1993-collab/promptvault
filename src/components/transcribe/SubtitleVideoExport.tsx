@@ -1153,13 +1153,27 @@ export default function SubtitleVideoExport({
               <div
                 className="bg-white h-full rounded-full transition-all"
                 style={{
-                  width: `${progress}%`,
+                  width: `${Math.min(
+                    100,
+                    Math.max(
+                      0,
+                      Number(progress) || 0
+                    )
+                  )}%`,
                 }}
               />
             </div>
 
             <span className="text-xs">
-              {Math.round(progress)}%
+              {Math.round(
+                Math.min(
+                  100,
+                  Math.max(
+                    0,
+                    Number(progress) || 0
+                  )
+                )
+              )}%
             </span>
           </div>
         ) : (
