@@ -12,11 +12,8 @@ export async function POST(req: Request) {
     if (!prompt) return NextResponse.json({ ok: false, error: 'Prompt is required' }, { status: 400 })
 
     const categories = await prisma.category.findMany({ include: { subs: true } })
-    
-    // تولید slug یکتا برای پرامپت کاربر
     const slug = `user-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
 
-    // فراخوانی جمینای فقط برای دریافت تگ‌ها و دسته‌بندی (حالت user-submit)
     const ai = await analyzeWithGemini({ 
       text: prompt, 
       imgBase64: imgBase64 || null, 
@@ -24,11 +21,18 @@ export async function POST(req: Request) {
       mode: 'user-submit'
     })
 
-    // اگر کاربر عکس فرستاده بود، اینجا باید آپلود شود. 
-    // فعلاً برای جلوگیری از خطای Prisma، یک تصویر پیش‌فرض قرار می‌دهیم.
+    // ✅ پیدا کردن ID دسته‌بندی و زیردسته‌بندی بر اساس اسلاگ برگشتی از جمینای
+    const targetCategory = categories.find(c => c.slug === ai.categorySlug) || categories[0]
+    const categoryId = targetCategory.id
+
+    let subId: string | null = null
+    if (ai.subSlug && targetCategory.subs) {
+      const targetSub = targetCategory.subs.find(s => s.slug === ai.subSlug)
+      if (targetSub) subId = targetSub.id
+    }
+
     const defaultImg = "https://placehold.co/600x400/1a1a1a/FFF/png?text=Prompt"
 
-    // ذخیره در دیتابیس با وضعیت PENDING
     const newPrompt = await prisma.prompt.create({
       data: {
         slug: slug,
@@ -39,11 +43,11 @@ export async function POST(req: Request) {
         descEn: descEn || ai.descEn || prompt.slice(0, 100),
         usageFa: usageFa || ai.usageFa || 'قابل استفاده در ابزارهای هوش مصنوعی',
         usageEn: usageEn || ai.usageEn || 'Usable in AI image generators',
-        categorySlug: ai.categorySlug || 'image',
-        subSlug: ai.subSlug,
+        categoryId: categoryId,       // ✅ اصلاح شد
+        subId: subId,                 // ✅ اصلاح شد
         tagsFa: ai.tagsFa,
         tagsEn: ai.tagsEn,
-        img: defaultImg, // ✅ فیلد اجباری img اضافه شد
+        img: defaultImg,
         status: 'PENDING',
         source: 'user_submit',
         type: 'IMAGE',

@@ -431,7 +431,7 @@ export default function SubtitleVideoExport({
           {
             mimeType: mime,
             videoBitsPerSecond:
-              8_000_000,
+              4_000_000,
           }
         )
 
@@ -958,8 +958,10 @@ export default function SubtitleVideoExport({
 
       setProgress(70)
 
+      setProgress(0)
+
       setStatus(
-        'تبدیل به MP4...'
+        'در حال تبدیل ویدیو...'
       )
 
       ffmpeg =
@@ -969,15 +971,11 @@ export default function SubtitleVideoExport({
         'progress',
         ({ progress: p }) => {
           setProgress(
-            Math.min(
-              99,
-              70 +
-                Math.round(
-                  Math.max(
-                    0,
-                    Math.min(1, p)
-                  ) * 29
-                )
+            Math.round(
+              Math.max(
+                0,
+                Math.min(1, p)
+              ) * 100
             )
           )
         }
