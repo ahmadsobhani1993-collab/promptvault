@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { analyzeWithGemini } from '@/lib/gemini'
-import { isCronAuthorized } from '@/lib/cron-auth'
 
 export const maxDuration = 60
 
@@ -14,40 +13,43 @@ export async function POST(req: Request) {
 
     const categories = await prisma.category.findMany({ include: { subs: true } })
     
-    // فراخوانی جمینای فقط برای دریافت تگ‌ها (حالت user-submit)
+    // تولید slug یکتا برای پرامپت کاربر
+    const slug = `user-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
+
+    // فراخوانی جمینای فقط برای دریافت تگ‌ها و دسته‌بندی (حالت user-submit)
     const ai = await analyzeWithGemini({ 
       text: prompt, 
       imgBase64: imgBase64 || null, 
       categories,
-      mode: 'user-submit' // این خط حیاتی است
+      mode: 'user-submit'
     })
 
-    // ذخیره در دیتابیس با وضعیت در انتظار تایید (PENDING)
-    // توجه: اگر در schema شما فیلد status وجود ندارد، باید آن را اضافه کنید (PENDING, APPROVED, REJECTED)
+    // ذخیره در دیتابیس با وضعیت PENDING
     const newPrompt = await prisma.prompt.create({
       data: {
-        prompt: prompt, // متن اصلی کاربر بدون تغییر
-        titleFa: titleFa || ai.titleFa, // اولویت با متن کاربر
-        titleEn: titleEn || ai.titleEn,
-        descFa: descFa || ai.descFa,
-        descEn: descEn || ai.descEn,
-        usageFa: usageFa || ai.usageFa,
-        usageEn: usageEn || ai.usageEn,
-        categorySlug: ai.categorySlug,
+        slug: slug, // ✅ فیلد اجباری اضافه شد
+        prompt: prompt,
+        titleFa: titleFa || ai.titleFa || 'پرامپت جدید',
+        titleEn: titleEn || ai.titleEn || 'New Prompt',
+        descFa: descFa || ai.descFa || prompt.slice(0, 100),
+        descEn: descEn || ai.descEn || prompt.slice(0, 100),
+        usageFa: usageFa || ai.usageFa || 'قابل استفاده در ابزارهای هوش مصنوعی',
+        usageEn: usageEn || ai.usageEn || 'Usable in AI image generators',
+        categorySlug: ai.categorySlug || 'image',
         subSlug: ai.subSlug,
-        tagsFa: ai.tagsFa, // فقط تگ‌ها از جمینای گرفته می‌شود
+        tagsFa: ai.tagsFa,
         tagsEn: ai.tagsEn,
-        status: 'PENDING', // ارسال به صف انتظار تایید مدیریت
-        source: 'user_submit'
+        status: 'PENDING', // وضعیت در انتظار تایید
+        source: 'user_submit',
+        type: 'IMAGE',
+        model: 'AI'
       }
     })
-
-    // ⛔️ هیچ کدی برای ارسال به تلگرام (tgSendPhoto و ...) در اینجا وجود ندارد.
 
     return NextResponse.json({ 
       ok: true, 
       message: 'پرامپت با موفقیت ثبت شد و در صف انتظار تایید مدیریت قرار گرفت.',
-      id: newPrompt.id
+      slug: newPrompt.slug
     })
 
   } catch (e: any) {
