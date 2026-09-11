@@ -168,7 +168,7 @@ export async function GET(req: Request) {
       debug.push(`🧹 ${msgId}: Prompt normalized (${cleanPrompt.length} chars)`)
 
       // مرحله ۳: تحلیل با Gemini برای تولید metadata
-      const ai = await analyzeWithGemini({ text: cleanPrompt, categories })
+      const ai = await analyzeWithGemini({ mode: 'auto-import', text: cleanPrompt, categories })
       const cat = await prisma.category.findUnique({ where: { slug: ai.categorySlug } })
 
       await prisma.prompt.create({

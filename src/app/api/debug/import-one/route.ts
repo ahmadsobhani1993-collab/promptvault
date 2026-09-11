@@ -20,7 +20,7 @@ export async function GET(req: Request) {
   }
 
   try {
-    const item = await prisma.telegramQueue.findFirst({ where: { status: 'PENDING' }, orderBy: { id: 'asc' } })
+    const item = await prisma.telegramQueue.findFirst({ where: { status: 'APPROVED' }, orderBy: { id: 'asc' } })
     if (!item) return NextResponse.json({ ok: false, error: 'no PENDING items', logs })
     log('prisma_find', true, `msgId=${item.id}`)
 
@@ -56,7 +56,7 @@ export async function GET(req: Request) {
     log('prisma_categories', true, `${categories.length} cats`)
 
     t = Date.now()
-    const ai = await analyzeWithGemini({ text: raw, imgBase64: null, categories })
+    const ai = await analyzeWithGemini({ mode: 'auto-import', text: raw, imgBase64: null, categories })
     log('gemini', true, `${Date.now() - t}ms`)
 
     // Save — بدون duplicate check، فقط retry با slug یکتا در صورت خطا

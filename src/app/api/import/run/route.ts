@@ -110,7 +110,7 @@ export async function GET(req: Request) {
       const up = await uploadToCloudinary(imgBuf, 'promptsfa/prompts')
 
       const clean = await normalizePrompt(raw).catch(() => raw)
-      const ai = await analyzeWithGemini({ text: clean, imgBase64: null, categories })
+      const ai = await analyzeWithGemini({ mode: 'auto-import', text: clean, imgBase64: null, categories })
       const cat = categories.find((c) => c.slug === ai.categorySlug) ?? categories[0]
       const sub = ai.subSlug ? cat.subs.find((s) => s.slug === ai.subSlug) ?? null : null
       const finalPrompt = (ai.promptEn || clean).trim()
