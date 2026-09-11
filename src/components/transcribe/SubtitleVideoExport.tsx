@@ -845,9 +845,9 @@ export default function SubtitleVideoExport({
 
         setProgress(
           Math.min(
-            55,
+            70,
             (t / duration) *
-              55
+              70
           )
         )
       }
@@ -956,7 +956,7 @@ export default function SubtitleVideoExport({
         )
       }
 
-      setProgress(60)
+      setProgress(70)
 
       setStatus(
         'تبدیل به MP4...'
@@ -969,10 +969,16 @@ export default function SubtitleVideoExport({
         'progress',
         ({ progress: p }) => {
           setProgress(
-            60 +
-              Math.round(
-                p * 40
-              )
+            Math.min(
+              99,
+              70 +
+                Math.round(
+                  Math.max(
+                    0,
+                    Math.min(1, p)
+                  ) * 29
+                )
+            )
           )
         }
       )
