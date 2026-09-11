@@ -20,8 +20,8 @@ export async function GET(req: Request) {
   }
 
   try {
-    const item = await prisma.telegramQueue.findFirst({ where: { status: 'APPROVED' }, orderBy: { id: 'asc' } })
-    if (!item) return NextResponse.json({ ok: false, error: 'no PENDING items', logs })
+    const item = await prisma.telegramQueue.findFirst({ where: { status: { in: ['PENDING', 'APPROVED'] } }, orderBy: { id: 'asc' } })
+    if (!item) return NextResponse.json({ ok: false, error: 'no items in queue', logs })
     log('prisma_find', true, `msgId=${item.id}`)
 
     // هیچ duplicate check ای — همه چیز ایمپورت می‌شود
