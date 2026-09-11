@@ -50,7 +50,7 @@ export async function GET(req: Request) {
     if (!f1.ok) {
       if (f1.description?.includes('MESSAGE_ID_INVALID') || f1.description?.includes('message not found')) {
         consecutiveEmpty++
-        if (consecutiveEmpty > 100) break  // تحمل ۱۰۰ پست خالی
+        if (consecutiveEmpty > 100) break
         continue
       }
       consecutiveEmpty++
@@ -60,7 +60,6 @@ export async function GET(req: Request) {
     consecutiveEmpty = 0
 
     if (!f1.result?.photo && !f1.result?.video) {
-      // پیام متنی یا نوع دیگر — skip
       continue
     }
 
@@ -96,43 +95,46 @@ export async function GET(req: Request) {
     
     if (promptText.length < 20) continue
     
-    // چک duplicate — اگر slug در DB هست، skip 
     const slug = 'tg-' + msgId
     const existing = await prisma.prompt.findUnique({ where: { slug } })
     if (existing) {
-        // قبلاً ایمپورت شده — skip
-        continue
-      }
-    // چک duplicate 
+      continue
+    }
+    
     const searchText = promptText.slice(0, 100)
     const textDuplicate = await prisma.prompt.findFirst({
-        where: { prompt: { contains: searchText, mode: 'insensitive' } }
-      })
+      where: { prompt: { contains: searchText, mode: 'insensitive' } }
+    })
     if (textDuplicate) {
-        // متن تکراری — skip
-        continue
-      }
+      continue
+    }
+    
+    // photo آرایه است (چند سایز)، video یک آبجکت تکی است
     const fileId = photoMsg.photo
-        ? photoMsg.photo[photoMsg.photo.length - 1].file_id
-        : photoMsg.video[photoMsg.video.length - 1].file_id
+      ? photoMsg.photo[photoMsg.photo.length - 1].file_id
+      : photoMsg.video?.file_id
+    if (!fileId) continue
+    
     await prisma.telegramQueue.upsert({
-        where: { id: msgId },
-        update: { text: promptText, img: fileId, status: 'PENDING' },
-        create: { id: msgId, text: promptText, img: fileId, status: 'PENDING' },
-      })
-        collected.push({
-                msgId,
-                captionLen: caption.length,
-                source: caption.length <= CAPTION_THRESHOLD ? 'reply' : 'caption',
-                preview: promptText.slice(0, 80),
-              })
-      }
-    await setSetting('import_cursor2', String(cursor + processed))
-    return NextResponse.json({
-          ok: true,
-          collected: collected.length,
-          nextCursor: cursor + processed,
-          processed,
-          items: collected,
-        })
+      where: { id: msgId },
+      update: { text: promptText, img: fileId, status: 'PENDING' },
+      create: { id: msgId, text: promptText, img: fileId, status: 'PENDING' },
+    })
+    
+    collected.push({
+      msgId,
+      captionLen: caption.length,
+      source: caption.length <= CAPTION_THRESHOLD ? 'reply' : 'caption',
+      preview: promptText.slice(0, 80),
+    })
   }
+  
+  await setSetting('import_cursor2', String(cursor + processed))
+  return NextResponse.json({
+    ok: true,
+    collected: collected.length,
+    nextCursor: cursor + processed,
+    processed,
+    items: collected,
+  })
+}
