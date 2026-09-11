@@ -39,7 +39,9 @@ export async function uploadFromUrl(
 
 export async function uploadRemoteDirectly(
   remoteUrl: string,
-  folder = 'promptsfa/prompts'
+  folder = 'promptsfa/prompts',
+  customPublicId?: string,
+  resourceType: 'image' | 'video' = 'image'
 ): Promise<{ url: string; publicId: string }> {
   const cloud = process.env.CLOUDINARY_CLOUD_NAME
   const key = process.env.CLOUDINARY_API_KEY
@@ -49,17 +51,22 @@ export async function uploadRemoteDirectly(
   const form = new URLSearchParams()
   form.set('file', remoteUrl)
   form.set('folder', folder)
-  form.set('resource_type', 'auto')
-  form.set('transformation', 'q_auto:good,f_auto')
+  form.set('resource_type', resourceType)
+  if (resourceType === 'image') form.set('transformation', 'q_auto:good,f_auto')
+  if (customPublicId) {
+    form.set('public_id', customPublicId)
+    form.set('overwrite', 'true')
+    form.set('invalidate', 'true')
+  }
 
-  const r = await fetch(`https://api.cloudinary.com/v1_1/${cloud}/image/upload`, {
+  const r = await fetch(`https://api.cloudinary.com/v1_1/${cloud}/${resourceType}/upload`, {
     method: 'POST',
     headers: {
       Authorization: 'Basic ' + Buffer.from(`${key}:${secret}`).toString('base64'),
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: form.toString(),
-    signal: AbortSignal.timeout(60000),
+    signal: AbortSignal.timeout(resourceType === 'video' ? 300000 : 60000),
   })
   const j: any = await r.json()
   if (!r.ok) throw new Error('cloudinary remote upload failed: ' + (j.error?.message || r.status))
