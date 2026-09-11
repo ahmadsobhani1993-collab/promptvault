@@ -4,7 +4,7 @@ import { isCronAuthorized } from '@/lib/cron-auth'
 import { analyzeWithGemini, normalizePrompt } from '@/lib/gemini'
 import { uploadRemoteDirectly } from '@/lib/cloudinary'
 
-export const maxDuration = 60
+export const maxDuration = 300  // افزایش برای ویدیوهای سنگین
 
 export async function GET(req: Request) {
   if (!isCronAuthorized(req)) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
@@ -24,7 +24,6 @@ export async function GET(req: Request) {
     if (!item) return NextResponse.json({ ok: false, error: 'no items in queue', logs })
     log('prisma_find', true, `msgId=${item.id}`)
 
-    // هیچ duplicate check ای — همه چیز ایمپورت می‌شود
     let slug = 'tg-' + item.id
 
     // Telegram getFile
@@ -37,11 +36,17 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, logs })
     }
     const tgUrl = `https://api.telegram.org/file/bot${token}/${gf.result.file_path}`
-    log('tg_getFile', true, `${Date.now() - t}ms`)
+    const isVideo = /\.(mp4|mov|webm|m4v|mkv|avi)$/i.test(gf.result.file_path || '')
+    log('tg_getFile', true, `${Date.now() - t}ms ${isVideo ? '(video)' : '(image)'}`)
 
     // Cloudinary upload
     t = Date.now()
-    const up = await uploadRemoteDirectly(tgUrl, 'promptsfa/prompts')
+    const up = await uploadRemoteDirectly(
+      tgUrl,
+      isVideo ? 'promptsfa/videos' : 'promptsfa/prompts',
+      `tg-${item.id}`,
+      isVideo ? 'video' : 'image'
+    )
     log('cloudinary', true, `${Date.now() - t}ms`)
 
     // Clean text
@@ -59,7 +64,7 @@ export async function GET(req: Request) {
     const ai = await analyzeWithGemini({ mode: 'auto-import', text: raw, imgBase64: null, categories })
     log('gemini', true, `${Date.now() - t}ms`)
 
-    // Save — بدون duplicate check، فقط retry با slug یکتا در صورت خطا
+    // Save
     t = Date.now()
     const cat = categories.find((c) => c.slug === ai.categorySlug) ?? categories[0]
     const sub = ai.subSlug ? cat.subs.find((s) => s.slug === ai.subSlug) ?? null : null
@@ -74,7 +79,7 @@ export async function GET(req: Request) {
       usageEn: ai.usageEn,
       img: up?.url || 'https://placehold.co/600x400/1a1a1a/FFF/png?text=Prompt',
       model: /--v\s?\d|--ar|midjourney/i.test(raw) ? 'Midjourney' : 'AI',
-      type: 'IMAGE',
+      type: isVideo ? 'VIDEO' : 'IMAGE',
       status: 'PUBLISHED',
       categoryId: cat.id,
       subId: sub?.id ?? null,
@@ -90,7 +95,6 @@ export async function GET(req: Request) {
     } catch (createErr: any) {
       const msg = String(createErr?.message || '')
       if (msg.includes('Unique constraint')) {
-        // slug تکراری بود — با slug یکتا تلاش مجدد
         slug = `tg-${item.id}-${Date.now()}`
         await prisma.prompt.create({ data: makeData(slug) })
         log('prisma_save_retry', true, `retry with unique slug: ${slug}`)
@@ -99,7 +103,6 @@ export async function GET(req: Request) {
       }
     }
 
-    // Mark DONE
     await prisma.telegramQueue.update({ where: { id: item.id }, data: { status: 'DONE' } })
     log('queue_done', true)
 
