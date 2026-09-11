@@ -72,7 +72,7 @@ export async function GET(req: Request) {
       descEn: ai.descEn,
       usageFa: ai.usageFa,
       usageEn: ai.usageEn,
-      img: up.url,
+      img: up?.url || 'https://placehold.co/600x400/1a1a1a/FFF/png?text=Prompt',
       model: /--v\s?\d|--ar|midjourney/i.test(raw) ? 'Midjourney' : 'AI',
       type: 'IMAGE',
       status: 'PUBLISHED',
