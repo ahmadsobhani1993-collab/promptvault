@@ -3,10 +3,15 @@
 import { useRef, useState } from 'react'
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import {
-  easeOutBack,
+  DEFAULT_STYLE,
+  getAnimationState,
   loadFont,
+  resolveAlign,
+  resolveDirection,
   type Seg,
   type Style,
+  type TextAlign,
+  type TextDirection,
 } from '@/lib/subtitle-studio'
 
 type Props = {
@@ -16,102 +21,64 @@ type Props = {
   style?: Style
 }
 
-const DEFAULT_STYLE: Style = {
-  size: 5,
-  color: '#ffffff',
-  bgOpacity: 0.6,
-  outline: true,
-  fontId: 'Vazirmatn',
-  x: 50,
-  y: 90,
-  hlColor: '#f59e0b',
-  karaoke: false,
-}
-
 const STYLE_STORAGE_KEY = 'promptvault.subtitle.style'
 const FPS = 30
+const WEBM_BITRATE = 4_000_000
 
-function readStoredStyle(): Style | null {
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
+
+function readStoredStyle(): Partial<Style> | null {
+  if (typeof window === 'undefined') return null
+
   try {
     const raw = localStorage.getItem(STYLE_STORAGE_KEY)
-
     if (!raw) return null
-
     const parsed = JSON.parse(raw)
-
-    if (!parsed || typeof parsed !== 'object') {
-      return null
-    }
-
-    return {
-      ...DEFAULT_STYLE,
-      ...parsed,
-    }
+    return parsed && typeof parsed === 'object' ? parsed : null
   } catch {
     return null
   }
 }
 
-/**
- * Canvas does not break a single long token automatically.
- * This wrapper handles both normal words and very long tokens.
- */
 function wrapTextSafe(
   ctx: CanvasRenderingContext2D,
   text: string,
   maxWidth: number
 ): string[] {
   const words = text.trim().split(/\s+/).filter(Boolean)
-
-  if (!words.length) {
-    return ['']
-  }
+  if (!words.length) return ['']
 
   const lines: string[] = []
   let line = ''
 
   const pushBrokenWord = (word: string) => {
     let part = ''
-
     for (const ch of word) {
       const test = part + ch
-
-      if (
-        part &&
-        ctx.measureText(test).width > maxWidth
-      ) {
+      if (part && ctx.measureText(test).width > maxWidth) {
         lines.push(part)
         part = ch
       } else {
         part = test
       }
     }
-
-    if (part) {
-      line = part
-    }
+    if (part) line = part
   }
 
   for (const word of words) {
-    // Break a word that is wider than the available frame.
     if (ctx.measureText(word).width > maxWidth) {
       if (line) {
         lines.push(line)
         line = ''
       }
-
       pushBrokenWord(word)
       continue
     }
 
-    const test = line
-      ? `${line} ${word}`
-      : word
-
-    if (
-      line &&
-      ctx.measureText(test).width > maxWidth
-    ) {
+    const test = line ? `${line} ${word}` : word
+    if (line && ctx.measureText(test).width > maxWidth) {
       lines.push(line)
       line = word
     } else {
@@ -119,17 +86,10 @@ function wrapTextSafe(
     }
   }
 
-  if (line) {
-    lines.push(line)
-  }
-
+  if (line) lines.push(line)
   return lines.length ? lines : ['']
 }
 
-/**
- * Reduce font size until the whole subtitle box fits inside
- * the available video-frame rectangle.
- */
 function fitSubtitle(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -140,78 +100,57 @@ function fitSubtitle(
 ) {
   let fontSize = Math.max(1, desiredFontSize)
 
-  for (let i = 0; i < 28; i++) {
+  for (let i = 0; i < 30; i++) {
     ctx.font = `700 ${fontSize}px "${fontFamily}"`
-
-    const lines = wrapTextSafe(
-      ctx,
-      text,
-      Math.max(1, maxWidth)
-    )
-
+    const lines = wrapTextSafe(ctx, text, Math.max(1, maxWidth))
     const lineHeight = fontSize * 1.25
     const totalHeight = lines.length * lineHeight
-
-    const maxLineWidth = Math.max(
-      ...lines.map((line) =>
-        ctx.measureText(line).width
-      ),
-      0
-    )
-
-    const padding = fontSize * 0.6
-
-    const boxWidth =
-      maxLineWidth + padding
-
-    const boxHeight =
-      totalHeight + padding
+    const maxLineWidth = Math.max(...lines.map((line) => ctx.measureText(line).width), 0)
+    const padding = Math.max(2, fontSize * 0.6)
 
     if (
-      boxWidth <= maxWidth &&
-      boxHeight <= maxHeight
+      maxLineWidth + padding <= maxWidth &&
+      totalHeight + padding <= maxHeight
     ) {
-      return {
-        fontSize,
-        lines,
-        lineHeight,
-        totalHeight,
-        maxLineWidth,
-        padding,
-      }
+      return { fontSize, lines, lineHeight, totalHeight, maxLineWidth, padding }
     }
 
     fontSize *= 0.92
   }
 
   ctx.font = `700 ${fontSize}px "${fontFamily}"`
-
-  const lines = wrapTextSafe(
-    ctx,
-    text,
-    Math.max(1, maxWidth)
-  )
-
+  const lines = wrapTextSafe(ctx, text, Math.max(1, maxWidth))
   const lineHeight = fontSize * 1.25
   const totalHeight = lines.length * lineHeight
+  const maxLineWidth = Math.max(...lines.map((line) => ctx.measureText(line).width), 0)
+  const padding = Math.max(2, fontSize * 0.6)
 
-  const maxLineWidth = Math.max(
-    ...lines.map((line) =>
-      ctx.measureText(line).width
-    ),
-    0
-  )
+  return { fontSize, lines, lineHeight, totalHeight, maxLineWidth, padding }
+}
 
-  const padding = fontSize * 0.6
-
-  return {
-    fontSize,
-    lines,
-    lineHeight,
-    totalHeight,
-    maxLineWidth,
-    padding,
-  }
+function waitForSeek(video: HTMLVideoElement, time: number) {
+  return new Promise<void>((resolve, reject) => {
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      video.removeEventListener('seeked', onSeeked)
+      video.removeEventListener('error', onError)
+      resolve()
+    }
+    const onSeeked = () => finish()
+    const onError = () => {
+      if (done) return
+      done = true
+      video.removeEventListener('seeked', onSeeked)
+      video.removeEventListener('error', onError)
+      reject(new Error('جابجایی فریم ویدیو شکست خورد'))
+    }
+    video.addEventListener('seeked', onSeeked, { once: true })
+    video.addEventListener('error', onError, { once: true })
+    video.currentTime = time
+    window.setTimeout(finish, 1200)
+  })
 }
 
 export default function SubtitleVideoExport({
@@ -220,959 +159,432 @@ export default function SubtitleVideoExport({
   segments,
   style,
 }: Props) {
-  const [exporting, setExporting] =
-    useState(false)
-
-  const [progress, setProgress] =
-    useState(0)
-
-  const [status, setStatus] =
-    useState('')
-
-  const currentStyle =
-    style || DEFAULT_STYLE
-
-  const styleRef =
-    useRef(currentStyle)
-
-  styleRef.current =
-    currentStyle
-
-  const segRef =
-    useRef(segments)
-
-  segRef.current =
-    segments
+  const [exporting, setExporting] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [status, setStatus] = useState('')
+  const currentStyle = style || DEFAULT_STYLE
+  const styleRef = useRef(currentStyle)
+  styleRef.current = currentStyle
+  const segRef = useRef(segments)
+  segRef.current = segments
 
   const exportVideo = async () => {
-    if (exporting || !videoUrl) {
-      return
-    }
+    if (exporting || !videoUrl) return
 
     setExporting(true)
     setProgress(0)
-    setStatus('آماده‌سازی...')
+    setStatus('در حال آماده سازی...')
 
     let video: HTMLVideoElement | null = null
     let audioCtx: AudioContext | null = null
     let ffmpeg: FFmpeg | null = null
+    let recorder: MediaRecorder | null = null
+    let stream: MediaStream | null = null
 
     try {
-      /*
-       * IMPORTANT:
-       * SubtitleStudio writes the live style to localStorage.
-       * This means the export button gets the exact slider/font/position
-       * even though the current parent component does not pass style.
-       */
-      const storedStyle =
-        readStoredStyle()
-
+      const storedStyle = readStoredStyle()
       const exportStyle: Style = {
-        ...(storedStyle || DEFAULT_STYLE),
+        ...DEFAULT_STYLE,
+        ...(storedStyle || {}),
         ...(style || {}),
       }
+      styleRef.current = exportStyle
 
-      styleRef.current =
-        exportStyle
-
-      video =
-        document.createElement('video')
-
-      video.src =
-        videoUrl
-
-      video.playsInline =
-        true
-
-      video.muted =
-        true
-
-      video.crossOrigin =
-        'anonymous'
-
-      video.style.position =
-        'absolute'
-
-      video.style.left =
-        '-9999px'
-
-      video.style.top =
-        '-9999px'
-
+      video = document.createElement('video')
+      video.src = videoUrl
+      video.playsInline = true
+      video.preload = 'auto'
+      video.muted = true
+      video.crossOrigin = 'anonymous'
+      video.style.position = 'fixed'
+      video.style.left = '-10000px'
+      video.style.top = '-10000px'
+      video.style.width = '1px'
+      video.style.height = '1px'
       document.body.appendChild(video)
 
-      await new Promise<void>(
-        (resolve, reject) => {
-          let settled = false
-
-          const finish = (
-            fn: () => void
-          ) => {
-            if (settled) return
-
-            settled = true
-            fn()
-          }
-
-          video!.onloadedmetadata =
-            () => finish(resolve)
-
-          video!.onerror =
-            () =>
-              finish(() =>
-                reject(
-                  new Error(
-                    'لود ویدیو شکست خورد'
-                  )
-                )
-              )
-
-          window.setTimeout(
-            () =>
-              finish(() =>
-                reject(
-                  new Error(
-                    'تایم‌اوت لود ویدیو'
-                  )
-                )
-              ),
-            15000
-          )
+      await new Promise<void>((resolve, reject) => {
+        let settled = false
+        const finish = (fn: () => void) => {
+          if (settled) return
+          settled = true
+          fn()
         }
-      )
+        video!.onloadedmetadata = () => finish(resolve)
+        video!.onerror = () => finish(() => reject(new Error('لود ویدیو شکست خورد')))
+        window.setTimeout(() => finish(() => reject(new Error('تایم‌اوت لود ویدیو'))), 20_000)
+        video!.load()
+      })
 
-      const W =
-        video.videoWidth || 1920
+      const W = video.videoWidth
+      const H = video.videoHeight
+      const duration = Number.isFinite(video.duration) ? video.duration : 0
 
-      const H =
-        video.videoHeight || 1080
+      if (!W || !H || !duration) {
+        throw new Error('ابعاد یا مدت ویدیو معتبر نیست')
+      }
 
-      const duration =
-        video.duration || 60
-
-      const canvas =
-        document.createElement(
-          'canvas'
-        )
-
+      const canvas = document.createElement('canvas')
       canvas.width = W
       canvas.height = H
+      const ctx = canvas.getContext('2d', { alpha: false })
+      if (!ctx) throw new Error('Canvas در این مرورگر در دسترس نیست')
 
-      const ctx =
-        canvas.getContext('2d')
+      setStatus('در حال آماده سازی فونت...')
+      await loadFont(exportStyle.fontId || 'Vazirmatn')
+      try { await document.fonts.ready } catch {}
 
-      if (!ctx) {
-        throw new Error(
-          'Canvas در این مرورگر در دسترس نیست'
-        )
-      }
+      setStatus('در حال آماده سازی فریم‌ها...')
 
-      setStatus('لود فونت...')
-
-      await loadFont(
-        exportStyle.fontId ||
-          'Vazirmatn'
-      )
+      stream = canvas.captureStream(FPS)
 
       try {
-        await document.fonts.ready
-      } catch {}
-
-      setStatus(
-        'رندر ویدیو...'
-      )
-
-      const stream =
-        canvas.captureStream(FPS)
-
-      try {
-        audioCtx =
-          new AudioContext()
-
-        const src =
-          audioCtx.createMediaElementSource(
-            video
-          )
-
-        const dest =
-          audioCtx.createMediaStreamDestination()
-
-        src.connect(dest)
-
-        dest.stream
-          .getAudioTracks()
-          .forEach((track) =>
-            stream.addTrack(track)
-          )
-
-        if (
-          audioCtx.state ===
-          'suspended'
-        ) {
-          await audioCtx.resume()
-        }
-      } catch (e) {
-        console.warn(
-          'No audio track:',
-          e
-        )
+        audioCtx = new AudioContext()
+        const source = audioCtx.createMediaElementSource(video)
+        const destination = audioCtx.createMediaStreamDestination()
+        source.connect(destination)
+        destination.stream.getAudioTracks().forEach((track) => stream!.addTrack(track))
+        if (audioCtx.state === 'suspended') await audioCtx.resume()
+      } catch (error) {
+        console.warn('[Export] Audio capture unavailable:', error)
       }
 
-      const mime =
-        MediaRecorder.isTypeSupported(
-          'video/webm;codecs=vp8,opus'
-        )
-          ? 'video/webm;codecs=vp8,opus'
-          : 'video/webm'
+      const mimeCandidates = [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm',
+      ]
+      const mime = mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) || 'video/webm'
 
-      const recorder =
-        new MediaRecorder(
-          stream,
-          {
-            mimeType: mime,
-            videoBitsPerSecond:
-              4_000_000,
-          }
-        )
+      recorder = new MediaRecorder(stream, {
+        mimeType: mime,
+        videoBitsPerSecond: WEBM_BITRATE,
+      })
 
       const chunks: Blob[] = []
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) chunks.push(event.data)
+      }
 
-      recorder.ondataavailable =
-        (e) => {
-          if (
-            e.data &&
-            e.data.size > 0
-          ) {
-            chunks.push(e.data)
+      const recorderStopped = new Promise<void>((resolve) => {
+        recorder!.onstop = () => resolve()
+      })
+
+      const renderFrame = (mediaTime: number) => {
+        const t = clamp(mediaTime, 0, duration)
+        const seg = segRef.current.find((item) => t >= item.start && t <= item.end)
+
+        ctx.clearRect(0, 0, W, H)
+        ctx.drawImage(video!, 0, 0, W, H)
+
+        if (!seg) return
+
+        const s = styleRef.current || DEFAULT_STYLE
+        const direction = resolveDirection(s.direction, seg.text)
+        const align = resolveAlign(s.align, direction)
+        const elapsed = Math.max(0, t - seg.start)
+        const anim = getAnimationState(seg.fx, elapsed, seg.end - seg.start, W)
+
+        const edgeMargin = Math.max(2, W * 0.01)
+        const anchorX = s.x != null ? (Number(s.x) / 100) * W : W / 2
+        const anchorY = s.y != null ? (Number(s.y) / 100) * H : H * 0.9
+        const availableWidth = Math.max(
+          1,
+          Math.min(
+            W - edgeMargin * 2,
+            2 * Math.min(anchorX - edgeMargin, W - anchorX - edgeMargin)
+          )
+        )
+        const availableHeight = Math.max(1, H - edgeMargin * 2)
+        const fontFamily = s.fontId || 'Vazirmatn'
+        const desiredFontSize = (Number(s.size) / 100) * W * anim.scale
+
+        ctx.save()
+        ctx.globalAlpha = anim.opacity
+        ctx.translate(anim.translateX, anim.translateY)
+
+        const fitted = fitSubtitle(
+          ctx,
+          seg.text,
+          desiredFontSize,
+          availableWidth,
+          availableHeight,
+          fontFamily
+        )
+
+        const finalFontSize = fitted.fontSize
+        const lines = fitted.lines
+        const lineHeight = fitted.lineHeight
+        const totalH = fitted.totalHeight
+        const maxLineWidth = fitted.maxLineWidth
+        const padding = fitted.padding
+
+        const boxWidth = Math.min(
+          W - edgeMargin * 2,
+          Math.max(1, Math.min(availableWidth, maxLineWidth + padding))
+        )
+        const boxHeight = Math.min(
+          H - edgeMargin * 2,
+          totalH + padding
+        )
+
+        const minX = edgeMargin + boxWidth / 2
+        const maxX = W - edgeMargin - boxWidth / 2
+        const minY = edgeMargin + boxHeight / 2
+        const maxY = H - edgeMargin - boxHeight / 2
+        const finalX = minX <= maxX ? clamp(anchorX, minX, maxX) : W / 2
+        const finalY = minY <= maxY ? clamp(anchorY, minY, maxY) : H / 2
+
+        ctx.font = `700 ${finalFontSize}px "${fontFamily}"`
+        ctx.textBaseline = 'middle'
+        ctx.textAlign = align
+        try { ctx.direction = direction } catch {}
+
+        const bgX = finalX - boxWidth / 2
+        const bgY = finalY - boxHeight / 2
+        if (s.bgOpacity > 0) {
+          ctx.fillStyle = `rgba(0,0,0,${clamp(Number(s.bgOpacity), 0, 1)})`
+          ctx.fillRect(bgX, bgY, boxWidth, boxHeight)
+        }
+
+        const drawX = align === 'left'
+          ? bgX + padding / 2
+          : align === 'right'
+          ? bgX + boxWidth - padding / 2
+          : finalX
+
+        const wordMap = seg.words?.length ? seg.words : []
+        let wordCursor = 0
+
+        const drawLine = (line: string, y: number) => {
+          if (!s.karaoke || !wordMap.length) {
+            if (s.outline) {
+              ctx.strokeStyle = '#000'
+              ctx.lineWidth = Math.max(2, finalFontSize * 0.08)
+              ctx.strokeText(line, drawX, y)
+            }
+            ctx.fillStyle = s.color
+            ctx.fillText(line, drawX, y)
+            return
+          }
+
+          const lineWords = line.split(/\s+/).filter(Boolean)
+          if (!lineWords.length) return
+
+          const pieces = lineWords.map((word) => {
+            const match = wordMap.slice(wordCursor).find((w) => w.w === word)
+            if (match) wordCursor = wordMap.indexOf(match) + 1
+            return { word, timing: match }
+          })
+
+          const spaceWidth = ctx.measureText(' ').width
+          const widths = pieces.map((p) => ctx.measureText(p.word).width)
+          const lineWidth = widths.reduce((a, b) => a + b, 0) + spaceWidth * Math.max(0, widths.length - 1)
+
+          let cursorX = align === 'left'
+            ? drawX
+            : align === 'right'
+            ? drawX - lineWidth
+            : drawX - lineWidth / 2
+
+          const visualPieces = direction === 'rtl' ? [...pieces].reverse() : pieces
+
+          for (const piece of visualPieces) {
+            const width = ctx.measureText(piece.word).width
+            const active = piece.timing && t >= piece.timing.start && t <= piece.timing.end
+            const centerX = cursorX + width / 2
+
+            if (s.outline) {
+              ctx.strokeStyle = '#000'
+              ctx.lineWidth = Math.max(2, finalFontSize * 0.08)
+              ctx.strokeText(piece.word, centerX, y)
+            }
+
+            ctx.fillStyle = active ? s.hlColor : s.color
+            ctx.fillText(piece.word, centerX, y)
+            cursorX += direction === 'rtl' ? -(width + spaceWidth) : width + spaceWidth
           }
         }
 
-      const recorderStopped =
-        new Promise<void>(
-          (resolve) => {
-            recorder.onstop =
-              () => resolve()
-          }
-        )
+        lines.forEach((line, index) => {
+          const y = finalY + (index - (lines.length - 1) / 2) * lineHeight
+          drawLine(line, y)
+        })
+
+        ctx.restore()
+      }
 
       let frameCount = 0
-      let lastRenderedTime = -1
+      let lastMediaTime = -1
+      let rafId: number | null = null
+      let stopped = false
 
-      const renderFrame = () => {
-        const t =
-          video!.currentTime
+      const stopRecording = () => {
+        if (stopped) return
+        stopped = true
+        if (rafId != null) cancelAnimationFrame(rafId)
+        if (recorder?.state === 'recording') recorder.stop()
+      }
 
-        /*
-         * Avoid drawing the same media time twice.
-         */
-        if (
-          Math.abs(
-            t - lastRenderedTime
-          ) < 0.001
-        ) {
+      type RVFCMetadata = { mediaTime: number }
+      type RVFCVideo = HTMLVideoElement & {
+        requestVideoFrameCallback: (callback: (now: number, metadata: RVFCMetadata) => void) => number
+      }
+      const rvfcVideo = video as RVFCVideo
+
+      const renderCallback = (_now: number, metadata: RVFCMetadata) => {
+        if (stopped) return
+
+        const mediaTime = metadata.mediaTime
+        if (mediaTime > lastMediaTime + 0.0001) {
+          lastMediaTime = mediaTime
+          renderFrame(mediaTime)
+          frameCount += 1
+          setProgress(clamp((mediaTime / duration) * 70, 0, 70))
+        }
+
+        if (mediaTime >= duration - 0.03 || video!.ended) {
+          renderFrame(duration)
+          setProgress(70)
+          stopRecording()
           return
         }
 
-        lastRenderedTime =
-          t
-
-        const seg =
-          segRef.current.find(
-            (s) =>
-              t >= s.start &&
-              t <= s.end
-          )
-
-        ctx.clearRect(
-          0,
-          0,
-          W,
-          H
-        )
-
-        /*
-         * The canvas is exactly W x H,
-         * therefore this is the actual video frame.
-         */
-        ctx.drawImage(
-          video!,
-          0,
-          0,
-          W,
-          H
-        )
-
-        if (seg) {
-          const s2 =
-            styleRef.current ||
-            DEFAULT_STYLE
-
-          const prog =
-            Math.min(
-              1,
-              Math.max(
-                0,
-                (t - seg.start) /
-                  Math.max(
-                    0.1,
-                    seg.end -
-                      seg.start
-                  )
-              )
-            )
-
-          let animationScale =
-            1
-
-          if (
-            seg.fx === 'pop'
-          ) {
-            animationScale =
-              easeOutBack(prog)
-          }
-
-          if (
-            seg.fx === 'zoomIn'
-          ) {
-            animationScale =
-              0.8 +
-              0.35 * prog
-          }
-
-          if (
-            seg.fx === 'zoomOut'
-          ) {
-            animationScale =
-              1.15 -
-              0.35 * prog
-          }
-
-          /*
-           * CORE RULE:
-           *
-           * size = percentage of real video width.
-           *
-           * size 5 on 1920px video:
-           * 0.05 x 1920 = 96px
-           *
-           * size 5 on 720px video:
-           * 0.05 x 720 = 36px
-           */
-          const desiredFontSize =
-            (Number(s2.size) /
-              100) *
-            W *
-            animationScale
-
-          const anchorX =
-            s2.x != null
-              ? (Number(s2.x) /
-                  100) *
-                W
-              : W / 2
-
-          const anchorY =
-            s2.y != null
-              ? (Number(s2.y) /
-                  100) *
-                H
-              : H * 0.9
-
-          /*
-           * Safe margin inside the REAL video frame.
-           */
-          const edgeMargin =
-            Math.max(
-              2,
-              W * 0.01
-            )
-
-          /*
-           * Available width depends on the user's
-           * chosen anchor position.
-           *
-           * If the subtitle is near the right edge,
-           * its available width is reduced accordingly.
-           */
-          const maxAvailableWidth =
-            Math.max(
-              1,
-              Math.min(
-                W -
-                  edgeMargin * 2,
-                2 *
-                  Math.min(
-                    anchorX -
-                      edgeMargin,
-                    W -
-                      anchorX -
-                      edgeMargin
-                  )
-              )
-            )
-
-          const maxAvailableHeight =
-            Math.max(
-              1,
-              H -
-                edgeMargin * 2
-            )
-
-          const fontFamily =
-            s2.fontId ||
-            'Vazirmatn'
-
-          /*
-           * Automatically shrink long captions
-           * until the complete subtitle box fits.
-           */
-          const fitted =
-            fitSubtitle(
-              ctx,
-              seg.text,
-              desiredFontSize,
-              maxAvailableWidth,
-              maxAvailableHeight,
-              fontFamily
-            )
-
-          const finalFontSize =
-            fitted.fontSize
-
-          const lines =
-            fitted.lines
-
-          const lineHeight =
-            fitted.lineHeight
-
-          const totalH =
-            fitted.totalHeight
-
-          const maxLineWidth =
-            Math.max(
-              ...lines.map(
-                (line) =>
-                  ctx.measureText(
-                    line
-                  ).width
-              ),
-              0
-            )
-
-          const padding =
-            Math.max(
-              2,
-              finalFontSize *
-                0.6
-            )
-
-          /*
-           * Final hard clamp based on the
-           * ACTUAL measured text dimensions.
-           */
-          const minX =
-            edgeMargin +
-            maxLineWidth / 2 +
-            padding / 2
-
-          const maxX =
-            W -
-            edgeMargin -
-            maxLineWidth / 2 -
-            padding / 2
-
-          const minY =
-            edgeMargin +
-            totalH / 2 +
-            padding / 2
-
-          const maxY =
-            H -
-            edgeMargin -
-            totalH / 2 -
-            padding / 2
-
-          const finalX =
-            minX <= maxX
-              ? Math.max(
-                  minX,
-                  Math.min(
-                    maxX,
-                    anchorX
-                  )
-                )
-              : W / 2
-
-          const finalY =
-            minY <= maxY
-              ? Math.max(
-                  minY,
-                  Math.min(
-                    maxY,
-                    anchorY
-                  )
-                )
-              : H / 2
-
-          ctx.save()
-
-          ctx.font =
-            `700 ${finalFontSize}px "${fontFamily}"`
-
-          ctx.textAlign =
-            'center'
-
-          ctx.textBaseline =
-            'middle'
-
-          /*
-           * Canvas direction is important for Persian/Arabic.
-           */
-          try {
-            ctx.direction =
-              'rtl'
-          } catch {}
-
-          if (
-            s2.bgOpacity > 0
-          ) {
-            const bgX =
-              Math.max(
-                edgeMargin,
-                finalX -
-                  maxLineWidth /
-                    2 -
-                  padding / 2
-              )
-
-            const bgY =
-              Math.max(
-                edgeMargin,
-                finalY -
-                  totalH / 2 -
-                  padding / 2
-              )
-
-            const bgRight =
-              Math.min(
-                W -
-                  edgeMargin,
-                finalX +
-                  maxLineWidth /
-                    2 +
-                  padding / 2
-              )
-
-            const bgBottom =
-              Math.min(
-                H -
-                  edgeMargin,
-                finalY +
-                  totalH / 2 +
-                  padding / 2
-              )
-
-            ctx.fillStyle =
-              `rgba(0,0,0,${Math.max(
-                0,
-                Math.min(
-                  1,
-                  s2.bgOpacity
-                )
-              )})`
-
-            ctx.fillRect(
-              bgX,
-              bgY,
-              Math.max(
-                0,
-                bgRight -
-                  bgX
-              ),
-              Math.max(
-                0,
-                bgBottom -
-                  bgY
-              )
-            )
-          }
-
-          lines.forEach(
-            (line, i) => {
-              const y =
-                finalY +
-                (i -
-                  (lines.length -
-                    1) /
-                    2) *
-                  lineHeight
-
-              if (
-                s2.outline
-              ) {
-                ctx.strokeStyle =
-                  '#000'
-
-                ctx.lineWidth =
-                  Math.max(
-                    2,
-                    finalFontSize *
-                      0.08
-                  )
-
-                ctx.strokeText(
-                  line,
-                  finalX,
-                  y
-                )
-              }
-
-              ctx.fillStyle =
-                s2.color
-
-              ctx.fillText(
-                line,
-                finalX,
-                y
-              )
-            }
-          )
-
-          ctx.restore()
-        }
-
-        frameCount++
-
-        setProgress(
-          Math.min(
-            70,
-            (t / duration) *
-              70
-          )
-        )
+        rvfcVideo.requestVideoFrameCallback(renderCallback)
       }
 
-      console.log(
-        '[Export] Starting...'
-      )
-
-      await video.play()
+      const fallbackLoop = () => {
+        if (stopped) return
+        renderFrame(video!.currentTime)
+        frameCount += 1
+        setProgress(clamp((video!.currentTime / duration) * 70, 0, 70))
+        if (video!.ended || video!.currentTime >= duration - 0.03) {
+          renderFrame(duration)
+          setProgress(70)
+          stopRecording()
+          return
+        }
+        rafId = requestAnimationFrame(fallbackLoop)
+      }
 
       recorder.start(1000)
+      setStatus('در حال آماده سازی ویدیو...')
+      video.currentTime = 0
+      await video.play()
 
-      console.log(
-        '[Export] Recording...'
-      )
-
-      const renderInterval =
-        window.setInterval(
-          () => {
-            try {
-              renderFrame()
-            } catch (err) {
-              console.error(
-                '[Export] Frame error:',
-                err
-              )
-            }
-
-            if (
-              video!.ended
-            ) {
-              window.clearInterval(
-                renderInterval
-              )
-            }
-          },
-          1000 / FPS
-        )
-
-      await new Promise<void>(
-        (resolve) => {
-          let finished =
-            false
-
-          const finish = () => {
-            if (finished)
-              return
-
-            finished = true
-            resolve()
-          }
-
-          video!.onended =
-            finish
-
-          const timeout =
-            window.setInterval(
-              () => {
-                if (
-                  video!.ended ||
-                  video!.currentTime >=
-                    duration -
-                      0.02
-                ) {
-                  window.clearInterval(
-                    timeout
-                  )
-
-                  finish()
-                }
-              },
-              100
-            )
-        }
-      )
-
-      window.clearInterval(
-        renderInterval
-      )
-
-      renderFrame()
-
-      await new Promise(
-        (resolve) =>
-          setTimeout(
-            resolve,
-            250
-          )
-      )
-
-      recorder.stop()
+      if ('requestVideoFrameCallback' in video) {
+        rvfcVideo.requestVideoFrameCallback(renderCallback)
+      } else {
+        rafId = requestAnimationFrame(fallbackLoop)
+      }
 
       await recorderStopped
 
-      console.log(
-        '[Export] Stopped:',
-        frameCount,
-        'frames',
-        chunks.length,
-        'chunks'
-      )
-
-      if (!chunks.length) {
-        throw new Error(
-          'هیچ داده‌ای ضبط نشد'
-        )
-      }
+      if (!chunks.length) throw new Error('هیچ داده‌ای ضبط نشد')
 
       setProgress(70)
-
       setProgress(0)
+      setStatus('در حال تبدیل ویدیو...')
 
-      setStatus(
-        'در حال تبدیل ویدیو...'
-      )
-
-      ffmpeg =
-        new FFmpeg()
-
-      ffmpeg.on(
-        'progress',
-        ({ progress: p }) => {
-          setProgress(
-            Math.round(
-              Math.max(
-                0,
-                Math.min(1, p)
-              ) * 100
-            )
-          )
-        }
-      )
-
-      const baseURL =
-        'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
-
-      const coreBlob =
-        await (
-          await fetch(
-            `${baseURL}/ffmpeg-core.js`
-          )
-        ).blob()
-
-      const wasmBlob =
-        await (
-          await fetch(
-            `${baseURL}/ffmpeg-core.wasm`
-          )
-        ).blob()
-
-      await ffmpeg.load({
-        coreURL:
-          URL.createObjectURL(
-            coreBlob
-          ),
-        wasmURL:
-          URL.createObjectURL(
-            wasmBlob
-          ),
+      ffmpeg = new FFmpeg()
+      ffmpeg.on('progress', ({ progress: p }) => {
+        setProgress(Math.round(clamp(Number(p) || 0, 0, 1) * 100))
       })
 
-      const webmBlob =
-        new Blob(
-          chunks,
-          {
-            type: mime,
-          }
-        )
+      const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
+      const [coreResponse, wasmResponse] = await Promise.all([
+        fetch(`${baseURL}/ffmpeg-core.js`),
+        fetch(`${baseURL}/ffmpeg-core.wasm`),
+      ])
 
-      await ffmpeg.writeFile(
-        'input.webm',
-        new Uint8Array(
-          await webmBlob.arrayBuffer()
-        )
-      )
+      if (!coreResponse.ok || !wasmResponse.ok) {
+        throw new Error('دریافت موتور FFmpeg شکست خورد')
+      }
+
+      const [coreBlob, wasmBlob] = await Promise.all([
+        coreResponse.blob(),
+        wasmResponse.blob(),
+      ])
+
+      const coreURL = URL.createObjectURL(coreBlob)
+      const wasmURL = URL.createObjectURL(wasmBlob)
+
+      try {
+        await ffmpeg.load({ coreURL, wasmURL })
+      } finally {
+        URL.revokeObjectURL(coreURL)
+        URL.revokeObjectURL(wasmURL)
+      }
+
+      const webmBlob = new Blob(chunks, { type: mime })
+      await ffmpeg.writeFile('input.webm', new Uint8Array(await webmBlob.arrayBuffer()))
 
       await ffmpeg.exec([
-        '-i',
-        'input.webm',
-        '-c:v',
-        'libx264',
-        '-preset',
-        'ultrafast',
-        '-crf',
-        '23',
-        '-pix_fmt',
-        'yuv420p',
-        '-c:a',
-        'aac',
-        '-b:a',
-        '128k',
+        '-i', 'input.webm',
+        '-c:v', 'libx264',
+        '-preset', 'veryfast',
+        '-crf', '22',
+        '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-movflags', '+faststart',
         'output.mp4',
       ])
 
-      const mp4Data =
-        await ffmpeg.readFile(
-          'output.mp4'
-        ) as Uint8Array
+      const mp4Data = await ffmpeg.readFile('output.mp4') as Uint8Array
+      const mp4Blob = new Blob([mp4Data], { type: 'video/mp4' })
 
-      const mp4Blob =
-        new Blob(
-          [mp4Data],
-          {
-            type:
-              'video/mp4',
-          }
-        )
-
-      setStatus(
-        'دانلود...'
-      )
-
-      const url =
-        URL.createObjectURL(
-          mp4Blob
-        )
-
-      const a =
-        document.createElement(
-          'a'
-        )
-
+      setStatus('دانلود...')
+      const url = URL.createObjectURL(mp4Blob)
+      const a = document.createElement('a')
       a.href = url
-
-      a.download =
-        `${baseName}.subtitled.mp4`
-
+      a.download = `${baseName}.subtitled.mp4`
       document.body.appendChild(a)
-
       a.click()
-
       a.remove()
 
-      setTimeout(() => {
-        URL.revokeObjectURL(
-          url
-        )
+      setProgress(100)
+      setStatus('✅ کامل شد!')
 
-        ffmpeg
-          ?.deleteFile(
-            'input.webm'
-          )
-          .catch(() => {})
-
-        ffmpeg
-          ?.deleteFile(
-            'output.mp4'
-          )
-          .catch(() => {})
+      window.setTimeout(() => {
+        URL.revokeObjectURL(url)
+        ffmpeg?.deleteFile('input.webm').catch(() => {})
+        ffmpeg?.deleteFile('output.mp4').catch(() => {})
       }, 5000)
 
-      setProgress(100)
-
-      setStatus(
-        '✅ کامل شد!'
-      )
-    } catch (e: any) {
-      console.error(
-        '[Export Error]',
-        e
-      )
-
-      alert(
-        '❌ خطا: ' +
-          (e?.message ||
-            'Unknown')
-      )
+      console.log('[Export] complete:', frameCount, 'frames')
+    } catch (error: any) {
+      console.error('[Export Error]', error)
+      setStatus('❌ خطا')
+      alert('❌ خطا: ' + (error?.message || 'Unknown'))
     } finally {
-      if (audioCtx) {
-        audioCtx
-          .close()
-          .catch(() => {})
-      }
-
-      if (
-        video?.parentNode
-      ) {
-        video.parentNode.removeChild(
-          video
-        )
-      }
-
+      try { video?.pause() } catch {}
+      if (stream) stream.getTracks().forEach((track) => track.stop())
+      if (audioCtx) audioCtx.close().catch(() => {})
+      if (video?.parentNode) video.parentNode.removeChild(video)
       setExporting(false)
     }
   }
 
+  const safeProgress = clamp(Number(progress) || 0, 0, 100)
+
   return (
-    <div className="fixed bottom-0 left-0 right-0 p-4 bg-black/90 z-50">
+    <div className="fixed bottom-0 left-0 right-0 z-50 bg-black/90 p-4">
       <button
         onClick={exportVideo}
         disabled={exporting}
-        className="w-full py-4 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-600 text-white font-bold rounded-xl transition-all"
+        className="w-full rounded-xl bg-orange-500 py-4 font-bold text-white transition-all hover:bg-orange-600 disabled:bg-gray-600"
       >
         {exporting ? (
           <div className="flex flex-col gap-2">
-            <span className="text-sm">
-              {status}
-            </span>
-
-            <div className="w-full bg-gray-700 rounded-full h-3 overflow-hidden">
+            <span className="text-sm">{status}</span>
+            <div className="h-3 w-full overflow-hidden rounded-full bg-gray-700">
               <div
-                className="bg-white h-full rounded-full transition-all"
-                style={{
-                  width: `${Math.min(
-                    100,
-                    Math.max(
-                      0,
-                      Number(progress) || 0
-                    )
-                  )}%`,
-                }}
+                className="h-full rounded-full bg-white transition-[width] duration-150"
+                style={{ width: `${safeProgress}%` }}
               />
             </div>
-
-            <span className="text-xs">
-              {Math.round(
-                Math.min(
-                  100,
-                  Math.max(
-                    0,
-                    Number(progress) || 0
-                  )
-                )
-              )}%
-            </span>
+            <span className="text-xs">{Math.round(safeProgress)}%</span>
           </div>
         ) : (
           '📹 خروجی MP4 با زیرنویس'
