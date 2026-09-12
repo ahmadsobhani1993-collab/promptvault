@@ -23,15 +23,14 @@ type Props = {
 
 const STYLE_STORAGE_KEY = 'promptvault.subtitle.style'
 const FPS = 30
-const WEBM_BITRATE = 4_000_000
+// ✅ کاهش bitrate برای ضبط میانی (کیفیت کافی، حجم کمتر)
+const WEBM_BITRATE = 2_500_000
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
-
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
 
 function readStoredStyle(): Partial<Style> | null {
   if (typeof window === 'undefined') return null
-
   try {
     const raw = localStorage.getItem(STYLE_STORAGE_KEY)
     if (!raw) return null
@@ -42,17 +41,11 @@ function readStoredStyle(): Partial<Style> | null {
   }
 }
 
-function wrapTextSafe(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  maxWidth: number
-): string[] {
+function wrapTextSafe(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const words = text.trim().split(/\s+/).filter(Boolean)
   if (!words.length) return ['']
-
   const lines: string[] = []
   let line = ''
-
   const pushBrokenWord = (word: string) => {
     let part = ''
     for (const ch of word) {
@@ -60,32 +53,21 @@ function wrapTextSafe(
       if (part && ctx.measureText(test).width > maxWidth) {
         lines.push(part)
         part = ch
-      } else {
-        part = test
-      }
+      } else part = test
     }
     if (part) line = part
   }
-
   for (const word of words) {
     if (ctx.measureText(word).width > maxWidth) {
-      if (line) {
-        lines.push(line)
-        line = ''
-      }
+      if (line) { lines.push(line); line = '' }
       pushBrokenWord(word)
       continue
     }
-
     const test = line ? `${line} ${word}` : word
     if (line && ctx.measureText(test).width > maxWidth) {
-      lines.push(line)
-      line = word
-    } else {
-      line = test
-    }
+      lines.push(line); line = word
+    } else line = test
   }
-
   if (line) lines.push(line)
   return lines.length ? lines : ['']
 }
@@ -96,10 +78,9 @@ function fitSubtitle(
   desiredFontSize: number,
   maxWidth: number,
   maxHeight: number,
-  fontFamily: string
+  fontFamily: string,
 ) {
   let fontSize = Math.max(1, desiredFontSize)
-
   for (let i = 0; i < 30; i++) {
     ctx.font = `700 ${fontSize}px "${fontFamily}"`
     const lines = wrapTextSafe(ctx, text, Math.max(1, maxWidth))
@@ -107,24 +88,17 @@ function fitSubtitle(
     const totalHeight = lines.length * lineHeight
     const maxLineWidth = Math.max(...lines.map((line) => ctx.measureText(line).width), 0)
     const padding = Math.max(2, fontSize * 0.6)
-
-    if (
-      maxLineWidth + padding <= maxWidth &&
-      totalHeight + padding <= maxHeight
-    ) {
+    if (maxLineWidth + padding <= maxWidth && totalHeight + padding <= maxHeight) {
       return { fontSize, lines, lineHeight, totalHeight, maxLineWidth, padding }
     }
-
     fontSize *= 0.92
   }
-
   ctx.font = `700 ${fontSize}px "${fontFamily}"`
   const lines = wrapTextSafe(ctx, text, Math.max(1, maxWidth))
   const lineHeight = fontSize * 1.25
   const totalHeight = lines.length * lineHeight
   const maxLineWidth = Math.max(...lines.map((line) => ctx.measureText(line).width), 0)
   const padding = Math.max(2, fontSize * 0.6)
-
   return { fontSize, lines, lineHeight, totalHeight, maxLineWidth, padding }
 }
 
@@ -153,12 +127,35 @@ function waitForSeek(video: HTMLVideoElement, time: number) {
   })
 }
 
-export default function SubtitleVideoExport({
-  videoUrl,
-  baseName,
-  segments,
-  style,
-}: Props) {
+// ✅ دانلود فایل با progress واقعی (برای wasm/core)
+async function fetchWithProgress(
+  url: string,
+  onProgress: (loaded: number, total: number) => void,
+): Promise<Blob> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error('download failed: ' + res.status)
+  const total = Number(res.headers.get('Content-Length') || 0)
+  if (!res.body || !total) {
+    const blob = await res.blob()
+    onProgress(blob.size, blob.size)
+    return blob
+  }
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let loaded = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (value) {
+      chunks.push(value)
+      loaded += value.length
+      onProgress(loaded, total)
+    }
+  }
+  return new Blob(chunks)
+}
+
+export default function SubtitleVideoExport({ videoUrl, baseName, segments, style }: Props) {
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState('')
@@ -170,7 +167,6 @@ export default function SubtitleVideoExport({
 
   const exportVideo = async () => {
     if (exporting || !videoUrl) return
-
     setExporting(true)
     setProgress(0)
     setStatus('در حال آماده سازی...')
@@ -183,11 +179,7 @@ export default function SubtitleVideoExport({
 
     try {
       const storedStyle = readStoredStyle()
-      const exportStyle: Style = {
-        ...DEFAULT_STYLE,
-        ...(storedStyle || {}),
-        ...(style || {}),
-      }
+      const exportStyle: Style = { ...DEFAULT_STYLE, ...(storedStyle || {}), ...(style || {}) }
       styleRef.current = exportStyle
 
       video = document.createElement('video')
@@ -205,11 +197,7 @@ export default function SubtitleVideoExport({
 
       await new Promise<void>((resolve, reject) => {
         let settled = false
-        const finish = (fn: () => void) => {
-          if (settled) return
-          settled = true
-          fn()
-        }
+        const finish = (fn: () => void) => { if (settled) return; settled = true; fn() }
         video!.onloadedmetadata = () => finish(resolve)
         video!.onerror = () => finish(() => reject(new Error('لود ویدیو شکست خورد')))
         window.setTimeout(() => finish(() => reject(new Error('تایم‌اوت لود ویدیو'))), 20_000)
@@ -219,10 +207,7 @@ export default function SubtitleVideoExport({
       const W = video.videoWidth
       const H = video.videoHeight
       const duration = Number.isFinite(video.duration) ? video.duration : 0
-
-      if (!W || !H || !duration) {
-        throw new Error('ابعاد یا مدت ویدیو معتبر نیست')
-      }
+      if (!W || !H || !duration) throw new Error('ابعاد یا مدت ویدیو معتبر نیست')
 
       const canvas = document.createElement('canvas')
       canvas.width = W
@@ -235,7 +220,6 @@ export default function SubtitleVideoExport({
       try { await document.fonts.ready } catch {}
 
       setStatus('در حال آماده سازی فریم‌ها...')
-
       stream = canvas.captureStream(FPS)
 
       try {
@@ -256,27 +240,18 @@ export default function SubtitleVideoExport({
       ]
       const mime = mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) || 'video/webm'
 
-      recorder = new MediaRecorder(stream, {
-        mimeType: mime,
-        videoBitsPerSecond: WEBM_BITRATE,
-      })
-
+      recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: WEBM_BITRATE })
       const chunks: Blob[] = []
       recorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) chunks.push(event.data)
       }
-
-      const recorderStopped = new Promise<void>((resolve) => {
-        recorder!.onstop = () => resolve()
-      })
+      const recorderStopped = new Promise<void>((resolve) => { recorder!.onstop = () => resolve() })
 
       const renderFrame = (mediaTime: number) => {
         const t = clamp(mediaTime, 0, duration)
         const seg = segRef.current.find((item) => t >= item.start && t <= item.end)
-
         ctx.clearRect(0, 0, W, H)
         ctx.drawImage(video!, 0, 0, W, H)
-
         if (!seg) return
 
         const s = styleRef.current || DEFAULT_STYLE
@@ -290,28 +265,15 @@ export default function SubtitleVideoExport({
         const anchorY = s.y != null ? (Number(s.y) / 100) * H : H * 0.9
         const availableWidth = Math.max(
           1,
-          Math.min(
-            W - edgeMargin * 2,
-            2 * Math.min(anchorX - edgeMargin, W - anchorX - edgeMargin)
-          )
+          Math.min(W - edgeMargin * 2, 2 * Math.min(anchorX - edgeMargin, W - anchorX - edgeMargin)),
         )
         const availableHeight = Math.max(1, H - edgeMargin * 2)
         const fontFamily = s.fontId || 'Vazirmatn'
-        const desiredFontSize = (Number(s.size) / 100) * W * anim.scale
 
-        ctx.save()
-        ctx.globalAlpha = anim.opacity
-        ctx.translate(anim.translateX, anim.translateY)
+        // ✅ انیمیشن: سایز پایه بدون scale (fitSubtitle خرابش نمی‌کند)
+        const baseFontSize = (Number(s.size) / 100) * W
 
-        const fitted = fitSubtitle(
-          ctx,
-          seg.text,
-          desiredFontSize,
-          availableWidth,
-          availableHeight,
-          fontFamily
-        )
-
+        const fitted = fitSubtitle(ctx, seg.text, baseFontSize, availableWidth, availableHeight, fontFamily)
         const finalFontSize = fitted.fontSize
         const lines = fitted.lines
         const lineHeight = fitted.lineHeight
@@ -319,14 +281,8 @@ export default function SubtitleVideoExport({
         const maxLineWidth = fitted.maxLineWidth
         const padding = fitted.padding
 
-        const boxWidth = Math.min(
-          W - edgeMargin * 2,
-          Math.max(1, Math.min(availableWidth, maxLineWidth + padding))
-        )
-        const boxHeight = Math.min(
-          H - edgeMargin * 2,
-          totalH + padding
-        )
+        const boxWidth = Math.min(W - edgeMargin * 2, Math.max(1, Math.min(availableWidth, maxLineWidth + padding)))
+        const boxHeight = Math.min(H - edgeMargin * 2, totalH + padding)
 
         const minX = edgeMargin + boxWidth / 2
         const maxX = W - edgeMargin - boxWidth / 2
@@ -342,6 +298,14 @@ export default function SubtitleVideoExport({
 
         const bgX = finalX - boxWidth / 2
         const bgY = finalY - boxHeight / 2
+
+        // ✅ انیمیشن واقعی: transform روی کل بلوک (متن + پس‌زمینه + padding)
+        ctx.save()
+        ctx.globalAlpha = anim.opacity
+        ctx.translate(finalX + anim.translateX, finalY + anim.translateY)
+        ctx.scale(anim.scale, anim.scale)
+        ctx.translate(-finalX, -finalY)
+
         if (s.bgOpacity > 0) {
           ctx.fillStyle = `rgba(0,0,0,${clamp(Number(s.bgOpacity), 0, 1)})`
           ctx.fillRect(bgX, bgY, boxWidth, boxHeight)
@@ -367,39 +331,27 @@ export default function SubtitleVideoExport({
             ctx.fillText(line, drawX, y)
             return
           }
-
           const lineWords = line.split(/\s+/).filter(Boolean)
           if (!lineWords.length) return
-
           const pieces = lineWords.map((word) => {
             const match = wordMap.slice(wordCursor).find((w) => w.w === word)
             if (match) wordCursor = wordMap.indexOf(match) + 1
             return { word, timing: match }
           })
-
           const spaceWidth = ctx.measureText(' ').width
           const widths = pieces.map((p) => ctx.measureText(p.word).width)
           const lineWidth = widths.reduce((a, b) => a + b, 0) + spaceWidth * Math.max(0, widths.length - 1)
-
-          let cursorX = align === 'left'
-            ? drawX
-            : align === 'right'
-            ? drawX - lineWidth
-            : drawX - lineWidth / 2
-
+          let cursorX = align === 'left' ? drawX : align === 'right' ? drawX - lineWidth : drawX - lineWidth / 2
           const visualPieces = direction === 'rtl' ? [...pieces].reverse() : pieces
-
           for (const piece of visualPieces) {
             const width = ctx.measureText(piece.word).width
             const active = piece.timing && t >= piece.timing.start && t <= piece.timing.end
             const centerX = cursorX + width / 2
-
             if (s.outline) {
               ctx.strokeStyle = '#000'
               ctx.lineWidth = Math.max(2, finalFontSize * 0.08)
               ctx.strokeText(piece.word, centerX, y)
             }
-
             ctx.fillStyle = active ? s.hlColor : s.color
             ctx.fillText(piece.word, centerX, y)
             cursorX += direction === 'rtl' ? -(width + spaceWidth) : width + spaceWidth
@@ -434,7 +386,6 @@ export default function SubtitleVideoExport({
 
       const renderCallback = (_now: number, metadata: RVFCMetadata) => {
         if (stopped) return
-
         const mediaTime = metadata.mediaTime
         if (mediaTime > lastMediaTime + 0.0001) {
           lastMediaTime = mediaTime
@@ -442,14 +393,12 @@ export default function SubtitleVideoExport({
           frameCount += 1
           setProgress(clamp((mediaTime / duration) * 70, 0, 70))
         }
-
         if (mediaTime >= duration - 0.03 || video!.ended) {
           renderFrame(duration)
           setProgress(70)
           stopRecording()
           return
         }
-
         rvfcVideo.requestVideoFrameCallback(renderCallback)
       }
 
@@ -479,36 +428,36 @@ export default function SubtitleVideoExport({
       }
 
       await recorderStopped
-
       if (!chunks.length) throw new Error('هیچ داده‌ای ضبط نشد')
 
+      // ✅ progress یکنواخت: 70 → 80 دانلود wasm، 80 → 100 تبدیل
       setProgress(70)
-      setProgress(0)
-      setStatus('در حال تبدیل ویدیو...')
+      setStatus('در حال دریافت موتور تبدیل...')
 
       ffmpeg = new FFmpeg()
       ffmpeg.on('progress', ({ progress: p }) => {
-        setProgress(Math.round(clamp(Number(p) || 0, 0, 1) * 100))
+        // نگاشت 0..1 → 80..100
+        setProgress(Math.round(80 + clamp(Number(p) || 0, 0, 1) * 20))
       })
 
       const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
-      const [coreResponse, wasmResponse] = await Promise.all([
-        fetch(`${baseURL}/ffmpeg-core.js`),
-        fetch(`${baseURL}/ffmpeg-core.wasm`),
-      ])
-
-      if (!coreResponse.ok || !wasmResponse.ok) {
-        throw new Error('دریافت موتور FFmpeg شکست خورد')
-      }
 
       const [coreBlob, wasmBlob] = await Promise.all([
-        coreResponse.blob(),
-        wasmResponse.blob(),
+        fetchWithProgress(`${baseURL}/ffmpeg-core.js`, (loaded, total) => {
+          // نیمی از بازه 70→80 به core اختصاص دارد
+          const ratio = total > 0 ? loaded / total : 0
+          setProgress(Math.round(70 + ratio * 5))
+        }),
+        fetchWithProgress(`${baseURL}/ffmpeg-core.wasm`, (loaded, total) => {
+          // نیمه دوم 70→80 به wasm
+          const ratio = total > 0 ? loaded / total : 0
+          setProgress(Math.round(75 + ratio * 5))
+        }),
       ])
 
+      setStatus('در حال بارگذاری موتور...')
       const coreURL = URL.createObjectURL(coreBlob)
       const wasmURL = URL.createObjectURL(wasmBlob)
-
       try {
         await ffmpeg.load({ coreURL, wasmURL })
       } finally {
@@ -516,14 +465,18 @@ export default function SubtitleVideoExport({
         URL.revokeObjectURL(wasmURL)
       }
 
+      setStatus('در حال تبدیل ویدیو...')
+      setProgress(80)
+
       const webmBlob = new Blob(chunks, { type: mime })
       await ffmpeg.writeFile('input.webm', new Uint8Array(await webmBlob.arrayBuffer()))
 
       await ffmpeg.exec([
         '-i', 'input.webm',
         '-c:v', 'libx264',
-        '-preset', 'veryfast',
-        '-crf', '22',
+        // ✅ فشرده‌سازی بهتر: preset medium (به جای veryfast) + crf 23
+        '-preset', 'medium',
+        '-crf', '23',
         '-pix_fmt', 'yuv420p',
         '-c:a', 'aac',
         '-b:a', '128k',
@@ -531,7 +484,7 @@ export default function SubtitleVideoExport({
         'output.mp4',
       ])
 
-      const mp4Data = await ffmpeg.readFile('output.mp4') as Uint8Array
+      const mp4Data = (await ffmpeg.readFile('output.mp4')) as Uint8Array
       const mp4Blob = new Blob([mp4Data], { type: 'video/mp4' })
 
       setStatus('دانلود...')
