@@ -41,8 +41,6 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
 
   useEffect(() => { loadFont(style.fontId) }, [style.fontId])
 
-  // Keep the current subtitle style available to the browser-side exporter.
-  // This does not change the existing UI or parent component API.
   useEffect(() => {
     try {
       const raw = localStorage.getItem('promptvault.subtitle.style')
@@ -69,9 +67,6 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     } catch {}
   }, [style])
 
-  // The black stage is NOT necessarily the video frame.
-  // object-contain can create empty space around portrait/square videos.
-  // Measure the real displayed video rectangle inside the stage.
   useEffect(() => {
     const stage = stageRef.current
     if (!stage) return
@@ -85,10 +80,8 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     }
 
     update()
-
     const ro = new ResizeObserver(update)
     ro.observe(stage)
-
     window.addEventListener('resize', update)
 
     return () => {
@@ -99,7 +92,6 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
 
   const current = segments.find((s) => time >= s.start && time <= s.end)
 
-  // Exact displayed rectangle of the actual video inside object-contain.
   const videoFrame = (() => {
     const sw = stageSize.width || stageRef.current?.clientWidth || 0
     const sh = stageSize.height || stageRef.current?.clientHeight || 0
@@ -114,7 +106,6 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     }
 
     const scale = Math.min(sw / vidW, sh / vidH)
-
     const width = vidW * scale
     const height = vidH * scale
 
@@ -165,13 +156,10 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
 
   const onSubPointerDown = (e: React.PointerEvent) => {
     e.preventDefault()
-
     const stage = stageRef.current
-
     if (!stage || !videoFrame.width || !videoFrame.height) return
 
     const rect = stage.getBoundingClientRect()
-
     const frame = {
       left: rect.left + videoFrame.left,
       top: rect.top + videoFrame.top,
@@ -180,21 +168,11 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     }
 
     const move = (ev: PointerEvent) => {
-      const rawX =
-        ((ev.clientX - frame.left) / frame.width) * 100
-
-      const rawY =
-        ((ev.clientY - frame.top) / frame.height) * 100
-
-      // Keep the anchor inside the actual video frame.
+      const rawX = ((ev.clientX - frame.left) / frame.width) * 100
+      const rawY = ((ev.clientY - frame.top) / frame.height) * 100
       const x = Math.min(98, Math.max(2, rawX))
       const y = Math.min(98, Math.max(2, rawY))
-
-      setStyle((s) => ({
-        ...s,
-        x,
-        y,
-      }))
+      setStyle((s) => ({ ...s, x, y }))
     }
 
     const up = () => {
@@ -228,6 +206,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
       return next
     }))
   }
+
   const splitSeg = (i: number) => {
     const s = segments[i]
     const toks = s.text.split(/\s+/)
@@ -240,6 +219,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     a.words = mkWords(a.text, a.start, a.end); b.words = mkWords(b.text, b.start, b.end)
     setSegments([...segments.slice(0, i), a, b, ...segments.slice(i + 1)])
   }
+
   const mergeSeg = (i: number) => {
     if (i >= segments.length - 1) return
     snapshot()
@@ -248,6 +228,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     m.words = mkWords(m.text, m.start, m.end)
     setSegments([...segments.slice(0, i), m, ...segments.slice(i + 2)])
   }
+
   const findReplace = () => {
     if (!findQ) return
     snapshot()
@@ -256,11 +237,11 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
       return { ...s, text: t, words: mkWords(t, s.start, s.end) }
     }))
   }
+
   const applyPreset = (p: (typeof PRESETS)[number]) => {
     snapshot()
     setStyle((s) => ({ ...s, fontId: p.fontId, size: p.size, color: p.color, bgOpacity: p.bgOpacity, outline: p.outline, karaoke: p.karaoke, hlColor: p.hlColor }))
   }
-  const cps = (s: Seg) => s.text.length / Math.max(0.5, s.end - s.start)
 
   const fxAnim = (seg: Seg) => {
     const dur = Math.max(0.3, seg.end - seg.start)
@@ -331,10 +312,6 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                     left: `${style.x ?? 50}%`,
                     top: `${style.y ?? 90}%`,
                     transform: 'translate(-50%,-50%)',
-
-                    // The available subtitle width follows the anchor.
-                    // Moving toward an edge reduces the available area
-                    // instead of allowing the caption to leave the frame.
                     width: `${Math.max(
                       8,
                       Math.min(
@@ -354,28 +331,20 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                     style={{
                       fontFamily: `"${style.fontId}"`,
                       fontWeight: 700,
-
-                      // Same percentage model as export:
-                      // size 5 = 5% of the actual displayed video width.
                       fontSize: `${(style.size / 100) * videoFrame.width}px`,
-
                       lineHeight: 1.25,
                       color: style.color,
-
                       backgroundColor:
                         current.hl ||
                         (style.bgOpacity > 0
                           ? `rgba(0,0,0,${style.bgOpacity})`
                           : 'transparent'),
-
                       padding: '0.2em 0.6em',
                       borderRadius: '0.5em',
                       boxSizing: 'border-box',
-
                       textShadow: style.outline
                         ? '0 2px 6px rgba(0,0,0,0.9)'
                         : 'none',
-
                       animation: fxAnim(current),
                     }}
                   >
@@ -604,15 +573,17 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
         </div>
       </div>
 
-      {/* ─── Timeline ── */}
+      {/* ─── Timeline (اصلاح شده: جهت صریح LTR و هندل‌های چپ/راست استاندارد) ── */}
       {duration > 0 && (
-        <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-3">
+        <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-3" dir="rtl">
           <div className="mb-2 flex items-center gap-3 text-[10px] text-white/40">
             <span>تایم‌لاین</span>
             <input type="range" min={10} max={120} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} className="w-24 accent-amber-500" title="بزرگ‌نمایی" />
             <span className="ms-auto font-mono text-amber-300/80">{fmt(time)} / {fmt(duration)}</span>
           </div>
-          <div className="overflow-x-auto rounded-xl bg-black/50 p-2">
+
+          {/* کانتینر تایم‌لاین با LTR اجباری برای تطابق با محور زمان */}
+          <div className="overflow-x-auto rounded-xl bg-black/50 p-2" dir="ltr">
             <div
               className="relative h-14"
               style={{ width: Math.max(300, duration * zoom) }}
@@ -626,40 +597,76 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                   key={i}
                   onPointerDown={(e) => { e.stopPropagation(); setSelected(i); seek(s.start) }}
                   title={s.text}
-                  className={`absolute top-2 h-7 cursor-pointer overflow-hidden rounded-md border px-1 text-center text-[9px] leading-7 transition ${
+                  className={`absolute top-2 h-8 select-none cursor-pointer overflow-hidden rounded-md border px-2 text-center text-[10px] leading-8 transition ${
                     i === selected
-                      ? 'border-amber-400 bg-amber-500/40 text-white'
+                      ? 'border-amber-400 bg-amber-500/40 text-white z-10'
                       : time >= s.start && time <= s.end
                       ? 'border-amber-500/60 bg-amber-500/20 text-amber-100'
-                      : 'border-white/10 bg-white/10 text-white/50 hover:bg-white/20'
+                      : 'border-white/10 bg-white/10 text-white/60 hover:bg-white/20'
                   }`}
-                  style={{ left: s.start * zoom, width: Math.max(14, (s.end - s.start) * zoom) }}
+                  style={{
+                    left: s.start * zoom,
+                    width: Math.max(16, (s.end - s.start) * zoom),
+                  }}
                 >
+                  {/* هندل لبه چپ: تنظیم دقیق زمان شروع (Start) */}
                   <div
                     onPointerDown={(e) => {
                       e.stopPropagation()
-                      const startX = e.clientX, origStart = s.start
-                      const move = (ev: PointerEvent) => updateSeg(i, { start: Math.max(0, origStart + (ev.clientX - startX) / zoom) }, false)
-                      const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
+                      const startX = e.clientX
+                      const origStart = s.start
+                      const move = (ev: PointerEvent) => {
+                        const deltaSec = (ev.clientX - startX) / zoom
+                        const newStart = Math.max(0, Math.min(s.end - 0.2, origStart + deltaSec))
+                        updateSeg(i, { start: Number(newStart.toFixed(2)) }, false)
+                      }
+                      const up = () => {
+                        window.removeEventListener('pointermove', move)
+                        window.removeEventListener('pointerup', up)
+                      }
                       snapshot()
-                      window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
+                      window.addEventListener('pointermove', move)
+                      window.addEventListener('pointerup', up)
                     }}
-                    className="absolute right-0 top-0 h-full w-1.5 cursor-ew-resize bg-amber-400/60"
+                    className="absolute left-0 top-0 h-full w-2 cursor-ew-resize bg-amber-400/80 hover:w-3 transition-all flex items-center justify-center"
+                    title="کشیدن برای تغییر زمان شروع"
                   />
+
+                  {/* متن کوتاه داخل سگمنت */}
+                  <span className="truncate block px-1 pointer-events-none">
+                    {s.text}
+                  </span>
+
+                  {/* هندل لبه راست: تنظیم دقیق زمان پایان (End) */}
                   <div
                     onPointerDown={(e) => {
                       e.stopPropagation()
-                      const startX = e.clientX, origEnd = s.end
-                      const move = (ev: PointerEvent) => updateSeg(i, { end: Math.max(s.start + 0.3, origEnd + (ev.clientX - startX) / zoom) }, false)
-                      const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
+                      const startX = e.clientX
+                      const origEnd = s.end
+                      const move = (ev: PointerEvent) => {
+                        const deltaSec = (ev.clientX - startX) / zoom
+                        const newEnd = Math.max(s.start + 0.2, Math.min(duration, origEnd + deltaSec))
+                        updateSeg(i, { end: Number(newEnd.toFixed(2)) }, false)
+                      }
+                      const up = () => {
+                        window.removeEventListener('pointermove', move)
+                        window.removeEventListener('pointerup', up)
+                      }
                       snapshot()
-                      window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
+                      window.addEventListener('pointermove', move)
+                      window.addEventListener('pointerup', up)
                     }}
-                    className="absolute left-0 top-0 h-full w-1.5 cursor-ew-resize bg-amber-400/60"
+                    className="absolute right-0 top-0 h-full w-2 cursor-ew-resize bg-amber-400/80 hover:w-3 transition-all flex items-center justify-center"
+                    title="کشیدن برای تغییر زمان پایان"
                   />
                 </div>
               ))}
-              <div className="pointer-events-none absolute top-0 h-full w-0.5 bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.8)]" style={{ left: time * zoom }} />
+
+              {/* نشانگر سوزنی زمان ویدیو (Playhead) */}
+              <div
+                className="pointer-events-none absolute top-0 h-full w-0.5 bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.8)] z-20"
+                style={{ left: time * zoom }}
+              />
             </div>
           </div>
         </div>
