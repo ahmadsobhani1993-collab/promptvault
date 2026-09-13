@@ -28,6 +28,7 @@
     "cloudinary": "^2.10.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.34.0",
+    "mp4-muxer": "^5.2.2",
     "multer": "^2.2.0",
     "next": "^15.1.0",
     "next-auth": "^5.0.0-beta.32",
