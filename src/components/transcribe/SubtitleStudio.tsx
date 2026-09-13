@@ -12,6 +12,8 @@ type Props = {
   setSegments: (s: Seg[]) => void
 }
 
+type AspectRatio = 'original' | '9:16' | '1:1' | '16:9'
+
 const fmt = (t: number) => {
   const m = Math.floor(t / 60)
   const s = Math.floor(t % 60)
@@ -29,6 +31,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
   const [zoom, setZoom] = useState(40)
   const [showSafe, setShowSafe] = useState(false)
   const [showAdv, setShowAdv] = useState(false)
+  const [aspect, setAspect] = useState<AspectRatio>('original')
   const [findQ, setFindQ] = useState('')
   const [replQ, setReplQ] = useState('')
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
@@ -60,10 +63,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     }
 
     try {
-      localStorage.setItem(
-        'promptvault.subtitle.style',
-        JSON.stringify(style)
-      )
+      localStorage.setItem('promptvault.subtitle.style', JSON.stringify(style))
     } catch {}
   }, [style])
 
@@ -73,10 +73,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
 
     const update = () => {
       const r = stage.getBoundingClientRect()
-      setStageSize({
-        width: r.width,
-        height: r.height,
-      })
+      setStageSize({ width: r.width, height: r.height })
     }
 
     update()
@@ -88,7 +85,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
       ro.disconnect()
       window.removeEventListener('resize', update)
     }
-  }, [])
+  }, [aspect])
 
   const current = segments.find((s) => time >= s.start && time <= s.end)
 
@@ -97,12 +94,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     const sh = stageSize.height || stageRef.current?.clientHeight || 0
 
     if (!sw || !sh || !vidW || !vidH) {
-      return {
-        left: 0,
-        top: 0,
-        width: sw,
-        height: sh,
-      }
+      return { left: 0, top: 0, width: sw, height: sh }
     }
 
     const scale = Math.min(sw / vidW, sh / vidH)
@@ -122,6 +114,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     if (histRef.current.length > 60) histRef.current.shift()
     futRef.current = []
   }
+
   const undo = () => {
     const h = histRef.current.pop()
     if (!h) return
@@ -129,6 +122,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     const s = JSON.parse(h)
     setSegments(s.segments); setStyle(s.style)
   }
+
   const redo = () => {
     const h = futRef.current.pop()
     if (!h) return
@@ -137,16 +131,31 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     setSegments(s.segments); setStyle(s.style)
   }
 
+  // اکشن برش و اتمام زیرنویس در لحظه پخش زنده
+  const endActiveSegmentHere = () => {
+    const targetIdx = selected !== -1 ? selected : segments.findIndex((s) => time >= s.start && time <= s.end)
+    if (targetIdx === -1) return
+    const s = segments[targetIdx]
+    if (time <= s.start) return
+
+    snapshot()
+    const newEnd = Number(time.toFixed(2))
+    updateSeg(targetIdx, { end: newEnd }, false)
+  }
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
       const v = videoRef.current
       if (!v) return
+
       if (e.code === 'Space') { e.preventDefault(); v.paused ? v.play() : v.pause() }
       if (e.code === 'ArrowRight') v.currentTime = Math.min(v.duration, v.currentTime + 1)
       if (e.code === 'ArrowLeft') v.currentTime = Math.max(0, v.currentTime - 1)
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo() }
+      // میانبر Shift + E برای پایان سریع زیرنویس در ثانیه فعلی
+      if (e.shiftKey && e.key.toLowerCase() === 'e') { e.preventDefault(); endActiveSegmentHere() }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -201,8 +210,9 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     setSegments(segments.map((s, idx) => {
       if (idx !== i) return s
       const next = { ...s, ...patch }
-      if (patch.text !== undefined) next.words = mkWords(next.text, next.start, next.end)
-      else if (patch.start !== undefined || patch.end !== undefined) next.words = mkWords(next.text, next.start, next.end)
+      if (patch.text !== undefined || patch.start !== undefined || patch.end !== undefined) {
+        next.words = mkWords(next.text, next.start, next.end)
+      }
       return next
     }))
   }
@@ -252,6 +262,13 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     return undefined
   }
 
+  const getAspectClass = () => {
+    if (aspect === '9:16') return 'aspect-[9/16] max-h-[560px] mx-auto'
+    if (aspect === '1:1') return 'aspect-square max-h-[500px] mx-auto'
+    if (aspect === '16:9') return 'aspect-video w-full'
+    return 'aspect-video w-full'
+  }
+
   const iconBtn = 'rounded-lg border border-white/10 bg-white/5 p-2 text-xs text-white/60 transition hover:border-amber-500/40 hover:text-amber-300'
 
   return (
@@ -264,16 +281,33 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
       `}</style>
 
       {/* ─── Toolbar ── */}
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <button onClick={undo} title="واگرد (Ctrl+Z)" className={iconBtn}>↩</button>
           <button onClick={redo} title="ازنو (Ctrl+Shift+Z)" className={iconBtn}>↪</button>
           <button onClick={() => setShowSafe(!showSafe)} title="ناحیه امن اینستاگرام" className={`${iconBtn} ${showSafe ? '!border-amber-500/60 !text-amber-300' : ''}`}>▦</button>
           <button onClick={() => setShowAdv(!showAdv)} title="تنظیمات استایل" className={`${iconBtn} ${showAdv ? '!border-amber-500/60 !text-amber-300' : ''}`}>⚙</button>
         </div>
+
+        {/* سوییچر نسبت ابعاد (Aspect Ratio) */}
+        <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-zinc-900/60 p-1 text-xs">
+          <span className="px-1 text-[10px] text-white/40">کادر:</span>
+          {(['original', '9:16', '1:1', '16:9'] as const).map((ratio) => (
+            <button
+              key={ratio}
+              onClick={() => setAspect(ratio)}
+              className={`rounded px-2 py-0.5 text-[11px] transition ${
+                aspect === ratio ? 'bg-amber-500 font-bold text-black' : 'text-white/60 hover:bg-white/10'
+              }`}
+            >
+              {ratio === 'original' ? 'اصلی' : ratio}
+            </button>
+          ))}
+        </div>
+
         {vidW > 0 && (
           <span className="rounded-md bg-white/5 px-2 py-1 text-[10px] text-white/40">
-            خروجی: {vidW}×{vidH} — رزولوشن اصلی
+            {vidW}×{vidH} — اصلی
           </span>
         )}
       </div>
@@ -282,7 +316,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
       <div className="grid gap-4 lg:grid-cols-5">
         {/* Preview */}
         <div className="space-y-3 lg:col-span-3">
-          <div ref={stageRef} className="relative w-full select-none overflow-hidden rounded-2xl border border-white/10 bg-black aspect-video" style={{ containerType: 'inline-size' }}>
+          <div ref={stageRef} className={`relative select-none overflow-hidden rounded-2xl border border-white/10 bg-black ${getAspectClass()}`} style={{ containerType: 'inline-size' }}>
             <video
               ref={videoRef} src={videoUrl} controls playsInline
               onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
@@ -468,7 +502,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                       : 'border-transparent hover:bg-white/5'
                   }`}
                 >
-                  {/* ─── Row 1: Time controls ─── */}
+                  {/* Row 1: Time controls */}
                   <div className="flex flex-wrap items-center gap-1.5 text-[10px]" onClick={(e) => e.stopPropagation()}>
                     <span className="text-white/40">از</span>
                     <input
@@ -490,7 +524,6 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                     />
                     <span className="text-white/40">ثانیه</span>
 
-                    {/* میکرو ادجاست‌ها */}
                     <div className="flex items-center gap-0.5">
                       {[-0.5, -0.1].map((d) => (
                         <button
@@ -539,7 +572,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                     </div>
                   </div>
 
-                  {/* ─── Row 2: Actions ─── */}
+                  {/* Row 2: Actions */}
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]" onClick={(e) => e.stopPropagation()}>
                     <select value={s.fx || 'none'} onChange={(e) => updateSeg(i, { fx: e.target.value as Fx })} className="rounded-md border border-white/10 bg-black/40 p-0.5 text-white/60">
                       <option value="none">بدون افکت</option>
@@ -558,7 +591,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                     <button title="حذف" onClick={() => { snapshot(); setSegments(segments.filter((_, idx) => idx !== i)) }} className="mr-auto rounded-md bg-white/10 px-1.5 text-red-400 hover:text-red-300">✕</button>
                   </div>
 
-                  {/* ─── Row 3: Text ─── */}
+                  {/* Row 3: Text */}
                   <textarea
                     value={s.text}
                     rows={1}
@@ -573,16 +606,25 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
         </div>
       </div>
 
-      {/* ─── Timeline (اصلاح شده: جهت صریح LTR و هندل‌های چپ/راست استاندارد) ── */}
+      {/* ─── Timeline ── */}
       {duration > 0 && (
         <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-3" dir="rtl">
-          <div className="mb-2 flex items-center gap-3 text-[10px] text-white/40">
-            <span>تایم‌لاین</span>
+          <div className="mb-2 flex flex-wrap items-center gap-3 text-[10px] text-white/40">
+            <span className="font-bold text-white/70">تایم‌لاین</span>
             <input type="range" min={10} max={120} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} className="w-24 accent-amber-500" title="بزرگ‌نمایی" />
+            
+            {/* دکمه اتمام سریع زیرنویس در ثانیه فعلی */}
+            <button
+              onClick={endActiveSegmentHere}
+              className="flex items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 font-bold text-amber-300 transition hover:bg-amber-500/20"
+              title="توقف کپشن در زمان فعلی ویدیو (Shift+E)"
+            >
+              ⏱️ پایان کپشن در همین ثانیه ({fmt(time)})
+            </button>
+
             <span className="ms-auto font-mono text-amber-300/80">{fmt(time)} / {fmt(duration)}</span>
           </div>
 
-          {/* کانتینر تایم‌لاین با LTR اجباری برای تطابق با محور زمان */}
           <div className="overflow-x-auto rounded-xl bg-black/50 p-2" dir="ltr">
             <div
               className="relative h-14"
@@ -609,15 +651,27 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                     width: Math.max(16, (s.end - s.start) * zoom),
                   }}
                 >
-                  {/* هندل لبه چپ: تنظیم دقیق زمان شروع (Start) */}
+                  {/* هندل چپ + اسنپ مغناطیسی */}
                   <div
                     onPointerDown={(e) => {
                       e.stopPropagation()
                       const startX = e.clientX
                       const origStart = s.start
+                      const prevSeg = segments[i - 1]
+
                       const move = (ev: PointerEvent) => {
                         const deltaSec = (ev.clientX - startX) / zoom
-                        const newStart = Math.max(0, Math.min(s.end - 0.2, origStart + deltaSec))
+                        let newStart = Math.max(0, Math.min(s.end - 0.2, origStart + deltaSec))
+
+                        // اسنپ به انتهای سگمنت قبلی
+                        if (prevSeg && Math.abs(newStart - prevSeg.end) < 0.15) {
+                          newStart = prevSeg.end
+                        }
+                        // اسنپ به زمان جاری پلیر
+                        if (Math.abs(newStart - time) < 0.12) {
+                          newStart = time
+                        }
+
                         updateSeg(i, { start: Number(newStart.toFixed(2)) }, false)
                       }
                       const up = () => {
@@ -629,23 +683,34 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                       window.addEventListener('pointerup', up)
                     }}
                     className="absolute left-0 top-0 h-full w-2 cursor-ew-resize bg-amber-400/80 hover:w-3 transition-all flex items-center justify-center"
-                    title="کشیدن برای تغییر زمان شروع"
+                    title="کشیدن لبه شروع (با خاصیت آهنربایی)"
                   />
 
-                  {/* متن کوتاه داخل سگمنت */}
                   <span className="truncate block px-1 pointer-events-none">
                     {s.text}
                   </span>
 
-                  {/* هندل لبه راست: تنظیم دقیق زمان پایان (End) */}
+                  {/* هندل راست + اسنپ مغناطیسی */}
                   <div
                     onPointerDown={(e) => {
                       e.stopPropagation()
                       const startX = e.clientX
                       const origEnd = s.end
+                      const nextSeg = segments[i + 1]
+
                       const move = (ev: PointerEvent) => {
                         const deltaSec = (ev.clientX - startX) / zoom
-                        const newEnd = Math.max(s.start + 0.2, Math.min(duration, origEnd + deltaSec))
+                        let newEnd = Math.max(s.start + 0.2, Math.min(duration, origEnd + deltaSec))
+
+                        // اسنپ به شروع سگمنت بعدی
+                        if (nextSeg && Math.abs(newEnd - nextSeg.start) < 0.15) {
+                          newEnd = nextSeg.start
+                        }
+                        // اسنپ به زمان جاری پلیر
+                        if (Math.abs(newEnd - time) < 0.12) {
+                          newEnd = time
+                        }
+
                         updateSeg(i, { end: Number(newEnd.toFixed(2)) }, false)
                       }
                       const up = () => {
@@ -657,12 +722,11 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                       window.addEventListener('pointerup', up)
                     }}
                     className="absolute right-0 top-0 h-full w-2 cursor-ew-resize bg-amber-400/80 hover:w-3 transition-all flex items-center justify-center"
-                    title="کشیدن برای تغییر زمان پایان"
+                    title="کشیدن لبه پایان (با خاصیت آهنربایی)"
                   />
                 </div>
               ))}
 
-              {/* نشانگر سوزنی زمان ویدیو (Playhead) */}
               <div
                 className="pointer-events-none absolute top-0 h-full w-0.5 bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.8)] z-20"
                 style={{ left: time * zoom }}
