@@ -10,8 +10,6 @@ import {
   resolveDirection,
   type Seg,
   type Style,
-  type TextAlign,
-  type TextDirection,
 } from '@/lib/subtitle-studio'
 
 type Props = {
@@ -23,9 +21,10 @@ type Props = {
 
 const STYLE_STORAGE_KEY = 'promptvault.subtitle.style'
 const FPS = 30
-const WEBM_BITRATE = 2_500_000
 
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+// بیت‌ریت بهینه برای جلوگیری از افزایش بی‌رویه حجم در مرحله واسط
+const WEBM_BITRATE = 3_500_000
+
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
 
 function readStoredStyle(): Partial<Style> | null {
@@ -44,30 +43,18 @@ function wrapTextSafe(ctx: CanvasRenderingContext2D, text: string, maxWidth: num
   const words = text.trim().split(/\s+/).filter(Boolean)
   if (!words.length) return ['']
   const lines: string[] = []
-  let line = ''
-  const pushBrokenWord = (word: string) => {
-    let part = ''
-    for (const ch of word) {
-      const test = part + ch
-      if (part && ctx.measureText(test).width > maxWidth) {
-        lines.push(part)
-        part = ch
-      } else part = test
-    }
-    if (part) line = part
-  }
+  let currentLine = ''
+
   for (const word of words) {
-    if (ctx.measureText(word).width > maxWidth) {
-      if (line) { lines.push(line); line = '' }
-      pushBrokenWord(word)
-      continue
+    const testLine = currentLine ? `${currentLine} ${word}` : word
+    if (ctx.measureText(testLine).width > maxWidth && currentLine) {
+      lines.push(currentLine)
+      currentLine = word
+    } else {
+      currentLine = testLine
     }
-    const test = line ? `${line} ${word}` : word
-    if (line && ctx.measureText(test).width > maxWidth) {
-      lines.push(line); line = word
-    } else line = test
   }
-  if (line) lines.push(line)
+  if (currentLine) lines.push(currentLine)
   return lines.length ? lines : ['']
 }
 
@@ -79,33 +66,36 @@ function fitSubtitle(
   maxHeight: number,
   fontFamily: string,
 ) {
-  let fontSize = Math.max(1, desiredFontSize)
-  for (let i = 0; i < 30; i++) {
-    ctx.font = `700 ${fontSize}px "${fontFamily}"`
-    const lines = wrapTextSafe(ctx, text, Math.max(1, maxWidth))
-    const lineHeight = fontSize * 1.25
+  let fontSize = Math.max(12, desiredFontSize)
+  for (let i = 0; i < 25; i++) {
+    ctx.font = `800 ${fontSize}px "${fontFamily}", -apple-system, sans-serif`
+    const lines = wrapTextSafe(ctx, text, maxWidth)
+    const lineHeight = fontSize * 1.3
     const totalHeight = lines.length * lineHeight
-    const maxLineWidth = Math.max(...lines.map((line) => ctx.measureText(line).width), 0)
-    const padding = Math.max(2, fontSize * 0.6)
-    if (maxLineWidth + padding <= maxWidth && totalHeight + padding <= maxHeight) {
-      return { fontSize, lines, lineHeight, totalHeight, maxLineWidth, padding }
+    const maxLineWidth = Math.max(...lines.map((l) => ctx.measureText(l).width), 0)
+
+    if (maxLineWidth <= maxWidth && totalHeight <= maxHeight) {
+      return { fontSize, lines, lineHeight, totalHeight, maxLineWidth }
     }
-    fontSize *= 0.92
+    fontSize *= 0.93
   }
-  ctx.font = `700 ${fontSize}px "${fontFamily}"`
-  const lines = wrapTextSafe(ctx, text, Math.max(1, maxWidth))
-  const lineHeight = fontSize * 1.25
-  const totalHeight = lines.length * lineHeight
-  const maxLineWidth = Math.max(...lines.map((line) => ctx.measureText(line).width), 0)
-  const padding = Math.max(2, fontSize * 0.6)
-  return { fontSize, lines, lineHeight, totalHeight, maxLineWidth, padding }
+  ctx.font = `800 ${fontSize}px "${fontFamily}", -apple-system, sans-serif`
+  const lines = wrapTextSafe(ctx, text, maxWidth)
+  return {
+    fontSize,
+    lines,
+    lineHeight: fontSize * 1.3,
+    totalHeight: lines.length * (fontSize * 1.3),
+    maxLineWidth: Math.max(...lines.map((l) => ctx.measureText(l).width), 0),
+  }
 }
 
 export default function SubtitleVideoExport({ videoUrl, baseName, segments, style }: Props) {
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState('')
-  const [converting, setConverting] = useState(false)
+  const [isRenderingProgress, setIsRenderingProgress] = useState(false)
+  
   const currentStyle = style || DEFAULT_STYLE
   const styleRef = useRef(currentStyle)
   styleRef.current = currentStyle
@@ -116,8 +106,8 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
     if (exporting || !videoUrl) return
     setExporting(true)
     setProgress(0)
-    setConverting(false)
-    setStatus('در حال آماده سازی...')
+    setIsRenderingProgress(false)
+    setStatus('در حال آماده‌سازی ویدیو...')
 
     let video: HTMLVideoElement | null = null
     let audioCtx: AudioContext | null = null
@@ -135,7 +125,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       video.src = videoUrl
       video.playsInline = true
       video.preload = 'auto'
-      // ✅ FIX صدا: mute نکن — صدا فقط به WebAudio می‌رود، نه اسپیکر
       video.muted = false
       video.volume = 1
       video.crossOrigin = 'anonymous'
@@ -150,31 +139,36 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         let settled = false
         const finish = (fn: () => void) => { if (settled) return; settled = true; fn() }
         video!.onloadedmetadata = () => finish(resolve)
-        video!.onerror = () => finish(() => reject(new Error('لود ویدیو شکست خورد')))
-        window.setTimeout(() => finish(() => reject(new Error('تایم‌اوت لود ویدیو'))), 20_000)
+        video!.onerror = () => finish(() => reject(new Error('لود ویدیو ناموفق بود')))
+        window.setTimeout(() => finish(() => reject(new Error('تایم‌اوت لود ویدیو'))), 25_000)
         video!.load()
       })
 
       const W = video.videoWidth
       const H = video.videoHeight
       const duration = Number.isFinite(video.duration) ? video.duration : 0
-      if (!W || !H || !duration) throw new Error('ابعاد یا مدت ویدیو معتبر نیست')
+      if (!W || !H || !duration) throw new Error('ابعاد یا مدت زمان ویدیو معتبر نیست')
 
       const canvas = document.createElement('canvas')
       canvas.width = W
       canvas.height = H
-      const ctx = canvas.getContext('2d', { alpha: false })
-      if (!ctx) throw new Error('Canvas در این مرورگر در دسترس نیست')
+      const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true })
+      if (!ctx) throw new Error('عدم پشتیبانی مرورگر از Canvas')
 
-      setStatus('در حال آماده سازی فونت...')
+      // تنظیمات استاندارد قلم و گرافیک
+      ctx.lineJoin = 'round'
+      ctx.lineCap = 'round'
+
+      setStatus('در حال بارگذاری فونت و المان‌ها...')
       await loadFont(exportStyle.fontId || 'Vazirmatn')
       try { await document.fonts.ready } catch {}
 
-      setStatus('در حال آماده سازی فریم‌ها...')
       stream = canvas.captureStream(FPS)
 
+      // ضبط ترک صدا
       try {
-        audioCtx = new AudioContext()
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+        audioCtx = new AudioContextClass()
         const source = audioCtx.createMediaElementSource(video)
         const destination = audioCtx.createMediaStreamDestination()
         source.connect(destination)
@@ -182,7 +176,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         if (audioCtx.state === 'suspended') await audioCtx.resume()
         audioRouted = true
       } catch (error) {
-        console.warn('[Export] Audio capture unavailable:', error)
+        console.warn('[Export] Audio capture bypass:', error)
         video.muted = true
       }
 
@@ -200,141 +194,132 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       }
       const recorderStopped = new Promise<void>((resolve) => { recorder!.onstop = () => resolve() })
 
+      // تابع ترسیم هوشمند فریم و استایل شبیه نمونه بالا
       const renderFrame = (mediaTime: number) => {
         const t = clamp(mediaTime, 0, duration)
         const seg = segRef.current.find((item) => t >= item.start && t <= item.end)
+        
         ctx.clearRect(0, 0, W, H)
         ctx.drawImage(video!, 0, 0, W, H)
         if (!seg) return
 
         const s = styleRef.current || DEFAULT_STYLE
-        const direction = resolveDirection(s.direction, seg.text)
+        const direction = resolveDirection(s.direction, seg.text) || 'rtl'
         const align = resolveAlign(s.align, direction)
         const elapsed = Math.max(0, t - seg.start)
         const anim = getAnimationState(seg.fx, elapsed, seg.end - seg.start, W)
 
-        const edgeMargin = Math.max(2, W * 0.01)
+        const maxSubtitleWidth = W * 0.88
+        const maxSubtitleHeight = H * 0.35
         const anchorX = s.x != null ? (Number(s.x) / 100) * W : W / 2
-        const anchorY = s.y != null ? (Number(s.y) / 100) * H : H * 0.9
-        const availableWidth = Math.max(
-          1,
-          Math.min(W - edgeMargin * 2, 2 * Math.min(anchorX - edgeMargin, W - anchorX - edgeMargin)),
-        )
-        const availableHeight = Math.max(1, H - edgeMargin * 2)
+        // اگر کاربر تعیین نکرده بود، ارتفاع ۲۵٪ تا ۳۰٪ از پایین ویدیو قرار می‌گیرد
+        const anchorY = s.y != null ? (Number(s.y) / 100) * H : H * 0.78
         const fontFamily = s.fontId || 'Vazirmatn'
 
-        const baseFontSize = (Number(s.size) / 100) * W
+        // محاسبه سایز فونت متناسب با عرض ویدیو (بین ۴.۵ تا ۵.۵ درصد عرض ویدیو)
+        const baseFontSize = s.size ? (Number(s.size) / 100) * W : W * 0.052
 
-        const fitted = fitSubtitle(ctx, seg.text, baseFontSize, availableWidth, availableHeight, fontFamily)
+        const fitted = fitSubtitle(ctx, seg.text, baseFontSize, maxSubtitleWidth, maxSubtitleHeight, fontFamily)
         const finalFontSize = fitted.fontSize
         const lines = fitted.lines
         const lineHeight = fitted.lineHeight
-        const totalH = fitted.totalHeight
-        const maxLineWidth = fitted.maxLineWidth
-        const padding = fitted.padding
 
-        const boxWidth = Math.min(W - edgeMargin * 2, Math.max(1, Math.min(availableWidth, maxLineWidth + padding)))
-        const boxHeight = Math.min(H - edgeMargin * 2, totalH + padding)
+        ctx.save()
+        ctx.direction = direction
 
-        const minX = edgeMargin + boxWidth / 2
-        const maxX = W - edgeMargin - boxWidth / 2
-        const minY = edgeMargin + boxHeight / 2
-        const maxY = H - edgeMargin - boxHeight / 2
-        const finalX = minX <= maxX ? clamp(anchorX, minX, maxX) : W / 2
-        const finalY = minY <= maxY ? clamp(anchorY, minY, maxY) : H / 2
+        // اعمال انیمیشن نرم
+        ctx.globalAlpha = anim.opacity
+        ctx.translate(anchorX + anim.translateX, anchorY + anim.translateY)
+        ctx.scale(anim.scale, anim.scale)
+        ctx.translate(-anchorX, -anchorY)
 
-        ctx.font = `700 ${finalFontSize}px "${fontFamily}"`
+        ctx.font = `800 ${finalFontSize}px "${fontFamily}", -apple-system, sans-serif`
         ctx.textBaseline = 'middle'
         ctx.textAlign = align
-        try { ctx.direction = direction } catch {}
 
-        const bgX = finalX - boxWidth / 2
-        const bgY = finalY - boxHeight / 2
+        const strokeWidth = Math.max(4, finalFontSize * 0.16)
 
-        // انیمیشن: ترنسفورم روی کل بلوک
-        ctx.save()
-        ctx.globalAlpha = anim.opacity
-        ctx.translate(finalX + anim.translateX, finalY + anim.translateY)
-        ctx.scale(anim.scale, anim.scale)
-        ctx.translate(-finalX, -finalY)
+        // رندر خط به خط
+        lines.forEach((line, index) => {
+          const y = anchorY + (index - (lines.length - 1) / 2) * lineHeight
+          const lineWords = line.split(/\s+/).filter(Boolean)
 
-        if (s.bgOpacity > 0) {
-          ctx.fillStyle = `rgba(0,0,0,${clamp(Number(s.bgOpacity), 0, 1)})`
-          ctx.fillRect(bgX, bgY, boxWidth, boxHeight)
-        }
+          // اگر کارائوکه غیرفعال بود یا لیستی از کلمات نداشتیم: رندر یکپارچه تمیز
+          if (!s.karaoke || !seg.words || !seg.words.length) {
+            // ۱. سایه عمیق تیره نرم پشت متن
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.75)'
+            ctx.shadowBlur = Math.max(6, finalFontSize * 0.2)
+            ctx.shadowOffsetX = 0
+            ctx.shadowOffsetY = 3
 
-        const drawX = align === 'left'
-          ? bgX + padding / 2
-          : align === 'right'
-          ? bgX + boxWidth - padding / 2
-          : finalX
+            // ۲. دورگیری (Stroke) مشکی دقیق
+            ctx.strokeStyle = '#000000'
+            ctx.lineWidth = strokeWidth
+            ctx.strokeText(line, anchorX, y)
 
-        const wordMap = seg.words?.length ? seg.words : []
-        let wordCursor = 0
+            // ریست سایه برای جلوگیری از مات شدن داخل متن
+            ctx.shadowColor = 'transparent'
+            ctx.shadowBlur = 0
 
-        const drawLine = (line: string, y: number) => {
-          if (!s.karaoke || !wordMap.length) {
-            if (s.outline) {
-              ctx.strokeStyle = '#000'
-              ctx.lineWidth = Math.max(2, finalFontSize * 0.08)
-              ctx.strokeText(line, drawX, y)
-            }
-            ctx.fillStyle = s.color
-            ctx.fillText(line, drawX, y)
+            // ۳. پر کردن متن اصلی
+            ctx.fillStyle = s.color || '#FFFFFF'
+            ctx.fillText(line, anchorX, y)
             return
           }
 
-          const lineWords = line.split(/\s+/).filter(Boolean)
-          if (!lineWords.length) return
+          // حالت کارائوکه بدون به‌هم‌ریختگی کلمات فارسی:
+          // متن کامل را یک‌بار استروک مشکی و رنگ زمینه می‌زنیم تا پیوستگی حفظ شود
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+          ctx.shadowBlur = Math.max(6, finalFontSize * 0.2)
+          ctx.strokeStyle = '#000000'
+          ctx.lineWidth = strokeWidth
+          ctx.strokeText(line, anchorX, y)
 
-          const pieces = lineWords.map((word) => {
-            const match = wordMap.slice(wordCursor).find((w) => w.w === word)
-            if (match) wordCursor = wordMap.indexOf(match) + 1
-            return { word, timing: match }
-          })
+          ctx.shadowColor = 'transparent'
+          ctx.shadowBlur = 0
+          ctx.fillStyle = s.color || '#FFFFFF'
+          ctx.fillText(line, anchorX, y)
 
-          const spaceWidth = ctx.measureText(' ').width
-          const widths = pieces.map((p) => ctx.measureText(p.word).width)
-          const lineWidth = widths.reduce((a, b) => a + b, 0) + spaceWidth * Math.max(0, widths.length - 1)
+          // حالا کلمه فعال در بازه زمانی را پیدا کرده و هایلایت شبیه تصویر بالا روی آن می‌اندازیم
+          const activeWordTiming = seg.words.find((w) => t >= w.start && t <= w.end && lineWords.includes(w.w))
+          
+          if (activeWordTiming) {
+            const lineWidth = ctx.measureText(line).width
+            const spaceWidth = ctx.measureText(' ').width
+            let cursorOffset = 0
 
-          let cursorX = align === 'left'
-            ? drawX
-            : align === 'right'
-            ? drawX - lineWidth
-            : drawX - lineWidth / 2
+            // محاسبه موقعیت دقیق کلمه درون خط متناسب با RTL / LTR
+            for (const w of lineWords) {
+              const wWidth = ctx.measureText(w).width
+              if (w === activeWordTiming.w) {
+                let wordX = anchorX
+                if (direction === 'rtl') {
+                  // در حالت راست‌به‌چپ: از راست شروع می‌شود
+                  wordX = (anchorX + lineWidth / 2) - cursorOffset - (wWidth / 2)
+                } else {
+                  wordX = (anchorX - lineWidth / 2) + cursorOffset + (wWidth / 2)
+                }
 
-          const visualPieces = direction === 'rtl' ? [...pieces].reverse() : pieces
+                const prevAlign = ctx.textAlign
+                ctx.textAlign = 'center'
+                ctx.strokeStyle = '#000000'
+                ctx.lineWidth = strokeWidth
+                ctx.strokeText(w, wordX, y)
 
-          // ✅ FIX کارائوکه: رسم کلمه‌به‌کلمه حتماً با textAlign=center
-          const prevAlign = ctx.textAlign
-          ctx.textAlign = 'center'
-
-          for (const piece of visualPieces) {
-            const width = ctx.measureText(piece.word).width
-            const active = piece.timing && t >= piece.timing.start && t <= piece.timing.end
-            const centerX = cursorX + width / 2
-            if (s.outline) {
-              ctx.strokeStyle = '#000'
-              ctx.lineWidth = Math.max(2, finalFontSize * 0.08)
-              ctx.strokeText(piece.word, centerX, y)
+                // رنگ کلمه فعال (نارنجی/قرمز زیبا طبق تصویر بالا)
+                ctx.fillStyle = s.hlColor || '#FF4D4D'
+                ctx.fillText(w, wordX, y)
+                ctx.textAlign = prevAlign
+                break
+              }
+              cursorOffset += wWidth + spaceWidth
             }
-            ctx.fillStyle = active ? s.hlColor : s.color
-            ctx.fillText(piece.word, centerX, y)
-            cursorX += direction === 'rtl' ? -(width + spaceWidth) : width + spaceWidth
           }
-
-          ctx.textAlign = prevAlign
-        }
-
-        lines.forEach((line, index) => {
-          const y = finalY + (index - (lines.length - 1) / 2) * lineHeight
-          drawLine(line, y)
         })
 
         ctx.restore()
       }
 
-      let frameCount = 0
       let rafId: number | null = null
       let stopped = false
 
@@ -345,14 +330,14 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         if (recorder?.state === 'recording') recorder.stop()
       }
 
-      // ✅ FIX تصویر ثابت: رسم روی هر rAF (تضمینی) + try/catch (loop هرگز نمی‌میرد)
       const tick = () => {
         if (stopped) return
         try {
           const t = video!.currentTime
           renderFrame(t)
-          frameCount += 1
+          // درصد دقیق رندر فریم‌ها
           setProgress(clamp((t / duration) * 100, 0, 100))
+          
           if (video!.ended || t >= duration - 0.05) {
             renderFrame(duration)
             setProgress(100)
@@ -360,12 +345,11 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
             return
           }
         } catch (frameError) {
-          console.error('[Export] frame error:', frameError)
+          console.error('[Export] Frame Render Error:', frameError)
         }
         rafId = requestAnimationFrame(tick)
       }
 
-      // ایمنی: اگر به هر دلیلی loop متوقف شد، ended رکوردر را ببندد
       video.addEventListener('ended', () => {
         if (stopped) return
         renderFrame(duration)
@@ -373,31 +357,28 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         stopRecording()
       }, { once: true })
 
+      // شروع ضبط و رندر ویدیو (تنها اینجا نوار پیشرفت فعال می‌شود)
+      setIsRenderingProgress(true)
+      setStatus('در حال رندر و ضبط فریم‌ها...')
       recorder.start(1000)
-      setStatus('در حال رندر ویدیو...')
       video.currentTime = 0
       await video.play()
       rafId = requestAnimationFrame(tick)
 
       await recorderStopped
-      if (!chunks.length) throw new Error('هیچ داده‌ای ضبط نشد')
+      if (!chunks.length) throw new Error('اطلاعات ویدیویی ضبط نشد')
 
-      // ✅ پایان رندر: نوار پر می‌ماند + pulse؛ مرحله تبدیل درصد ندارد
-      setProgress(100)
-      setConverting(true)
-      setStatus('در حال دریافت موتور تبدیل...')
+      // مرحله تبدیل FFmpeg: مخفی کردن درصد و نمایش وضعیت متنی روان
+      setIsRenderingProgress(false)
+      setStatus('بهینه‌سازی نهایی و کاهش حجم فایل...')
 
       ffmpeg = new FFmpeg()
-      ffmpeg.on('progress', ({ progress: p }) => {
-        console.log('[FFmpeg encode]', Math.round(clamp(Number(p) || 0, 0, 1) * 100) + '%')
-      })
-
       const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
       const [coreResponse, wasmResponse] = await Promise.all([
         fetch(`${baseURL}/ffmpeg-core.js`),
         fetch(`${baseURL}/ffmpeg-core.wasm`),
       ])
-      if (!coreResponse.ok || !wasmResponse.ok) throw new Error('دریافت موتور FFmpeg شکست خورد')
+      if (!coreResponse.ok || !wasmResponse.ok) throw new Error('دریافت ماژول پردازش ویدیو با خطا مواجه شد')
 
       const [coreBlob, wasmBlob] = await Promise.all([coreResponse.blob(), wasmResponse.blob()])
       const coreURL = URL.createObjectURL(coreBlob)
@@ -409,16 +390,17 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         URL.revokeObjectURL(wasmURL)
       }
 
-      setStatus('در حال تبدیل ویدیو... (کندترین مرحله — صبور باشید)')
-
       const webmBlob = new Blob(chunks, { type: mime })
       await ffmpeg.writeFile('input.webm', new Uint8Array(await webmBlob.arrayBuffer()))
 
+      // بهینه‌سازی سرعت و کاهش حجم:
+      // پریست ultrafast / veryfast زمان انکود را تا ۷۰٪ کم می‌کند
+      // مقدار crf: 26 باعث حفظ شفافیت و کاهش چشمگیر حجم می‌شود
       await ffmpeg.exec([
         '-i', 'input.webm',
         '-c:v', 'libx264',
-        '-preset', 'medium',
-        '-crf', '23',
+        '-preset', 'veryfast',
+        '-crf', '26',
         '-pix_fmt', 'yuv420p',
         '-c:a', 'aac',
         '-b:a', '128k',
@@ -429,7 +411,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       const mp4Data = (await ffmpeg.readFile('output.mp4')) as Uint8Array
       const mp4Blob = new Blob([mp4Data], { type: 'video/mp4' })
 
-      setStatus('دانلود...')
+      setStatus('در حال ذخیره‌سازی...')
       const url = URL.createObjectURL(mp4Blob)
       const a = document.createElement('a')
       a.href = url
@@ -438,28 +420,24 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       a.click()
       a.remove()
 
-      setConverting(false)
-      setProgress(100)
-      setStatus('✅ کامل شد!')
+      setStatus('✅ آماده شد!')
 
       window.setTimeout(() => {
         URL.revokeObjectURL(url)
         ffmpeg?.deleteFile('input.webm').catch(() => {})
         ffmpeg?.deleteFile('output.mp4').catch(() => {})
-      }, 5000)
-
-      console.log('[Export] complete:', frameCount, 'frames', 'audio:', audioRouted)
+      }, 4000)
     } catch (error: any) {
       console.error('[Export Error]', error)
-      setConverting(false)
-      setStatus('❌ خطا')
-      alert('❌ خطا: ' + (error?.message || 'Unknown'))
+      setStatus('❌ خطا در عملیات')
+      alert('❌ خطا در خروجی ویدیو: ' + (error?.message || 'نامشخص'))
     } finally {
       try { video?.pause() } catch {}
       if (stream) stream.getTracks().forEach((track) => track.stop())
       if (audioCtx) audioCtx.close().catch(() => {})
       if (video?.parentNode) video.parentNode.removeChild(video)
       setExporting(false)
+      setIsRenderingProgress(false)
     }
   }
 
@@ -476,18 +454,18 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           <div className="flex flex-col gap-2">
             <span className="text-sm">{status}</span>
             <div className="h-3 w-full overflow-hidden rounded-full bg-gray-700">
-              {converting ? (
-                <div className="h-full w-full animate-pulse rounded-full bg-white" />
-              ) : (
+              {isRenderingProgress ? (
                 <div
                   className="h-full rounded-full bg-white transition-[width] duration-150"
                   style={{ width: `${safeProgress}%` }}
                 />
+              ) : (
+                <div className="h-full w-full animate-pulse rounded-full bg-white/70" />
               )}
             </div>
-            <span className="text-xs">
-              {converting ? '⏳ مرحله تبدیل نهایی (درصد ندارد)...' : `${Math.round(safeProgress)}%`}
-            </span>
+            {isRenderingProgress && (
+              <span className="text-xs">{Math.round(safeProgress)}%</span>
+            )}
           </div>
         ) : (
           '📹 خروجی MP4 با زیرنویس'
