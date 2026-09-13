@@ -20,25 +20,30 @@ type Props = {
 }
 
 const STYLE_STORAGE_KEY = 'promptvault.subtitle.style'
+const FPS = 30
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
 
 let cachedFFmpeg: FFmpeg | null = null
 
-async function getOrInitFFmpeg(onProgress: (ratio: number) => void): Promise<FFmpeg> {
-  if (cachedFFmpeg && cachedFFmpeg.loaded) {
-    cachedFFmpeg.on('progress', ({ progress }) => onProgress(progress))
-    return cachedFFmpeg
-  }
+function parseFFmpegTime(timeStr: string): number {
+  const parts = timeStr.split(':')
+  if (parts.length < 3) return 0
+  const h = parseFloat(parts[0]) || 0
+  const m = parseFloat(parts[1]) || 0
+  const s = parseFloat(parts[2]) || 0
+  return h * 3600 + m * 60 + s
+}
+
+async function getOrInitFFmpeg(): Promise<FFmpeg> {
+  if (cachedFFmpeg && cachedFFmpeg.loaded) return cachedFFmpeg
 
   const ffmpeg = new FFmpeg()
-  ffmpeg.on('progress', ({ progress }) => onProgress(progress))
-
   const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
   const [coreResponse, wasmResponse] = await Promise.all([
     fetch(`${baseURL}/ffmpeg-core.js`),
     fetch(`${baseURL}/ffmpeg-core.wasm`),
   ])
-  if (!coreResponse.ok || !wasmResponse.ok) throw new Error('دریافت کتابخانه پردازش شکست خورد.')
+  if (!coreResponse.ok || !wasmResponse.ok) throw new Error('دانلود ماژول FFmpeg ناموفق بود')
 
   const [coreBlob, wasmBlob] = await Promise.all([coreResponse.blob(), wasmResponse.blob()])
   const coreURL = URL.createObjectURL(coreBlob)
@@ -95,7 +100,7 @@ function fitSubtitle(
   fontFamily: string,
 ) {
   let fontSize = Math.max(12, desiredFontSize)
-  for (let i = 0; i < 25; i++) {
+  for (let i = 0; i < 20; i++) {
     ctx.font = `800 ${fontSize}px "${fontFamily}", -apple-system, sans-serif`
     const lines = wrapTextSafe(ctx, text, maxWidth)
     const lineHeight = fontSize * 1.3
@@ -105,7 +110,7 @@ function fitSubtitle(
     if (maxLineWidth <= maxWidth && totalHeight <= maxHeight) {
       return { fontSize, lines, lineHeight, totalHeight, maxLineWidth }
     }
-    fontSize *= 0.93
+    fontSize *= 0.94
   }
   ctx.font = `800 ${fontSize}px "${fontFamily}", -apple-system, sans-serif`
   const lines = wrapTextSafe(ctx, text, maxWidth)
@@ -135,7 +140,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
     setExporting(true)
     setProgress(0)
     setShowProgressPercent(false)
-    setStatus('در حال بارگذاری مقدمات و فونت...')
+    setStatus('در حال آماده‌سازی ویدیو...')
 
     let video: HTMLVideoElement | null = null
     let audioCtx: AudioContext | null = null
@@ -147,7 +152,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       const exportStyle: Style = { ...DEFAULT_STYLE, ...(storedStyle || {}), ...(style || {}) }
       styleRef.current = exportStyle
 
-      // بارگذاری پیش‌فرض فونت
+      setStatus('در حال آماده‌سازی قلم...')
       await loadFont(exportStyle.fontId || 'Vazirmatn')
       try { await document.fonts.ready } catch {}
 
@@ -169,26 +174,25 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         let settled = false
         const finish = (fn: () => void) => { if (settled) return; settled = true; fn() }
         video!.onloadedmetadata = () => finish(resolve)
-        video!.onerror = () => finish(() => reject(new Error('بارگذاری متادیتا ویدیو با شکست مواجه شد')))
-        window.setTimeout(() => finish(() => reject(new Error('تایم‌اوت بارگذاری ویدیو'))), 35_000)
+        video!.onerror = () => finish(() => reject(new Error('بارگذاری اطلاعات ویدیو ناموفق بود')))
+        window.setTimeout(() => finish(() => reject(new Error('پاسخی از فایل ویدیو دریافت نشد'))), 25_000)
         video!.load()
       })
 
       const W = video.videoWidth
       const H = video.videoHeight
       const duration = Number.isFinite(video.duration) ? video.duration : 0
-      if (!W || !H || !duration) throw new Error('ویدیو نامعتبر یا مدت زمان آن صفر است')
+      if (!W || !H || !duration) throw new Error('طول زمان یا ابعاد ویدیو نامعتبر است')
 
       const canvas = document.createElement('canvas')
       canvas.width = W
       canvas.height = H
       const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true })
-      if (!ctx) throw new Error('Canvas در مرورگر شما پشتیبانی نمی‌شود')
+      if (!ctx) throw new Error('مرورگر از Canvas پشتیبانی نمی‌کند')
       ctx.lineJoin = 'round'
       ctx.lineCap = 'round'
 
-      // دریافت استریم Canvas با نرخ ۳۰ فریم ثابت
-      stream = canvas.captureStream(30)
+      stream = canvas.captureStream(FPS)
 
       try {
         const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
@@ -199,19 +203,26 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         destination.stream.getAudioTracks().forEach((track) => stream!.addTrack(track))
         if (audioCtx.state === 'suspended') await audioCtx.resume()
       } catch (err) {
-        console.warn('[Audio Routing Failed, fallback muted]', err)
+        console.warn('[Audio Routing Failed]', err)
         video.muted = true
       }
 
+      // ترجیح با mp4 استاندارد اگر مرورگر مستقیماً خروجی دهد (حذف کامل زمان تبدیل!)
       const mimeCandidates = [
-        'video/webm;codecs=vp8,opus',
+        'video/mp4;codecs=avc1,mp4a.40.2',
+        'video/mp4',
         'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
         'video/webm',
       ]
       const mime = mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) || 'video/webm'
+      const isDirectMp4 = mime.includes('mp4')
 
-      // ضبط با بیت‌ریت استاندارد برای کم نگه داشتن رم
-      recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 3_000_000 })
+      recorder = new MediaRecorder(stream, {
+        mimeType: mime,
+        videoBitsPerSecond: isDirectMp4 ? 4_000_000 : 3_000_000,
+      })
+
       const chunks: Blob[] = []
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) chunks.push(e.data)
@@ -224,7 +235,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       const renderSubtitleLayer = (mediaTime: number) => {
         const t = clamp(mediaTime, 0, duration)
         const seg = segRef.current.find((item) => t >= item.start && t <= item.end)
-        
+
         ctx.drawImage(video!, 0, 0, W, H)
         if (!seg) return
 
@@ -263,23 +274,9 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           const y = anchorY + (index - (lines.length - 1) / 2) * lineHeight
           const lineWords = line.split(/\s+/).filter(Boolean)
 
-          if (!s.karaoke || !seg.words || !seg.words.length) {
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
-            ctx.shadowBlur = Math.max(6, finalFontSize * 0.2)
-            ctx.strokeStyle = '#000000'
-            ctx.lineWidth = strokeWidth
-            ctx.strokeText(line, anchorX, y)
-
-            ctx.shadowColor = 'transparent'
-            ctx.shadowBlur = 0
-            ctx.fillStyle = s.color || '#FFFFFF'
-            ctx.fillText(line, anchorX, y)
-            return
-          }
-
-          // حالت کارائوکه
+          // دورگیری و سایه استاندارد متن
           ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
-          ctx.shadowBlur = Math.max(6, finalFontSize * 0.2)
+          ctx.shadowBlur = Math.max(5, finalFontSize * 0.18)
           ctx.strokeStyle = '#000000'
           ctx.lineWidth = strokeWidth
           ctx.strokeText(line, anchorX, y)
@@ -289,34 +286,36 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           ctx.fillStyle = s.color || '#FFFFFF'
           ctx.fillText(line, anchorX, y)
 
-          const activeWord = seg.words.find((w) => t >= w.start && t <= w.end && lineWords.includes(w.w))
-          if (activeWord) {
-            const lineWidth = ctx.measureText(line).width
-            const spaceWidth = ctx.measureText(' ').width
-            let cursorOffset = 0
+          if (s.karaoke && seg.words?.length) {
+            const activeWord = seg.words.find((w) => t >= w.start && t <= w.end && lineWords.includes(w.w))
+            if (activeWord) {
+              const lineWidth = ctx.measureText(line).width
+              const spaceWidth = ctx.measureText(' ').width
+              let cursorOffset = 0
 
-            for (const w of lineWords) {
-              const wWidth = ctx.measureText(w).width
-              if (w === activeWord.w) {
-                let wordX = anchorX
-                if (direction === 'rtl') {
-                  wordX = (anchorX + lineWidth / 2) - cursorOffset - (wWidth / 2)
-                } else {
-                  wordX = (anchorX - lineWidth / 2) + cursorOffset + (wWidth / 2)
+              for (const w of lineWords) {
+                const wWidth = ctx.measureText(w).width
+                if (w === activeWord.w) {
+                  let wordX = anchorX
+                  if (direction === 'rtl') {
+                    wordX = (anchorX + lineWidth / 2) - cursorOffset - (wWidth / 2)
+                  } else {
+                    wordX = (anchorX - lineWidth / 2) + cursorOffset + (wWidth / 2)
+                  }
+
+                  const prevAlign = ctx.textAlign
+                  ctx.textAlign = 'center'
+                  ctx.strokeStyle = '#000000'
+                  ctx.lineWidth = strokeWidth
+                  ctx.strokeText(w, wordX, y)
+
+                  ctx.fillStyle = s.hlColor || '#FF4D4D'
+                  ctx.fillText(w, wordX, y)
+                  ctx.textAlign = prevAlign
+                  break
                 }
-
-                const prevAlign = ctx.textAlign
-                ctx.textAlign = 'center'
-                ctx.strokeStyle = '#000000'
-                ctx.lineWidth = strokeWidth
-                ctx.strokeText(w, wordX, y)
-
-                ctx.fillStyle = s.hlColor || '#FF4D4D'
-                ctx.fillText(w, wordX, y)
-                ctx.textAlign = prevAlign
-                break
+                cursorOffset += wWidth + spaceWidth
               }
-              cursorOffset += wWidth + spaceWidth
             }
           }
         })
@@ -324,81 +323,89 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         ctx.restore()
       }
 
-      // شروع رندر فریم به فریم
       setShowProgressPercent(true)
-      setStatus('مرحله ۱ از ۲: ادغام زیرنویس روی ویدیو...')
+      setStatus(isDirectMp4 ? 'در حال رندر و ذخیره مستقیم...' : 'مرحله ۱ از ۲: رندر فریم‌های ویدیو...')
       recorder.start(1000)
 
-      let stopped = false
-      const stopRecorderSafely = () => {
-        if (stopped) return
-        stopped = true
-        if (recorder && recorder.state === 'recording') {
-          recorder.stop()
+      // فریم‌ریت ثابت ۳۰ فریم برای جلوگیری از لگ یا پریدگی فریم
+      const step = 1 / FPS
+      let currentTime = 0
+      let frameRunning = true
+
+      const runRenderLoop = async () => {
+        while (frameRunning && currentTime <= duration) {
+          video!.currentTime = currentTime
+          await new Promise<void>((r) => {
+            const onSeek = () => {
+              video!.removeEventListener('seeked', onSeek)
+              r()
+            }
+            video!.addEventListener('seeked', onSeek, { once: true })
+          })
+
+          renderSubtitleLayer(currentTime)
+
+          // محاسبه درصد گرد و صحیح (بدون اعشار عجیب)
+          const ratio = clamp(currentTime / duration, 0, 1)
+          const currentPercent = isDirectMp4
+            ? Math.round(ratio * 100)
+            : Math.round(ratio * 50)
+          setProgress(currentPercent)
+
+          currentTime += step
         }
       }
 
-      // رندر مطمئن بدون افت فریم حتی در پس‌زمینه تب
-      await new Promise<void>((resolve, reject) => {
-        let isProcessingFrame = false
+      await runRenderLoop()
 
-        const onTimeUpdate = () => {
-          if (stopped || isProcessingFrame) return
-          isProcessingFrame = true
-
-          try {
-            const currentT = video!.currentTime
-            renderSubtitleLayer(currentT)
-            // نیمی از درصد کل مربوط به مرحله ایجاد فریم‌ها است (۰ تا ۵۰ درصد)
-            setProgress(clamp((currentT / duration) * 50, 0, 50))
-
-            if (currentT >= duration - 0.1 || video!.ended) {
-              video!.removeEventListener('timeupdate', onTimeUpdate)
-              renderSubtitleLayer(duration)
-              setProgress(50)
-              stopRecorderSafely()
-              resolve()
-            }
-          } catch (e) {
-            reject(e)
-          } finally {
-            isProcessingFrame = false
-          }
-        }
-
-        video!.addEventListener('timeupdate', onTimeUpdate)
-        video!.addEventListener('ended', () => {
-          video!.removeEventListener('timeupdate', onTimeUpdate)
-          setProgress(50)
-          stopRecorderSafely()
-          resolve()
-        }, { once: true })
-
-        video!.currentTime = 0
-        video!.play().catch(reject)
-      })
-
+      if (recorder.state === 'recording') {
+        recorder.stop()
+      }
       await recorderStopped
-      if (!chunks.length) throw new Error('دیتایی از ویدیو دریافت نشد')
 
-      // مرحله ۲: فشرده‌سازی و تبدیل نهایی توسط FFmpeg با نمایش پیشرفت از ۵۰ تا ۱۰۰ درصد
-      setStatus('مرحله ۲ از ۲: بهینه‌سازی و انکود نهایی MP4...')
+      if (!chunks.length) throw new Error('فایلی برای خروجی ساخته نشد')
 
-      const ffmpeg = await getOrInitFFmpeg((ratio) => {
-        // نسبت انکود FFmpeg را از ۵۰ تا ۱۰۰ مپ می‌کنیم تا کاربر دقیقاً بداند چند درصد جلو رفته است
-        const mappedProgress = 50 + clamp(ratio, 0, 1) * 50
-        setProgress(Math.round(mappedProgress))
+      // حالت ۱: اگر مرورگر مستقیماً MP4 داده باشد، بدون نیاز به FFmpeg دانلود را آغاز کن
+      if (isDirectMp4) {
+        setProgress(100)
+        setStatus('در حال آماده‌سازی فایل دانلود...')
+        const finalBlob = new Blob(chunks, { type: 'video/mp4' })
+        const url = URL.createObjectURL(finalBlob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${baseName}.subtitled.mp4`
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        setStatus('✅ با موفقیت ذخیره شد')
+        return
+      }
+
+      // حالت ۲: نیاز به تبدیل کانتینر به MP4
+      setStatus('مرحله ۲ از ۲: تبدیل بهینه به MP4...')
+      setProgress(50)
+
+      const ffmpeg = await getOrInitFFmpeg()
+
+      // محاسبه دقیق لاگ‌های FFmpeg برای جلوگیری از فریز شدن روی ۵۰٪
+      ffmpeg.on('log', ({ message }) => {
+        const match = message.match(/time=(\d{2}:\d{2}:\d{2}\.\d+)/)
+        if (match) {
+          const currentSec = parseFFmpegTime(match[1])
+          const encodeRatio = clamp(currentSec / duration, 0, 1)
+          const calculated = Math.round(50 + encodeRatio * 50)
+          setProgress((prev) => Math.max(prev, calculated))
+        }
       })
 
       const webmBlob = new Blob(chunks, { type: mime })
       await ffmpeg.writeFile('input.webm', new Uint8Array(await webmBlob.arrayBuffer()))
 
-      // دستور بهینه‌سازی سریع برای جلوگیری از لگ، افت فریم و کاهش ۳۰٪ حجم
       await ffmpeg.exec([
         '-i', 'input.webm',
         '-c:v', 'libx264',
-        '-preset', 'ultrafast', // تضمین بالاترین سرعت در مرورگر
-        '-crf', '28',           // حجم خروجی کنترل‌شده و سبک
+        '-preset', 'ultrafast',
+        '-crf', '26',
         '-pix_fmt', 'yuv420p',
         '-c:a', 'aac',
         '-b:a', '128k',
@@ -409,7 +416,9 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       const mp4Data = (await ffmpeg.readFile('output.mp4')) as Uint8Array
       const mp4Blob = new Blob([mp4Data], { type: 'video/mp4' })
 
-      setStatus('در حال دانلود فایل خروجی...')
+      setProgress(100)
+      setStatus('در حال دانلود...')
+
       const url = URL.createObjectURL(mp4Blob)
       const a = document.createElement('a')
       a.href = url
@@ -418,8 +427,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       a.click()
       a.remove()
 
-      setProgress(100)
-      setStatus('✅ ذخیره‌سازی با موفقیت انجام شد')
+      setStatus('✅ ویدیو با موفقیت ساخته شد')
 
       window.setTimeout(() => {
         URL.revokeObjectURL(url)
@@ -430,7 +438,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
     } catch (error: any) {
       console.error('[Export Error]', error)
       setStatus('❌ خطا در رندر')
-      alert('خطا در رندر: ' + (error?.message || 'مشکل در پردازش فریم‌ها'))
+      alert('خطا در ذخیره ویدیو: ' + (error?.message || 'مشکل در فرآیند رندر'))
     } finally {
       try { video?.pause() } catch {}
       if (stream) stream.getTracks().forEach((track) => track.stop())
@@ -441,7 +449,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
     }
   }
 
-  const safeProgress = clamp(Number(progress) || 0, 0, 100)
+  const safeProgress = clamp(Math.round(Number(progress) || 0), 0, 100)
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 bg-black/90 p-4">
