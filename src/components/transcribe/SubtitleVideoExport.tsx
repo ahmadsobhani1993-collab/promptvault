@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { FFmpeg } from '@ffmpeg/ffmpeg'
+import { Muxer, ArrayBufferTarget } from 'mp4-muxer'
 import {
   DEFAULT_STYLE,
   getAnimationState,
@@ -25,15 +26,6 @@ const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(mi
 
 let cachedFFmpeg: FFmpeg | null = null
 
-function parseFFmpegTime(timeStr: string): number {
-  const parts = timeStr.split(':')
-  if (parts.length < 3) return 0
-  const h = parseFloat(parts[0]) || 0
-  const m = parseFloat(parts[1]) || 0
-  const s = parseFloat(parts[2]) || 0
-  return h * 3600 + m * 60 + s
-}
-
 async function getOrInitFFmpeg(): Promise<FFmpeg> {
   if (cachedFFmpeg && cachedFFmpeg.loaded) return cachedFFmpeg
 
@@ -43,7 +35,7 @@ async function getOrInitFFmpeg(): Promise<FFmpeg> {
     fetch(`${baseURL}/ffmpeg-core.js`),
     fetch(`${baseURL}/ffmpeg-core.wasm`),
   ])
-  if (!coreResponse.ok || !wasmResponse.ok) throw new Error('دانلود ماژول FFmpeg ناموفق بود')
+  if (!coreResponse.ok || !wasmResponse.ok) throw new Error('دانلود ماژول پردازش صوتی ناموفق بود')
 
   const [coreBlob, wasmBlob] = await Promise.all([coreResponse.blob(), wasmResponse.blob()])
   const coreURL = URL.createObjectURL(coreBlob)
@@ -127,7 +119,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState('')
-  const [showProgressPercent, setShowProgressPercent] = useState(false)
 
   const currentStyle = style || DEFAULT_STYLE
   const styleRef = useRef(currentStyle)
@@ -139,20 +130,20 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
     if (exporting || !videoUrl) return
     setExporting(true)
     setProgress(0)
-    setShowProgressPercent(false)
-    setStatus('در حال آماده‌سازی ویدیو...')
+    setStatus('در حال آماده‌سازی موتور رندر...')
 
     let video: HTMLVideoElement | null = null
-    let audioCtx: AudioContext | null = null
-    let recorder: MediaRecorder | null = null
-    let stream: MediaStream | null = null
 
     try {
+      // بررسی پیش‌نیاز WebCodecs در مرورگر کاربر
+      if (typeof (window as any).VideoEncoder === 'undefined') {
+        throw new Error('مرورگر شما از WebCodecs پشتیبانی نمی‌کند. لطفاً از آخرین نسخه Chrome یا Edge استفاده کنید.')
+      }
+
       const storedStyle = readStoredStyle()
       const exportStyle: Style = { ...DEFAULT_STYLE, ...(storedStyle || {}), ...(style || {}) }
       styleRef.current = exportStyle
 
-      setStatus('در حال آماده‌سازی قلم...')
       await loadFont(exportStyle.fontId || 'Vazirmatn')
       try { await document.fonts.ready } catch {}
 
@@ -161,8 +152,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       video.playsInline = true
       video.preload = 'auto'
       video.crossOrigin = 'anonymous'
-      video.muted = false
-      video.volume = 1
+      video.muted = true
       video.style.position = 'fixed'
       video.style.left = '-10000px'
       video.style.top = '-10000px'
@@ -174,62 +164,52 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         let settled = false
         const finish = (fn: () => void) => { if (settled) return; settled = true; fn() }
         video!.onloadedmetadata = () => finish(resolve)
-        video!.onerror = () => finish(() => reject(new Error('بارگذاری اطلاعات ویدیو ناموفق بود')))
-        window.setTimeout(() => finish(() => reject(new Error('پاسخی از فایل ویدیو دریافت نشد'))), 25_000)
+        video!.onerror = () => finish(() => reject(new Error('بارگذاری اطلاعات اولیه ویدیو ناموفق بود')))
+        window.setTimeout(() => finish(() => reject(new Error('پاسخی از سورس ویدیو دریافت نشد'))), 25_000)
         video!.load()
       })
 
-      const W = video.videoWidth
-      const H = video.videoHeight
+      // ابعاد باید زوج باشند تا انکودر H.264 دچار خطا نشود
+      const W = video.videoWidth % 2 === 0 ? video.videoWidth : video.videoWidth - 1
+      const H = video.videoHeight % 2 === 0 ? video.videoHeight : video.videoHeight - 1
       const duration = Number.isFinite(video.duration) ? video.duration : 0
-      if (!W || !H || !duration) throw new Error('طول زمان یا ابعاد ویدیو نامعتبر است')
+      if (!W || !H || !duration) throw new Error('ابعاد یا طول ویدیو نامعتبر است')
 
       const canvas = document.createElement('canvas')
       canvas.width = W
       canvas.height = H
       const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true })
-      if (!ctx) throw new Error('مرورگر از Canvas پشتیبانی نمی‌کند')
+      if (!ctx) throw new Error('خطا در دسترسی به بستر Canvas')
       ctx.lineJoin = 'round'
       ctx.lineCap = 'round'
 
-      stream = canvas.captureStream(FPS)
-
-      try {
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
-        audioCtx = new AudioContextClass()
-        const source = audioCtx.createMediaElementSource(video)
-        const destination = audioCtx.createMediaStreamDestination()
-        source.connect(destination)
-        destination.stream.getAudioTracks().forEach((track) => stream!.addTrack(track))
-        if (audioCtx.state === 'suspended') await audioCtx.resume()
-      } catch (err) {
-        console.warn('[Audio Routing Failed]', err)
-        video.muted = true
-      }
-
-      // ترجیح با mp4 استاندارد اگر مرورگر مستقیماً خروجی دهد (حذف کامل زمان تبدیل!)
-      const mimeCandidates = [
-        'video/mp4;codecs=avc1,mp4a.40.2',
-        'video/mp4',
-        'video/webm;codecs=vp9,opus',
-        'video/webm;codecs=vp8,opus',
-        'video/webm',
-      ]
-      const mime = mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) || 'video/webm'
-      const isDirectMp4 = mime.includes('mp4')
-
-      recorder = new MediaRecorder(stream, {
-        mimeType: mime,
-        videoBitsPerSecond: isDirectMp4 ? 4_000_000 : 3_000_000,
+      // پیکربندی ساخت فایل استاندارد MP4 با حجم بهینه
+      const target = new ArrayBufferTarget()
+      const muxer = new Muxer({
+        target,
+        video: {
+          codec: 'avc',
+          width: W,
+          height: H,
+        },
+        fastStart: 'in-memory',
       })
 
-      const chunks: Blob[] = []
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) chunks.push(e.data)
-      }
+      // بیت‌ریت متناسب و دقیق برای جلوگیری از افزایش ۶ برابری حجم
+      // یک ویدیوی 1080p عمودی با نرخ فریم ۳۰ حدود ۳.۵ مگابیت بر ثانیه ایده‌آل است
+      const calculatedBitrate = Math.round(clamp((W * H * 2.2), 1_500_000, 4_500_000))
 
-      const recorderStopped = new Promise<void>((resolve) => {
-        recorder!.onstop = () => resolve()
+      const encoder = new (window as any).VideoEncoder({
+        output: (chunk: any, meta: any) => muxer.addVideoChunk(chunk, meta),
+        error: (e: any) => console.error('[VideoEncoder error]', e),
+      })
+
+      encoder.configure({
+        codec: 'avc1.4d002a', // H.264 Main Profile
+        width: W,
+        height: H,
+        bitrate: calculatedBitrate,
+        framerate: FPS,
       })
 
       const renderSubtitleLayer = (mediaTime: number) => {
@@ -274,9 +254,8 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           const y = anchorY + (index - (lines.length - 1) / 2) * lineHeight
           const lineWords = line.split(/\s+/).filter(Boolean)
 
-          // دورگیری و سایه استاندارد متن
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
-          ctx.shadowBlur = Math.max(5, finalFontSize * 0.18)
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.85)'
+          ctx.shadowBlur = Math.max(6, finalFontSize * 0.2)
           ctx.strokeStyle = '#000000'
           ctx.lineWidth = strokeWidth
           ctx.strokeText(line, anchorX, y)
@@ -323,103 +302,83 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         ctx.restore()
       }
 
-      setShowProgressPercent(true)
-      setStatus(isDirectMp4 ? 'در حال رندر و ذخیره مستقیم...' : 'مرحله ۱ از ۲: رندر فریم‌های ویدیو...')
-      recorder.start(1000)
+      // فرآیند رندر آفلاین فریم به فریم با WebCodecs
+      setStatus('در حال پردازش و تزریق کپشن روی ویدیو...')
+      const totalFrames = Math.ceil(duration * FPS)
+      const frameDurationMicroseconds = 1_000_000 / FPS
 
-      // فریم‌ریت ثابت ۳۰ فریم برای جلوگیری از لگ یا پریدگی فریم
-      const step = 1 / FPS
-      let currentTime = 0
-      let frameRunning = true
+      for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
+        const currentTime = frameIndex / FPS
+        video.currentTime = currentTime
 
-      const runRenderLoop = async () => {
-        while (frameRunning && currentTime <= duration) {
-          video!.currentTime = currentTime
-          await new Promise<void>((r) => {
-            const onSeek = () => {
-              video!.removeEventListener('seeked', onSeek)
-              r()
-            }
-            video!.addEventListener('seeked', onSeek, { once: true })
-          })
+        await new Promise<void>((resolve) => {
+          const onSeeked = () => {
+            video!.removeEventListener('seeked', onSeeked)
+            resolve()
+          }
+          video!.addEventListener('seeked', onSeeked, { once: true })
+        })
 
-          renderSubtitleLayer(currentTime)
+        renderSubtitleLayer(currentTime)
 
-          // محاسبه درصد گرد و صحیح (بدون اعشار عجیب)
-          const ratio = clamp(currentTime / duration, 0, 1)
-          const currentPercent = isDirectMp4
-            ? Math.round(ratio * 100)
-            : Math.round(ratio * 50)
-          setProgress(currentPercent)
+        // ساخت VideoFrame بدون نیاز به ضبط زنده
+        const frame = new (window as any).VideoFrame(canvas, {
+          timestamp: Math.round(frameIndex * frameDurationMicroseconds),
+        })
 
-          currentTime += step
+        // کلیدفریم هر ۱ ثانیه برای امکان Seek سریع و روان در پلیر
+        const isKeyFrame = frameIndex % FPS === 0
+        encoder.encode(frame, { keyFrame: isKeyFrame })
+        frame.close()
+
+        // آزاد کردن صف انکودر برای جلوگیری از پر شدن حافظه رم
+        if (encoder.encodeQueueSize > 5) {
+          await encoder.flush()
         }
+
+        // نمایش درصد پیشرفت پیوسته و بدون لگ (تا ۸۵٪ رندر فریم‌هاست)
+        const framePercent = Math.round((frameIndex / totalFrames) * 85)
+        setProgress(framePercent)
       }
 
-      await runRenderLoop()
+      await encoder.flush()
+      muxer.finalize()
 
-      if (recorder.state === 'recording') {
-        recorder.stop()
-      }
-      await recorderStopped
-
-      if (!chunks.length) throw new Error('فایلی برای خروجی ساخته نشد')
-
-      // حالت ۱: اگر مرورگر مستقیماً MP4 داده باشد، بدون نیاز به FFmpeg دانلود را آغاز کن
-      if (isDirectMp4) {
-        setProgress(100)
-        setStatus('در حال آماده‌سازی فایل دانلود...')
-        const finalBlob = new Blob(chunks, { type: 'video/mp4' })
-        const url = URL.createObjectURL(finalBlob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `${baseName}.subtitled.mp4`
-        document.body.appendChild(a)
-        a.click()
-        a.remove()
-        setStatus('✅ با موفقیت ذخیره شد')
-        return
-      }
-
-      // حالت ۲: نیاز به تبدیل کانتینر به MP4
-      setStatus('مرحله ۲ از ۲: تبدیل بهینه به MP4...')
-      setProgress(50)
+      // استخراج ترک صدای اصلی و ادغام آن با فایل خروجی توسط FFmpeg
+      setProgress(86)
+      setStatus('در حال ادغام صدای اصلی ویدیو (بدون افت کیفیت)...')
 
       const ffmpeg = await getOrInitFFmpeg()
 
-      // محاسبه دقیق لاگ‌های FFmpeg برای جلوگیری از فریز شدن روی ۵۰٪
-      ffmpeg.on('log', ({ message }) => {
-        const match = message.match(/time=(\d{2}:\d{2}:\d{2}\.\d+)/)
-        if (match) {
-          const currentSec = parseFFmpegTime(match[1])
-          const encodeRatio = clamp(currentSec / duration, 0, 1)
-          const calculated = Math.round(50 + encodeRatio * 50)
-          setProgress((prev) => Math.max(prev, calculated))
-        }
-      })
+      // ۱. ویدیوی کپشن‌خورده بدون صدا
+      const videoArrayBuffer = target.buffer
+      await ffmpeg.writeFile('sub_video.mp4', new Uint8Array(videoArrayBuffer))
 
-      const webmBlob = new Blob(chunks, { type: mime })
-      await ffmpeg.writeFile('input.webm', new Uint8Array(await webmBlob.arrayBuffer()))
+      // ۲. دریافت مستقیم فایل اصلی جهت استخراج صوت
+      const sourceResponse = await fetch(videoUrl)
+      const sourceBlob = await sourceResponse.blob()
+      await ffmpeg.writeFile('source_input.mp4', new Uint8Array(await sourceBlob.arrayBuffer()))
 
+      setProgress(92)
+      // کپی آنی صوت اصلی بدون نیاز به ری‌انکود (سرعت بالا در حد ۱ ثانیه)
       await ffmpeg.exec([
-        '-i', 'input.webm',
-        '-c:v', 'libx264',
-        '-preset', 'ultrafast',
-        '-crf', '26',
-        '-pix_fmt', 'yuv420p',
-        '-c:a', 'aac',
-        '-b:a', '128k',
+        '-i', 'sub_video.mp4',
+        '-i', 'source_input.mp4',
+        '-map', '0:v:0',
+        '-map', '1:a:0?',
+        '-c:v', 'copy',
+        '-c:a', 'copy',
         '-movflags', '+faststart',
-        'output.mp4',
+        'final_output.mp4',
       ])
 
-      const mp4Data = (await ffmpeg.readFile('output.mp4')) as Uint8Array
-      const mp4Blob = new Blob([mp4Data], { type: 'video/mp4' })
+      const finalData = (await ffmpeg.readFile('final_output.mp4')) as Uint8Array
+      const finalBlob = new Blob([finalData], { type: 'video/mp4' })
 
       setProgress(100)
-      setStatus('در حال دانلود...')
+      setStatus('✅ ذخیره‌سازی فایل نهایی...')
 
-      const url = URL.createObjectURL(mp4Blob)
+      const url = URL.createObjectURL(finalBlob)
       const a = document.createElement('a')
       a.href = url
       a.download = `${baseName}.subtitled.mp4`
@@ -427,25 +386,20 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       a.click()
       a.remove()
 
-      setStatus('✅ ویدیو با موفقیت ساخته شد')
-
       window.setTimeout(() => {
         URL.revokeObjectURL(url)
-        ffmpeg.deleteFile('input.webm').catch(() => {})
-        ffmpeg.deleteFile('output.mp4').catch(() => {})
+        ffmpeg.deleteFile('sub_video.mp4').catch(() => {})
+        ffmpeg.deleteFile('source_input.mp4').catch(() => {})
+        ffmpeg.deleteFile('final_output.mp4').catch(() => {})
       }, 5000)
 
     } catch (error: any) {
-      console.error('[Export Error]', error)
+      console.error('[WebCodecs Render Error]', error)
       setStatus('❌ خطا در رندر')
-      alert('خطا در ذخیره ویدیو: ' + (error?.message || 'مشکل در فرآیند رندر'))
+      alert('خطا: ' + (error?.message || 'مشکلی در عملیات رندر پیش آمد'))
     } finally {
-      try { video?.pause() } catch {}
-      if (stream) stream.getTracks().forEach((track) => track.stop())
-      if (audioCtx) audioCtx.close().catch(() => {})
       if (video?.parentNode) video.parentNode.removeChild(video)
       setExporting(false)
-      setShowProgressPercent(false)
     }
   }
 
@@ -463,15 +417,11 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
             <span className="text-sm font-medium">{status}</span>
             <div className="h-3 w-full overflow-hidden rounded-full bg-gray-800">
               <div
-                className="h-full rounded-full bg-white transition-[width] duration-200"
+                className="h-full rounded-full bg-white transition-[width] duration-150"
                 style={{ width: `${safeProgress}%` }}
               />
             </div>
-            {showProgressPercent && (
-              <span className="text-xs font-mono text-gray-300">
-                {safeProgress}%
-              </span>
-            )}
+            <span className="text-xs font-mono text-gray-300">{safeProgress}%</span>
           </div>
         ) : (
           '📹 خروجی MP4 با زیرنویس'
@@ -480,3 +430,4 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
     </div>
   )
 }
+
