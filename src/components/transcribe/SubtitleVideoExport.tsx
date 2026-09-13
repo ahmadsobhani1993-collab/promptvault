@@ -2,7 +2,6 @@
 
 import { useRef, useState } from 'react'
 import { FFmpeg } from '@ffmpeg/ffmpeg'
-import { Muxer, ArrayBufferTarget } from 'mp4-muxer'
 import {
   DEFAULT_STYLE,
   getAnimationState,
@@ -135,10 +134,14 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
     let video: HTMLVideoElement | null = null
 
     try {
-      // بررسی پیش‌نیاز WebCodecs در مرورگر کاربر
       if (typeof (window as any).VideoEncoder === 'undefined') {
-        throw new Error('مرورگر شما از WebCodecs پشتیبانی نمی‌کند. لطفاً از آخرین نسخه Chrome یا Edge استفاده کنید.')
+        throw new Error('مرورگر شما از WebCodecs پشتیبانی نمی‌کند. لطفاً از آخرین نسخه مرورگر کروم، اج یا فایرفاکس استفاده کنید.')
       }
+
+      // لود پویا پکیج Muxer از CDN بدون نیاز به نصب پکیج
+      const { Muxer, ArrayBufferTarget } = await import(
+        /* webpackIgnore: true */ 'https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.4/+esm'
+      )
 
       const storedStyle = readStoredStyle()
       const exportStyle: Style = { ...DEFAULT_STYLE, ...(storedStyle || {}), ...(style || {}) }
@@ -169,7 +172,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         video!.load()
       })
 
-      // ابعاد باید زوج باشند تا انکودر H.264 دچار خطا نشود
       const W = video.videoWidth % 2 === 0 ? video.videoWidth : video.videoWidth - 1
       const H = video.videoHeight % 2 === 0 ? video.videoHeight : video.videoHeight - 1
       const duration = Number.isFinite(video.duration) ? video.duration : 0
@@ -183,7 +185,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       ctx.lineJoin = 'round'
       ctx.lineCap = 'round'
 
-      // پیکربندی ساخت فایل استاندارد MP4 با حجم بهینه
       const target = new ArrayBufferTarget()
       const muxer = new Muxer({
         target,
@@ -195,8 +196,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         fastStart: 'in-memory',
       })
 
-      // بیت‌ریت متناسب و دقیق برای جلوگیری از افزایش ۶ برابری حجم
-      // یک ویدیوی 1080p عمودی با نرخ فریم ۳۰ حدود ۳.۵ مگابیت بر ثانیه ایده‌آل است
       const calculatedBitrate = Math.round(clamp((W * H * 2.2), 1_500_000, 4_500_000))
 
       const encoder = new (window as any).VideoEncoder({
@@ -205,7 +204,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       })
 
       encoder.configure({
-        codec: 'avc1.4d002a', // H.264 Main Profile
+        codec: 'avc1.4d002a',
         width: W,
         height: H,
         bitrate: calculatedBitrate,
@@ -250,60 +249,70 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
 
         const strokeWidth = Math.max(4, finalFontSize * 0.16)
 
-        lines.forEach((line, index) => {
-          const y = anchorY + (index - (lines.length - 1) / 2) * lineHeight
-          const lineWords = line.split(/\s+/).filter(Boolean)
+        // رندر کلمات و حل قطعی مشکل زرد شدن کلمات تکراری
+        if (!s.karaoke || !seg.words || !seg.words.length) {
+          lines.forEach((line, index) => {
+            const y = anchorY + (index - (lines.length - 1) / 2) * lineHeight
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.85)'
+            ctx.shadowBlur = Math.max(6, finalFontSize * 0.2)
+            ctx.strokeStyle = '#000000'
+            ctx.lineWidth = strokeWidth
+            ctx.strokeText(line, anchorX, y)
 
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.85)'
-          ctx.shadowBlur = Math.max(6, finalFontSize * 0.2)
-          ctx.strokeStyle = '#000000'
-          ctx.lineWidth = strokeWidth
-          ctx.strokeText(line, anchorX, y)
+            ctx.shadowColor = 'transparent'
+            ctx.shadowBlur = 0
+            ctx.fillStyle = s.color || '#FFFFFF'
+            ctx.fillText(line, anchorX, y)
+          })
+        } else {
+          // تطبیق بر اساس ایندکس آرایه کلمات در زمان فعلی
+          const activeWordIndex = seg.words.findIndex((w) => t >= w.start && t <= w.end)
+          const spaceWidth = ctx.measureText(' ').width
+          let currentWordIndex = 0
 
-          ctx.shadowColor = 'transparent'
-          ctx.shadowBlur = 0
-          ctx.fillStyle = s.color || '#FFFFFF'
-          ctx.fillText(line, anchorX, y)
+          lines.forEach((line, index) => {
+            const y = anchorY + (index - (lines.length - 1) / 2) * lineHeight
+            const lineWords = line.split(/\s+/).filter(Boolean)
+            const lineWidth = ctx.measureText(line).width
+            let cursorOffset = 0
 
-          if (s.karaoke && seg.words?.length) {
-            const activeWord = seg.words.find((w) => t >= w.start && t <= w.end && lineWords.includes(w.w))
-            if (activeWord) {
-              const lineWidth = ctx.measureText(line).width
-              const spaceWidth = ctx.measureText(' ').width
-              let cursorOffset = 0
+            lineWords.forEach((word) => {
+              const wordWidth = ctx.measureText(word).width
+              const isWordActive = currentWordIndex === activeWordIndex
 
-              for (const w of lineWords) {
-                const wWidth = ctx.measureText(w).width
-                if (w === activeWord.w) {
-                  let wordX = anchorX
-                  if (direction === 'rtl') {
-                    wordX = (anchorX + lineWidth / 2) - cursorOffset - (wWidth / 2)
-                  } else {
-                    wordX = (anchorX - lineWidth / 2) + cursorOffset + (wWidth / 2)
-                  }
-
-                  const prevAlign = ctx.textAlign
-                  ctx.textAlign = 'center'
-                  ctx.strokeStyle = '#000000'
-                  ctx.lineWidth = strokeWidth
-                  ctx.strokeText(w, wordX, y)
-
-                  ctx.fillStyle = s.hlColor || '#FF4D4D'
-                  ctx.fillText(w, wordX, y)
-                  ctx.textAlign = prevAlign
-                  break
-                }
-                cursorOffset += wWidth + spaceWidth
+              let wordX = anchorX
+              if (direction === 'rtl') {
+                wordX = (anchorX + lineWidth / 2) - cursorOffset - (wordWidth / 2)
+              } else {
+                wordX = (anchorX - lineWidth / 2) + cursorOffset + (wordWidth / 2)
               }
-            }
-          }
-        })
+
+              const prevAlign = ctx.textAlign
+              ctx.textAlign = 'center'
+
+              ctx.shadowColor = 'rgba(0, 0, 0, 0.85)'
+              ctx.shadowBlur = Math.max(6, finalFontSize * 0.2)
+              ctx.strokeStyle = '#000000'
+              ctx.lineWidth = strokeWidth
+              ctx.strokeText(word, wordX, y)
+
+              ctx.shadowColor = 'transparent'
+              ctx.shadowBlur = 0
+
+              ctx.fillStyle = isWordActive ? (s.hlColor || '#FFD600') : (s.color || '#FFFFFF')
+              ctx.fillText(word, wordX, y)
+              ctx.textAlign = prevAlign
+
+              cursorOffset += wordWidth + spaceWidth
+              currentWordIndex++
+            })
+          })
+        }
 
         ctx.restore()
       }
 
-      // فرآیند رندر آفلاین فریم به فریم با WebCodecs
-      setStatus('در حال پردازش و تزریق کپشن روی ویدیو...')
+      setStatus('در حال پردازش و ساخت فریم‌های ویدیو...')
       const totalFrames = Math.ceil(duration * FPS)
       const frameDurationMicroseconds = 1_000_000 / FPS
 
@@ -321,22 +330,18 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
 
         renderSubtitleLayer(currentTime)
 
-        // ساخت VideoFrame بدون نیاز به ضبط زنده
         const frame = new (window as any).VideoFrame(canvas, {
           timestamp: Math.round(frameIndex * frameDurationMicroseconds),
         })
 
-        // کلیدفریم هر ۱ ثانیه برای امکان Seek سریع و روان در پلیر
         const isKeyFrame = frameIndex % FPS === 0
         encoder.encode(frame, { keyFrame: isKeyFrame })
         frame.close()
 
-        // آزاد کردن صف انکودر برای جلوگیری از پر شدن حافظه رم
         if (encoder.encodeQueueSize > 5) {
           await encoder.flush()
         }
 
-        // نمایش درصد پیشرفت پیوسته و بدون لگ (تا ۸۵٪ رندر فریم‌هاست)
         const framePercent = Math.round((frameIndex / totalFrames) * 85)
         setProgress(framePercent)
       }
@@ -344,23 +349,19 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       await encoder.flush()
       muxer.finalize()
 
-      // استخراج ترک صدای اصلی و ادغام آن با فایل خروجی توسط FFmpeg
       setProgress(86)
-      setStatus('در حال ادغام صدای اصلی ویدیو (بدون افت کیفیت)...')
+      setStatus('در حال چسباندن فایل صدای اصلی...')
 
       const ffmpeg = await getOrInitFFmpeg()
 
-      // ۱. ویدیوی کپشن‌خورده بدون صدا
       const videoArrayBuffer = target.buffer
       await ffmpeg.writeFile('sub_video.mp4', new Uint8Array(videoArrayBuffer))
 
-      // ۲. دریافت مستقیم فایل اصلی جهت استخراج صوت
       const sourceResponse = await fetch(videoUrl)
       const sourceBlob = await sourceResponse.blob()
       await ffmpeg.writeFile('source_input.mp4', new Uint8Array(await sourceBlob.arrayBuffer()))
 
       setProgress(92)
-      // کپی آنی صوت اصلی بدون نیاز به ری‌انکود (سرعت بالا در حد ۱ ثانیه)
       await ffmpeg.exec([
         '-i', 'sub_video.mp4',
         '-i', 'source_input.mp4',
@@ -376,7 +377,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       const finalBlob = new Blob([finalData], { type: 'video/mp4' })
 
       setProgress(100)
-      setStatus('✅ ذخیره‌سازی فایل نهایی...')
+      setStatus('✅ ذخیره‌سازی ویدیو...')
 
       const url = URL.createObjectURL(finalBlob)
       const a = document.createElement('a')
@@ -430,4 +431,3 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
     </div>
   )
 }
-
