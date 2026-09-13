@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
-import { prisma } from '@/lib/db'
+import { uploadToCloudinary } from '@/lib/cloudinary'
+
+export const maxDuration = 60
 
 export async function POST(req: Request) {
   try {
@@ -15,62 +17,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'no file' }, { status: 400 })
     }
 
-    const token = process.env.TELEGRAM_READ_TOKEN || process.env.TELEGRAM_BOT_TOKEN
-    if (!token) {
-      return NextResponse.json({ error: 'telegram token not configured' }, { status: 500 })
-    }
-
-    const channelUsername = 'promptsfa1'
-
-    // 1. Convert file to buffer
+    // تبدیل فایل به buffer
     const bytes = await file.arrayBuffer()
     const buffer = Buffer.from(bytes)
 
-    // 2. Send to Channel (for archive)
-    const tgForm = new FormData()
-    tgForm.append('chat_id', '@' + channelUsername)
-    tgForm.append('photo', new Blob([new Uint8Array(buffer)], { type: file.type || 'image/jpeg' }), 'upload.jpg')
-    tgForm.append('caption', `📤 آپلود از پنل ادمین PromptsFA\n📅 ${new Date().toLocaleString('fa-IR')}`)
-
-    const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
-      method: 'POST',
-      body: tgForm,
-      signal: AbortSignal.timeout(30000),
-    })
-
-    const tgResult = await tgRes.json()
-    if (!tgResult.ok) {
-      console.error('Telegram upload failed:', tgResult)
-      return NextResponse.json({ 
-        error: tgResult.description || 'upload failed',
-        hint: 'مطمئن شوید ربات در کانال @promptsfa1 ادمین است'
-      }, { status: 500 })
-    }
-
-    // 3. Get file_id
-    const fileId = tgResult.result.photo[tgResult.result.photo.length - 1].file_id
-    
-    // 4. Get file_path (EXACTLY like the prompt import-loop)
-    const fileRes = await fetch(
-      `https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`,
-      { signal: AbortSignal.timeout(10000) }
-    )
-    const fileInfo = await fileRes.json()
-    
-    if (!fileInfo.ok) {
-      return NextResponse.json({ error: 'failed to get file path' }, { status: 500 })
-    }
-    
-    // 5. Construct the standard Telegram file URL
-    const fileUrl = `https://api.telegram.org/file/bot${token}/${fileInfo.result.file_path}`
+    // آپلود به Cloudinary — پوشه مخصوص مقالات
+    const up = await uploadToCloudinary(buffer, 'promptsfa/articles')
 
     return NextResponse.json({
       ok: true,
-      fileUrl: fileUrl, // This is the exact same format as working prompts
-      channel: '@' + channelUsername,
-      message: 'عکس با موفقیت در کانال آرشیو و لینک استاندارد ساخته شد.'
+      fileUrl: up.url,           // ✅ URL پایدار کلودینری (بدون توکن)
+      publicId: up.publicId,
+      message: 'عکس با موفقیت در کلودینری ذخیره شد.',
     })
-
   } catch (err: any) {
     console.error('Upload error:', err)
     return NextResponse.json({ error: err.message || 'upload failed' }, { status: 500 })
