@@ -8,6 +8,9 @@ import SubtitleStudio from './SubtitleStudio'
 import SubtitleVideoExport from './SubtitleVideoExport'
 import { download, toSrt, toVtt, toTxt } from '@/lib/subtitle'
 
+const MAX_FILE_SIZE_MB = 250
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024 // 250 MB
+
 export default function VideoSubtitleClient() {
   const auth = useAuth()
   const [videoUrl, setVideoUrl] = useState('')
@@ -21,6 +24,15 @@ export default function VideoSubtitleClient() {
     const file = e.target.files?.[0]
     if (!file) return
     if (!file.type.startsWith('video/')) return
+
+    // بررسی سقف حجم فایل (۲۵۰ مگابایت)
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      const sizeInMB = (file.size / (1024 * 1024)).toFixed(1)
+      alert(`❌ حجم فایل انتخابی (${sizeInMB} مگابایت) بیش از سقف مجاز ۲۵۰ مگابایت است. لطفاً ویدیوی سبک‌تری انتخاب کنید.`)
+      e.target.value = ''
+      return
+    }
+
     setFileName(file.name)
     setVideoUrl(URL.createObjectURL(file))
     await run(file, speed)
@@ -83,6 +95,7 @@ export default function VideoSubtitleClient() {
           )}
 
           <div className="ms-auto flex items-center gap-2 text-[11px] text-white/40">
+            <span className="hidden text-[10px] text-white/30 md:inline">حداکثر ۲۵۰ مگابایت</span>
             {segments.length > 0 && <span className="hidden sm:inline">💾 ذخیره خودکار</span>}
             {segments.length > 0 && <span className="rounded-md bg-white/5 px-2 py-1">{segments.length} کپشن</span>}
           </div>
@@ -135,7 +148,7 @@ export default function VideoSubtitleClient() {
           <div className="text-4xl">🎬</div>
           <div>
             <p className="text-sm font-bold text-white/80">ویدیو را وارد کن</p>
-            <p className="mt-1 text-xs text-white/40">ترنسکریپت خودکار → ویرایش کپشن → خروجی با زیرنویس</p>
+            <p className="mt-1 text-xs text-white/40">ترنسکریپت خودکار → ویرایش کپشن → خروجی با زیرنویس (حداکثر ۲۵۰ مگابایت)</p>
           </div>
         </div>
       )}
