@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import {
   DEFAULT_STYLE,
@@ -118,27 +118,41 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState('')
+  const [eta, setEta] = useState<string>('')
 
+  const abortRef = useRef(false)
   const currentStyle = style || DEFAULT_STYLE
   const styleRef = useRef(currentStyle)
   styleRef.current = currentStyle
   const segRef = useRef(segments)
   segRef.current = segments
 
+  // پری‌لود دارایی‌های بصری (Asset Pre-warming) به محض لود شدن کامپوننت
+  useEffect(() => {
+    loadFont(currentStyle.fontId || 'Vazirmatn').catch(() => {})
+    getOrInitFFmpeg().catch(() => {})
+  }, [currentStyle.fontId])
+
+  const cancelExport = () => {
+    abortRef.current = true
+    setStatus('در حال لغو عملیات...')
+  }
+
   const exportVideo = async () => {
     if (exporting || !videoUrl) return
     setExporting(true)
     setProgress(0)
-    setStatus('در حال آماده‌سازی موتور رندر...')
+    setEta('')
+    abortRef.current = false
+    setStatus('در حال آماده‌سازی...')
 
     let video: HTMLVideoElement | null = null
 
     try {
       if (typeof (window as any).VideoEncoder === 'undefined') {
-        throw new Error('مرورگر شما از WebCodecs پشتیبانی نمی‌کند. لطفاً از آخرین نسخه مرورگر کروم، اج یا فایرفاکس استفاده کنید.')
+        throw new Error('مرورگر شما از WebCodecs پشتیبانی نمی‌کند. لطفاً از آخرین نسخه Chrome یا Edge استفاده کنید.')
       }
 
-      // لود پویا پکیج Muxer از CDN بدون نیاز به نصب پکیج
       const { Muxer, ArrayBufferTarget } = await import(
         /* webpackIgnore: true */ 'https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.4/+esm'
       )
@@ -188,11 +202,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       const target = new ArrayBufferTarget()
       const muxer = new Muxer({
         target,
-        video: {
-          codec: 'avc',
-          width: W,
-          height: H,
-        },
+        video: { codec: 'avc', width: W, height: H },
         fastStart: 'in-memory',
       })
 
@@ -249,7 +259,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
 
         const strokeWidth = Math.max(4, finalFontSize * 0.16)
 
-        // رندر کلمات و حل قطعی مشکل زرد شدن کلمات تکراری
         if (!s.karaoke || !seg.words || !seg.words.length) {
           lines.forEach((line, index) => {
             const y = anchorY + (index - (lines.length - 1) / 2) * lineHeight
@@ -265,7 +274,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
             ctx.fillText(line, anchorX, y)
           })
         } else {
-          // تطبیق بر اساس ایندکس آرایه کلمات در زمان فعلی
           const activeWordIndex = seg.words.findIndex((w) => t >= w.start && t <= w.end)
           const spaceWidth = ctx.measureText(' ').width
           let currentWordIndex = 0
@@ -289,7 +297,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
 
               const prevAlign = ctx.textAlign
               ctx.textAlign = 'center'
-
               ctx.shadowColor = 'rgba(0, 0, 0, 0.85)'
               ctx.shadowBlur = Math.max(6, finalFontSize * 0.2)
               ctx.strokeStyle = '#000000'
@@ -298,7 +305,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
 
               ctx.shadowColor = 'transparent'
               ctx.shadowBlur = 0
-
               ctx.fillStyle = isWordActive ? (s.hlColor || '#FFD600') : (s.color || '#FFFFFF')
               ctx.fillText(word, wordX, y)
               ctx.textAlign = prevAlign
@@ -312,11 +318,16 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         ctx.restore()
       }
 
-      setStatus('در حال پردازش و ساخت فریم‌های ویدیو...')
+      setStatus('در حال پردازش فریم‌ها...')
       const totalFrames = Math.ceil(duration * FPS)
       const frameDurationMicroseconds = 1_000_000 / FPS
+      const startTime = performance.now()
 
       for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
+        if (abortRef.current) {
+          throw new Error('عملیات رندر توسط کاربر لغو شد.')
+        }
+
         const currentTime = frameIndex / FPS
         video.currentTime = currentTime
 
@@ -342,15 +353,29 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           await encoder.flush()
         }
 
-        const framePercent = Math.round((frameIndex / totalFrames) * 85)
+        // تخمین زمان باقی‌مانده (ETA)
+        const elapsedSec = (performance.now() - startTime) / 1000
+        const framesDone = frameIndex + 1
+        const remainingFrames = totalFrames - framesDone
+        const fpsReal = framesDone / elapsedSec
+        const remainingSeconds = Math.round(remainingFrames / fpsReal)
+
+        if (framesDone > 10 && remainingSeconds > 0) {
+          setEta(`حدود ${remainingSeconds} ثانیه باقی‌مانده`)
+        }
+
+        const framePercent = Math.round((framesDone / totalFrames) * 85)
         setProgress(framePercent)
       }
 
       await encoder.flush()
       muxer.finalize()
 
+      if (abortRef.current) throw new Error('عملیات رندر توسط کاربر لغو شد.')
+
       setProgress(86)
-      setStatus('در حال چسباندن فایل صدای اصلی...')
+      setEta('')
+      setStatus('در حال ادغام صدای اصلی...')
 
       const ffmpeg = await getOrInitFFmpeg()
 
@@ -395,12 +420,17 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       }, 5000)
 
     } catch (error: any) {
-      console.error('[WebCodecs Render Error]', error)
-      setStatus('❌ خطا در رندر')
-      alert('خطا: ' + (error?.message || 'مشکلی در عملیات رندر پیش آمد'))
+      if (abortRef.current) {
+        setStatus('عملیات لغو شد')
+      } else {
+        console.error('[WebCodecs Render Error]', error)
+        setStatus('❌ خطا در رندر')
+        alert('خطا: ' + (error?.message || 'مشکلی در عملیات رندر پیش آمد'))
+      }
     } finally {
       if (video?.parentNode) video.parentNode.removeChild(video)
       setExporting(false)
+      setEta('')
     }
   }
 
@@ -408,26 +438,37 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 bg-black/90 p-4">
-      <button
-        onClick={exportVideo}
-        disabled={exporting}
-        className="w-full rounded-xl bg-orange-500 py-4 font-bold text-white transition-all hover:bg-orange-600 disabled:bg-gray-700"
-      >
-        {exporting ? (
-          <div className="flex flex-col gap-2">
-            <span className="text-sm font-medium">{status}</span>
-            <div className="h-3 w-full overflow-hidden rounded-full bg-gray-800">
-              <div
-                className="h-full rounded-full bg-white transition-[width] duration-150"
-                style={{ width: `${safeProgress}%` }}
-              />
+      {exporting ? (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-medium text-white">{status}</span>
+            <div className="flex items-center gap-2">
+              {eta && <span className="text-amber-400 font-mono">{eta}</span>}
+              <button
+                onClick={cancelExport}
+                className="rounded-lg border border-red-500/40 bg-red-500/20 px-2.5 py-1 text-red-300 transition hover:bg-red-500/30"
+              >
+                ✕ لغو رندر
+              </button>
             </div>
-            <span className="text-xs font-mono text-gray-300">{safeProgress}%</span>
           </div>
-        ) : (
-          '📹 خروجی MP4 با زیرنویس'
-        )}
-      </button>
+          <div className="h-3 w-full overflow-hidden rounded-full bg-gray-800">
+            <div
+              className="h-full rounded-full bg-amber-500 transition-[width] duration-150"
+              style={{ width: `${safeProgress}%` }}
+            />
+          </div>
+          <span className="text-xs font-mono text-gray-300 text-left">{safeProgress}%</span>
+        </div>
+      ) : (
+        <button
+          onClick={exportVideo}
+          disabled={exporting}
+          className="w-full rounded-xl bg-orange-500 py-4 font-bold text-white transition-all hover:bg-orange-600 disabled:bg-gray-700"
+        >
+          📹 خروجی MP4 با زیرنویس
+        </button>
+      )}
     </div>
   )
 }
