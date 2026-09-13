@@ -23,7 +23,6 @@ type Props = {
 
 const STYLE_STORAGE_KEY = 'promptvault.subtitle.style'
 const FPS = 30
-// ✅ کاهش bitrate برای ضبط میانی (کیفیت کافی، حجم کمتر)
 const WEBM_BITRATE = 2_500_000
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -102,63 +101,11 @@ function fitSubtitle(
   return { fontSize, lines, lineHeight, totalHeight, maxLineWidth, padding }
 }
 
-function waitForSeek(video: HTMLVideoElement, time: number) {
-  return new Promise<void>((resolve, reject) => {
-    let done = false
-    const finish = () => {
-      if (done) return
-      done = true
-      video.removeEventListener('seeked', onSeeked)
-      video.removeEventListener('error', onError)
-      resolve()
-    }
-    const onSeeked = () => finish()
-    const onError = () => {
-      if (done) return
-      done = true
-      video.removeEventListener('seeked', onSeeked)
-      video.removeEventListener('error', onError)
-      reject(new Error('جابجایی فریم ویدیو شکست خورد'))
-    }
-    video.addEventListener('seeked', onSeeked, { once: true })
-    video.addEventListener('error', onError, { once: true })
-    video.currentTime = time
-    window.setTimeout(finish, 1200)
-  })
-}
-
-// ✅ دانلود فایل با progress واقعی (برای wasm/core)
-async function fetchWithProgress(
-  url: string,
-  onProgress: (loaded: number, total: number) => void,
-): Promise<Blob> {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error('download failed: ' + res.status)
-  const total = Number(res.headers.get('Content-Length') || 0)
-  if (!res.body || !total) {
-    const blob = await res.blob()
-    onProgress(blob.size, blob.size)
-    return blob
-  }
-  const reader = res.body.getReader()
-  const chunks: Uint8Array[] = []
-  let loaded = 0
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    if (value) {
-      chunks.push(value)
-      loaded += value.length
-      onProgress(loaded, total)
-    }
-  }
-  return new Blob(chunks)
-}
-
 export default function SubtitleVideoExport({ videoUrl, baseName, segments, style }: Props) {
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState('')
+  const [converting, setConverting] = useState(false)
   const currentStyle = style || DEFAULT_STYLE
   const styleRef = useRef(currentStyle)
   styleRef.current = currentStyle
@@ -169,10 +116,12 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
     if (exporting || !videoUrl) return
     setExporting(true)
     setProgress(0)
+    setConverting(false)
     setStatus('در حال آماده سازی...')
 
     let video: HTMLVideoElement | null = null
     let audioCtx: AudioContext | null = null
+    let audioRouted = false
     let ffmpeg: FFmpeg | null = null
     let recorder: MediaRecorder | null = null
     let stream: MediaStream | null = null
@@ -186,7 +135,9 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       video.src = videoUrl
       video.playsInline = true
       video.preload = 'auto'
-      video.muted = true
+      // ✅ FIX صدا: mute نکن — صدا فقط به WebAudio می‌رود، نه اسپیکر
+      video.muted = false
+      video.volume = 1
       video.crossOrigin = 'anonymous'
       video.style.position = 'fixed'
       video.style.left = '-10000px'
@@ -229,8 +180,10 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         source.connect(destination)
         destination.stream.getAudioTracks().forEach((track) => stream!.addTrack(track))
         if (audioCtx.state === 'suspended') await audioCtx.resume()
+        audioRouted = true
       } catch (error) {
         console.warn('[Export] Audio capture unavailable:', error)
+        video.muted = true
       }
 
       const mimeCandidates = [
@@ -270,7 +223,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         const availableHeight = Math.max(1, H - edgeMargin * 2)
         const fontFamily = s.fontId || 'Vazirmatn'
 
-        // ✅ انیمیشن: سایز پایه بدون scale (fitSubtitle خرابش نمی‌کند)
         const baseFontSize = (Number(s.size) / 100) * W
 
         const fitted = fitSubtitle(ctx, seg.text, baseFontSize, availableWidth, availableHeight, fontFamily)
@@ -299,7 +251,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         const bgX = finalX - boxWidth / 2
         const bgY = finalY - boxHeight / 2
 
-        // ✅ انیمیشن واقعی: transform روی کل بلوک (متن + پس‌زمینه + padding)
+        // انیمیشن: ترنسفورم روی کل بلوک
         ctx.save()
         ctx.globalAlpha = anim.opacity
         ctx.translate(finalX + anim.translateX, finalY + anim.translateY)
@@ -331,18 +283,32 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
             ctx.fillText(line, drawX, y)
             return
           }
+
           const lineWords = line.split(/\s+/).filter(Boolean)
           if (!lineWords.length) return
+
           const pieces = lineWords.map((word) => {
             const match = wordMap.slice(wordCursor).find((w) => w.w === word)
             if (match) wordCursor = wordMap.indexOf(match) + 1
             return { word, timing: match }
           })
+
           const spaceWidth = ctx.measureText(' ').width
           const widths = pieces.map((p) => ctx.measureText(p.word).width)
           const lineWidth = widths.reduce((a, b) => a + b, 0) + spaceWidth * Math.max(0, widths.length - 1)
-          let cursorX = align === 'left' ? drawX : align === 'right' ? drawX - lineWidth : drawX - lineWidth / 2
+
+          let cursorX = align === 'left'
+            ? drawX
+            : align === 'right'
+            ? drawX - lineWidth
+            : drawX - lineWidth / 2
+
           const visualPieces = direction === 'rtl' ? [...pieces].reverse() : pieces
+
+          // ✅ FIX کارائوکه: رسم کلمه‌به‌کلمه حتماً با textAlign=center
+          const prevAlign = ctx.textAlign
+          ctx.textAlign = 'center'
+
           for (const piece of visualPieces) {
             const width = ctx.measureText(piece.word).width
             const active = piece.timing && t >= piece.timing.start && t <= piece.timing.end
@@ -356,6 +322,8 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
             ctx.fillText(piece.word, centerX, y)
             cursorX += direction === 'rtl' ? -(width + spaceWidth) : width + spaceWidth
           }
+
+          ctx.textAlign = prevAlign
         }
 
         lines.forEach((line, index) => {
@@ -367,7 +335,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       }
 
       let frameCount = 0
-      let lastMediaTime = -1
       let rafId: number | null = null
       let stopped = false
 
@@ -378,84 +345,61 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         if (recorder?.state === 'recording') recorder.stop()
       }
 
-      type RVFCMetadata = { mediaTime: number }
-      type RVFCVideo = HTMLVideoElement & {
-        requestVideoFrameCallback: (callback: (now: number, metadata: RVFCMetadata) => void) => number
-      }
-      const rvfcVideo = video as RVFCVideo
-
-      const renderCallback = (_now: number, metadata: RVFCMetadata) => {
+      // ✅ FIX تصویر ثابت: رسم روی هر rAF (تضمینی) + try/catch (loop هرگز نمی‌میرد)
+      const tick = () => {
         if (stopped) return
-        const mediaTime = metadata.mediaTime
-        if (mediaTime > lastMediaTime + 0.0001) {
-          lastMediaTime = mediaTime
-          renderFrame(mediaTime)
+        try {
+          const t = video!.currentTime
+          renderFrame(t)
           frameCount += 1
-          setProgress(clamp((mediaTime / duration) * 70, 0, 70))
+          setProgress(clamp((t / duration) * 100, 0, 100))
+          if (video!.ended || t >= duration - 0.05) {
+            renderFrame(duration)
+            setProgress(100)
+            stopRecording()
+            return
+          }
+        } catch (frameError) {
+          console.error('[Export] frame error:', frameError)
         }
-        if (mediaTime >= duration - 0.03 || video!.ended) {
-          renderFrame(duration)
-          setProgress(70)
-          stopRecording()
-          return
-        }
-        rvfcVideo.requestVideoFrameCallback(renderCallback)
+        rafId = requestAnimationFrame(tick)
       }
 
-      const fallbackLoop = () => {
+      // ایمنی: اگر به هر دلیلی loop متوقف شد، ended رکوردر را ببندد
+      video.addEventListener('ended', () => {
         if (stopped) return
-        renderFrame(video!.currentTime)
-        frameCount += 1
-        setProgress(clamp((video!.currentTime / duration) * 70, 0, 70))
-        if (video!.ended || video!.currentTime >= duration - 0.03) {
-          renderFrame(duration)
-          setProgress(70)
-          stopRecording()
-          return
-        }
-        rafId = requestAnimationFrame(fallbackLoop)
-      }
+        renderFrame(duration)
+        setProgress(100)
+        stopRecording()
+      }, { once: true })
 
       recorder.start(1000)
-      setStatus('در حال آماده سازی ویدیو...')
+      setStatus('در حال رندر ویدیو...')
       video.currentTime = 0
       await video.play()
-
-      if ('requestVideoFrameCallback' in video) {
-        rvfcVideo.requestVideoFrameCallback(renderCallback)
-      } else {
-        rafId = requestAnimationFrame(fallbackLoop)
-      }
+      rafId = requestAnimationFrame(tick)
 
       await recorderStopped
       if (!chunks.length) throw new Error('هیچ داده‌ای ضبط نشد')
 
-      // ✅ progress یکنواخت: 70 → 80 دانلود wasm، 80 → 100 تبدیل
-      setProgress(70)
+      // ✅ پایان رندر: نوار پر می‌ماند + pulse؛ مرحله تبدیل درصد ندارد
+      setProgress(100)
+      setConverting(true)
       setStatus('در حال دریافت موتور تبدیل...')
 
       ffmpeg = new FFmpeg()
       ffmpeg.on('progress', ({ progress: p }) => {
-        // نگاشت 0..1 → 80..100
-        setProgress(Math.round(80 + clamp(Number(p) || 0, 0, 1) * 20))
+        console.log('[FFmpeg encode]', Math.round(clamp(Number(p) || 0, 0, 1) * 100) + '%')
       })
 
       const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
-
-      const [coreBlob, wasmBlob] = await Promise.all([
-        fetchWithProgress(`${baseURL}/ffmpeg-core.js`, (loaded, total) => {
-          // نیمی از بازه 70→80 به core اختصاص دارد
-          const ratio = total > 0 ? loaded / total : 0
-          setProgress(Math.round(70 + ratio * 5))
-        }),
-        fetchWithProgress(`${baseURL}/ffmpeg-core.wasm`, (loaded, total) => {
-          // نیمه دوم 70→80 به wasm
-          const ratio = total > 0 ? loaded / total : 0
-          setProgress(Math.round(75 + ratio * 5))
-        }),
+      const [coreResponse, wasmResponse] = await Promise.all([
+        fetch(`${baseURL}/ffmpeg-core.js`),
+        fetch(`${baseURL}/ffmpeg-core.wasm`),
       ])
+      if (!coreResponse.ok || !wasmResponse.ok) throw new Error('دریافت موتور FFmpeg شکست خورد')
 
-      setStatus('در حال بارگذاری موتور...')
+      const [coreBlob, wasmBlob] = await Promise.all([coreResponse.blob(), wasmResponse.blob()])
       const coreURL = URL.createObjectURL(coreBlob)
       const wasmURL = URL.createObjectURL(wasmBlob)
       try {
@@ -465,8 +409,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         URL.revokeObjectURL(wasmURL)
       }
 
-      setStatus('در حال تبدیل ویدیو...')
-      setProgress(80)
+      setStatus('در حال تبدیل ویدیو... (کندترین مرحله — صبور باشید)')
 
       const webmBlob = new Blob(chunks, { type: mime })
       await ffmpeg.writeFile('input.webm', new Uint8Array(await webmBlob.arrayBuffer()))
@@ -474,7 +417,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       await ffmpeg.exec([
         '-i', 'input.webm',
         '-c:v', 'libx264',
-        // ✅ فشرده‌سازی بهتر: preset medium (به جای veryfast) + crf 23
         '-preset', 'medium',
         '-crf', '23',
         '-pix_fmt', 'yuv420p',
@@ -496,6 +438,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       a.click()
       a.remove()
 
+      setConverting(false)
       setProgress(100)
       setStatus('✅ کامل شد!')
 
@@ -505,9 +448,10 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         ffmpeg?.deleteFile('output.mp4').catch(() => {})
       }, 5000)
 
-      console.log('[Export] complete:', frameCount, 'frames')
+      console.log('[Export] complete:', frameCount, 'frames', 'audio:', audioRouted)
     } catch (error: any) {
       console.error('[Export Error]', error)
+      setConverting(false)
       setStatus('❌ خطا')
       alert('❌ خطا: ' + (error?.message || 'Unknown'))
     } finally {
@@ -532,12 +476,18 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           <div className="flex flex-col gap-2">
             <span className="text-sm">{status}</span>
             <div className="h-3 w-full overflow-hidden rounded-full bg-gray-700">
-              <div
-                className="h-full rounded-full bg-white transition-[width] duration-150"
-                style={{ width: `${safeProgress}%` }}
-              />
+              {converting ? (
+                <div className="h-full w-full animate-pulse rounded-full bg-white" />
+              ) : (
+                <div
+                  className="h-full rounded-full bg-white transition-[width] duration-150"
+                  style={{ width: `${safeProgress}%` }}
+                />
+              )}
             </div>
-            <span className="text-xs">{Math.round(safeProgress)}%</span>
+            <span className="text-xs">
+              {converting ? '⏳ مرحله تبدیل نهایی (درصد ندارد)...' : `${Math.round(safeProgress)}%`}
+            </span>
           </div>
         ) : (
           '📹 خروجی MP4 با زیرنویس'
