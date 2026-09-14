@@ -45,7 +45,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang={locale} dir={locale === 'fa' ? 'rtl' : 'ltr'} suppressHydrationWarning>
       <body className={`bg-[#070503] text-ink antialiased ${locale === 'en' ? 'font-sans' : ''}`}>
-        <Header />
+        <Header locale={locale} />
         <main>{children}</main>
         <Footer locale={locale} />
         <Analytics />

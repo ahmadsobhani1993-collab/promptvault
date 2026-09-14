@@ -8,9 +8,9 @@ import NotifBell from '@/components/notif-bell'
 import ToolsMenu from '@/components/layout/ToolsMenu'
 import LangSwitch from '@/components/layout/LangSwitch'
 
-export default async function Header() {
+export default async function Header({ locale: propLocale }: { locale?: Locale }) {
   const cookieStore = await cookies()
-  const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
+  const locale: Locale = propLocale || cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
   const session = await auth()
   const categories = await getCategories()
   const isAdmin = session?.user?.role === 'ADMIN'
