@@ -2,17 +2,52 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 export function middleware(req: NextRequest) {
-  const url = req.nextUrl
-  const lp = url.searchParams.get('locale')
-  if (lp === 'en' || lp === 'fa') {
-    url.searchParams.delete('locale')
-    const res = NextResponse.redirect(url)
-    res.cookies.set('locale', lp, { path: '/', maxAge: 60 * 60 * 24 * 365, sameSite: 'lax' })
+  const url = req.nextUrl.clone()
+  const { pathname } = url
+
+  // رد کردن فایل‌های سیستمی و مدیا
+  if (
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/api') ||
+    pathname.includes('.')
+  ) {
+    return NextResponse.next()
+  }
+
+  // بررسی وضعیت انگلیسی بودن
+  const isEn = pathname === '/en' || pathname.startsWith('/en/')
+  const locale = isEn ? 'en' : 'fa'
+
+  // اگر کاربر روی /en بود، مسیر داخلی را به مسیر واقعی نگاشت کن
+  if (isEn) {
+    const internalPath = pathname.replace(/^\/en/, '') || '/'
+    url.pathname = internalPath
+
+    const requestHeaders = new Headers(req.headers)
+    requestHeaders.set('x-locale', 'en')
+
+    const res = NextResponse.rewrite(url, {
+      request: {
+        headers: requestHeaders,
+      },
+    })
+    res.cookies.set('locale', 'en', { path: '/', maxAge: 60 * 60 * 24 * 365, sameSite: 'lax' })
     return res
   }
-  return NextResponse.next()
+
+  // مسیرهای پیش‌فرض فارسی
+  const requestHeaders = new Headers(req.headers)
+  requestHeaders.set('x-locale', 'fa')
+
+  const res = NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  })
+  res.cookies.set('locale', 'fa', { path: '/', maxAge: 60 * 60 * 24 * 365, sameSite: 'lax' })
+  return res
 }
 
 export const config = {
-  matcher: ['/((?!api|_next|favicon.ico|sitemap.xml|robots.txt|rss.xml|manifest.webmanifest|.*\\.(?:png|jpe?g|svg|webp|gif|ico|txt|css|js|woff2?)$).*)'],
+  matcher: ['/((?!api|_next|static|.*\\..*).*)'],
 }

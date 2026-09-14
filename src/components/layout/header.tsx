@@ -1,11 +1,12 @@
 import Link from 'next/link'
 import { auth } from '@/auth'
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { L, getCategories } from '@/lib/data'
 import { type Locale } from '@/lib/i18n'
 import MobileMenu from '@/components/mobile-menu'
 import NotifBell from '@/components/notif-bell'
 import ToolsMenu from '@/components/layout/ToolsMenu'
+import LangSwitch from '@/components/layout/LangSwitch'
 
 export default async function Header() {
   const cookieStore = await cookies()
@@ -20,7 +21,7 @@ export default async function Header() {
     { href: '/blog', label: L(locale, 'وبلاگ', 'Blog') },
     { href: '/submit', label: L(locale, 'ارسال پرامپت', 'Submit') },
     { href: '/transcribe', label: L(locale, '🎙 تبدیل صوت به متن', '🎙 Transcribe') },
-    { href: '/subtitle', label: L(locale, '🎬 زیرنویس اینستاگرام', '🎬 Instagram Subtitles') },
+    { href: '/subtitle', label: L(locale, '🎬 استودیو زیرنویس', '🎬 Subtitle Studio') },
   ]
 
   if (session?.user) {
@@ -31,7 +32,7 @@ export default async function Header() {
     <header className="sticky top-0 z-40 border-b border-line/60 bg-[#070503]/85 backdrop-blur">
       <div className="container-app flex h-16 items-center justify-between gap-4">
 
-        {/* Logo & Mobile Menu */}
+        {/* سمت راست در حالت فارسی / سمت چپ در حالت انگلیسی: لوگو */}
         <div className="flex items-center gap-3">
           <MobileMenu links={mobileLinks} admin={!!isAdmin} isLoggedIn={!!session?.user} />
           <Link href="/" className="font-display text-lg font-extrabold tracking-tight whitespace-nowrap">
@@ -39,7 +40,7 @@ export default async function Header() {
           </Link>
         </div>
 
-        {/* Desktop Navigation */}
+        {/* منوی ناوبری دسکتاپ */}
         <nav className="hidden items-center gap-6 text-sm text-ink-muted lg:flex">
           <Link href="/explore" className="transition-colors hover:text-gold-bright whitespace-nowrap">
             {L(locale, 'کاوش', 'Explore')}
@@ -47,15 +48,17 @@ export default async function Header() {
 
           {/* Categories Dropdown */}
           <div className="group relative">
-            <button type="button" className="transition-colors hover:text-gold-bright whitespace-nowrap">
-              {L(locale, 'دسته‌بندی‌ها', 'Categories')} ▾
+            <button type="button" className="transition-colors hover:text-gold-bright whitespace-nowrap flex items-center gap-1">
+              {L(locale, 'دسته‌بندی‌ها', 'Categories')} <span className="text-xs">▾</span>
             </button>
-            <div className="invisible absolute right-0 top-full z-50 w-[26rem] pt-3 opacity-0 transition-all group-hover:visible group-hover:opacity-100">
-              <div className="card grid grid-cols-2 gap-4 p-5">
+            <div className={`invisible absolute top-full z-50 w-[26rem] pt-3 opacity-0 transition-all group-hover:visible group-hover:opacity-100 ${
+              locale === 'fa' ? 'right-0' : 'left-0'
+            }`}>
+              <div className="card grid grid-cols-2 gap-3 p-4 bg-[#120f0c] border border-line/80 rounded-2xl shadow-2xl">
                 {categories.map((c) => (
-                  <div key={c.id} className="rounded-xl border border-line/60 bg-elevated/50 p-3 transition-colors hover:border-gold/40">
-                    <Link href={'/categories/' + c.slug} className="flex items-center gap-2 text-sm font-bold text-ink transition-colors hover:text-gold-bright">
-                      <span className="text-gold-bright [&_svg]:h-5 [&_svg]:w-5">
+                  <div key={c.id} className="rounded-xl border border-line/40 bg-elevated/40 p-2.5 transition-colors hover:border-gold/40">
+                    <Link href={'/categories/' + c.slug} className="flex items-center gap-2 text-xs font-bold text-ink transition-colors hover:text-gold-bright">
+                      <span className="text-gold-bright [&_svg]:h-4 [&_svg]:w-4">
                         <CategoryIcon name={c.icon} />
                       </span>
                       {L(locale, c.nameFa, c.nameEn)}
@@ -70,56 +73,32 @@ export default async function Header() {
             {L(locale, 'وبلاگ', 'Blog')}
           </Link>
 
-          {/* Tools Menu */}
-          <ToolsMenu />
+          {/* منوی ابزارها با پشتیبانی از زبان */}
+          <ToolsMenu locale={locale} />
         </nav>
 
-        {/* Right Side Actions */}
-        <div className="flex items-center gap-2">
-
-          {/* Language Switcher */}
-          <div className="hidden md:flex">
-            <Link
-              href="/?locale=fa"
-              className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${
-                locale === 'fa'
-                  ? 'border-gold bg-gold/15 text-gold-bright'
-                  : 'border-line bg-elevated text-ink-muted hover:border-gold/40'
-              }`}
-            >
-              فارسی
-            </Link>
-            <Link
-              href="/?locale=en"
-              className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${
-                locale === 'en'
-                  ? 'border-gold bg-gold/15 text-gold-bright'
-                  : 'border-line bg-elevated text-ink-muted hover:border-gold/40'
-              }`}
-            >
-              English
-            </Link>
-          </div>
+        {/* دکمه‌های عملیاتی و سوییچر زبان */}
+        <div className="flex items-center gap-3">
+          
+          {/* سوییچر زبان بهینه شده */}
+          <LangSwitch currentLocale={locale} />
 
           <NotifBell />
 
-          {/* Account / Login */}
           {session?.user ? (
-            <Link href="/account" className="btn-secondary hidden md:inline-flex">
+            <Link href="/account" className="btn-secondary hidden md:inline-flex text-xs">
               👤 {L(locale, 'حساب', 'Account')}
             </Link>
           ) : (
-            <Link href="/login" className="btn-secondary hidden md:inline-flex">
+            <Link href="/login" className="btn-secondary hidden md:inline-flex text-xs">
               {L(locale, 'ورود', 'Login')}
             </Link>
           )}
 
-          {/* Submit Prompt Button */}
           <Link href="/submit" className="btn-primary hidden md:inline-flex text-xs whitespace-nowrap">
             ✨ {L(locale, 'ارسال پرامپت', 'Submit')}
           </Link>
 
-          {/* Logout Button */}
           {session?.user && (
             <Link href="/api/auth/signout" className="btn-secondary hidden lg:inline-flex text-xs">
               {L(locale, 'خروج', 'Logout')}
