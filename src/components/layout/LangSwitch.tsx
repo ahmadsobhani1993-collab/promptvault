@@ -9,12 +9,11 @@ export default function LangSwitch({ currentLocale }: { currentLocale: 'fa' | 'e
     if (targetLocale === currentLocale) return
 
     startTransition(() => {
-      // ۱. ست کردن مستقیم کوکی در کلاینت برای ۳۶۵ روز
+      // ست کردن کوکی در مرورگر برای ماندگاری زبان
       document.cookie = `locale=${targetLocale}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`
       
-      // ۲. دریافت آدرس فعلی و بارگذاری مجدد بدون پارامترهای اضافه
       const url = new URL(window.location.href)
-      url.searchParams.delete('locale') // پاک کردن کوئری لوکال
+      url.searchParams.delete('locale')
       window.location.href = url.pathname + url.search
     })
   }
