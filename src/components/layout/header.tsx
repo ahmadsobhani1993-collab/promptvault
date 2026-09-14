@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { auth } from '@/auth'
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { L, getCategories } from '@/lib/data'
 import { type Locale } from '@/lib/i18n'
 import MobileMenu from '@/components/mobile-menu'
@@ -14,13 +14,24 @@ export default async function Header() {
   const categories = await getCategories()
   const isAdmin = session?.user?.role === 'ADMIN'
 
+  // دریافت مسیر فعلی برای جلوگیری از پرتاب کاربر به صفحه اصلی موقع تغییر زبان
+  const headersList = await headers()
+  const currentPath = headersList.get('x-invoke-path') || headersList.get('referer') || '/'
+  let cleanPath = '/'
+  try {
+    const url = new URL(currentPath, 'http://localhost')
+    cleanPath = url.pathname
+  } catch {
+    cleanPath = '/'
+  }
+
   const mobileLinks = [
     { href: '/explore', label: L(locale, 'کاوش', 'Explore') },
     { href: '/categories', label: L(locale, 'دسته‌بندی‌ها', 'Categories') },
     { href: '/blog', label: L(locale, 'وبلاگ', 'Blog') },
     { href: '/submit', label: L(locale, 'ارسال پرامپت', 'Submit') },
     { href: '/transcribe', label: L(locale, '🎙 تبدیل صوت به متن', '🎙 Transcribe') },
-    { href: '/subtitle', label: L(locale, '🎬 زیرنویس اینستاگرام', '🎬 Instagram Subtitles') },
+    { href: '/subtitle', label: L(locale, '🎬 استودیو زیرنویس', '🎬 Subtitle Studio') },
   ]
 
   if (session?.user) {
@@ -45,17 +56,19 @@ export default async function Header() {
             {L(locale, 'کاوش', 'Explore')}
           </Link>
 
-          {/* Categories Dropdown */}
+          {/* Categories Dropdown با پشتیبانی دوجهته RTL/LTR */}
           <div className="group relative">
-            <button type="button" className="transition-colors hover:text-gold-bright whitespace-nowrap">
-              {L(locale, 'دسته‌بندی‌ها', 'Categories')} ▾
+            <button type="button" className="transition-colors hover:text-gold-bright whitespace-nowrap flex items-center gap-1">
+              {L(locale, 'دسته‌بندی‌ها', 'Categories')} <span className="text-xs">▾</span>
             </button>
-            <div className="invisible absolute right-0 top-full z-50 w-[26rem] pt-3 opacity-0 transition-all group-hover:visible group-hover:opacity-100">
-              <div className="card grid grid-cols-2 gap-4 p-5">
+            <div className={`invisible absolute top-full z-50 w-[26rem] pt-3 opacity-0 transition-all group-hover:visible group-hover:opacity-100 ${
+              locale === 'fa' ? 'right-0' : 'left-0'
+            }`}>
+              <div className="card grid grid-cols-2 gap-3 p-4 bg-[#120f0c] border border-line/80 rounded-2xl shadow-2xl">
                 {categories.map((c) => (
-                  <div key={c.id} className="rounded-xl border border-line/60 bg-elevated/50 p-3 transition-colors hover:border-gold/40">
-                    <Link href={'/categories/' + c.slug} className="flex items-center gap-2 text-sm font-bold text-ink transition-colors hover:text-gold-bright">
-                      <span className="text-gold-bright [&_svg]:h-5 [&_svg]:w-5">
+                  <div key={c.id} className="rounded-xl border border-line/40 bg-elevated/40 p-2.5 transition-colors hover:border-gold/40">
+                    <Link href={'/categories/' + c.slug} className="flex items-center gap-2 text-xs font-bold text-ink transition-colors hover:text-gold-bright">
+                      <span className="text-gold-bright [&_svg]:h-4 [&_svg]:w-4">
                         <CategoryIcon name={c.icon} />
                       </span>
                       {L(locale, c.nameFa, c.nameEn)}
@@ -75,26 +88,28 @@ export default async function Header() {
         </nav>
 
         {/* Right Side Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
 
-          {/* Language Switcher */}
-          <div className="hidden md:flex">
+          {/* Language Switcher بهینه و بدون پرتاب به صفحه اول */}
+          <div dir="ltr" className="flex items-center rounded-xl border border-white/10 bg-zinc-950/80 p-0.5 shadow-inner">
             <Link
-              href="/?locale=fa"
-              className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${
+              href={`${cleanPath}?locale=fa`}
+              scroll={false}
+              className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${
                 locale === 'fa'
-                  ? 'border-gold bg-gold/15 text-gold-bright'
-                  : 'border-line bg-elevated text-ink-muted hover:border-gold/40'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+                  : 'text-zinc-400 hover:text-white'
               }`}
             >
               فارسی
             </Link>
             <Link
-              href="/?locale=en"
-              className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${
+              href={`${cleanPath}?locale=en`}
+              scroll={false}
+              className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${
                 locale === 'en'
-                  ? 'border-gold bg-gold/15 text-gold-bright'
-                  : 'border-line bg-elevated text-ink-muted hover:border-gold/40'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+                  : 'text-zinc-400 hover:text-white'
               }`}
             >
               English
@@ -105,11 +120,11 @@ export default async function Header() {
 
           {/* Account / Login */}
           {session?.user ? (
-            <Link href="/account" className="btn-secondary hidden md:inline-flex">
+            <Link href="/account" className="btn-secondary hidden md:inline-flex text-xs">
               👤 {L(locale, 'حساب', 'Account')}
             </Link>
           ) : (
-            <Link href="/login" className="btn-secondary hidden md:inline-flex">
+            <Link href="/login" className="btn-secondary hidden md:inline-flex text-xs">
               {L(locale, 'ورود', 'Login')}
             </Link>
           )}
