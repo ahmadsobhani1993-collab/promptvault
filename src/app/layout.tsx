@@ -19,12 +19,14 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const cookieStore = await cookies()
-  const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
+  const localeCookie = cookieStore.get('locale')?.value
+  // پیش‌فرض همیشه فارسی است مگر اینکه کوکی صریحاً 'en' باشد
+  const locale: Locale = localeCookie === 'en' ? 'en' : 'fa'
 
   return (
     <html lang={locale} dir={locale === 'fa' ? 'rtl' : 'ltr'} suppressHydrationWarning>
-      <body className="bg-[#070503] text-ink antialiased">
-        <Header locale={locale} />
+      <body className={`bg-[#070503] text-ink antialiased ${locale === 'en' ? 'font-sans' : ''}`}>
+        <Header />
         <main>{children}</main>
         <Footer locale={locale} />
         <Analytics />
