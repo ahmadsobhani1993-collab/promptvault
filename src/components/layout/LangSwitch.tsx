@@ -8,17 +8,22 @@ export default function LangSwitch({ currentLocale }: { currentLocale: "fa" | "e
   const switchTo = (lang: "fa" | "en") => {
     if (lang === currentLocale) return
 
-    // تنظیم کوکی صریح
-    document.cookie = "locale=" + lang + "; path=/; max-age=" + (60 * 60 * 24 * 365) + "; SameSite=Lax"
+    document.cookie = "locale=" + lang + "; path=/; max-age=31536000; SameSite=Lax"
 
     if (lang === "fa") {
-      // پاک کردن پیشوند /en و هدایت مستقیم
-      const target = pathname.startsWith("/en") ? pathname.replace(/^/en/, "") || "/" : pathname
+      let target = pathname
+      if (target === "/en") {
+        target = "/"
+      } else if (target.startsWith("/en/")) {
+        target = target.slice(3)
+      }
       window.location.href = target
     } else {
-      // اضافه کردن پیشوند /en
-      const clean = pathname.startsWith("/en") ? pathname : ("/en" + (pathname === "/" ? "" : pathname))
-      window.location.href = clean
+      let target = pathname
+      if (!target.startsWith("/en")) {
+        target = target === "/" ? "/en" : "/en" + target
+      }
+      window.location.href = target
     }
   }
 
