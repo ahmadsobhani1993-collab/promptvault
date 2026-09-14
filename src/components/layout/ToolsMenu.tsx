@@ -3,7 +3,11 @@
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 
-export default function ToolsMenu() {
+type Props = {
+  locale?: 'fa' | 'en'
+}
+
+export default function ToolsMenu({ locale = 'fa' }: Props) {
   const [open, setOpen] = useState(false)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -22,6 +26,8 @@ export default function ToolsMenu() {
 
   useEffect(() => () => cancelClose(), [])
 
+  const isEn = locale === 'en'
+
   return (
     <div
       className="relative"
@@ -35,35 +41,48 @@ export default function ToolsMenu() {
         onClick={() => setOpen(!open)}
         className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white/80 transition hover:border-amber-500/40 hover:text-amber-300"
       >
-        ابزارها
-        <span className={`text-[10px] transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+        {isEn ? 'Tools' : 'ابزارها'}
+        <span className={`text-[10px] transition-transform duration-200 ${open ? 'rotate-180' : ''}`}>▼</span>
       </button>
 
       {open && (
         <div
-          className="absolute left-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-xl border border-white/10 bg-zinc-900/95 p-1.5 shadow-2xl shadow-black/60 backdrop-blur"
+          className={`absolute top-full z-50 mt-2 w-64 overflow-hidden rounded-xl border border-white/10 bg-zinc-900/95 p-1.5 shadow-2xl shadow-black/60 backdrop-blur ${
+            isEn ? 'left-0 text-left' : 'right-0 text-right'
+          }`}
           onMouseEnter={cancelClose}
           onMouseLeave={scheduleClose}
         >
           <Link
             href="/transcribe"
+            onClick={() => setOpen(false)}
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-white/80 transition hover:bg-amber-500/10 hover:text-amber-300"
           >
             <span className="text-base">🎙️</span>
-            <span>
-              تبدیل صوت به متن
-              <span className="block text-[10px] text-white/40">تبدیل فایل صوتی</span>
-            </span>
+            <div>
+              <span className="block font-medium">
+                {isEn ? 'Audio to Text' : 'تبدیل صوت به متن'}
+              </span>
+              <span className="block text-[10px] text-white/40">
+                {isEn ? 'Convert audio file to transcript' : 'تبدیل فایل صوتی به متن'}
+              </span>
+            </div>
           </Link>
+
           <Link
             href="/subtitle"
+            onClick={() => setOpen(false)}
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-white/80 transition hover:bg-amber-500/10 hover:text-amber-300"
           >
             <span className="text-base">🎬</span>
-            <span>
-              زیرنویس اینستاگرام
-              <span className="block text-[10px] text-white/40">زیرنویس خودکار ویدیو</span>
-            </span>
+            <div>
+              <span className="block font-medium">
+                {isEn ? 'Subtitle Studio' : 'استودیو زیرنویس'}
+              </span>
+              <span className="block text-[10px] text-white/40">
+                {isEn ? 'Auto captions for video & reels' : 'زیرنویس خودکار ویدیو و ریلز'}
+              </span>
+            </div>
           </Link>
         </div>
       )}
