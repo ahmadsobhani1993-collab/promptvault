@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 export function middleware(req: NextRequest) {
-  const { pathname, search } = req.nextUrl
+  const url = req.nextUrl.clone()
+  const { pathname } = url
 
-  // فایل‌های استاتیک، تصاویر و APIها بدون تغییر رد شوند
+  // رد کردن فایل‌های سیستمی و مدیا
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api') ||
@@ -13,38 +14,40 @@ export function middleware(req: NextRequest) {
     return NextResponse.next()
   }
 
+  // بررسی وضعیت انگلیسی بودن
   const isEn = pathname === '/en' || pathname.startsWith('/en/')
   const locale = isEn ? 'en' : 'fa'
 
-  // اگر مسیر انگلیسی بود، پیشوند /en را در پشت‌صحنه بردار تا به صفحه اصلی متصل شود
-  let targetPath = pathname
+  // اگر کاربر روی /en بود، مسیر داخلی را به مسیر واقعی نگاشت کن
   if (isEn) {
-    targetPath = pathname.replace(/^\/en/, '') || '/'
+    const internalPath = pathname.replace(/^\/en/, '') || '/'
+    url.pathname = internalPath
+
+    const requestHeaders = new Headers(req.headers)
+    requestHeaders.set('x-locale', 'en')
+
+    const res = NextResponse.rewrite(url, {
+      request: {
+        headers: requestHeaders,
+      },
+    })
+    res.cookies.set('locale', 'en', { path: '/', maxAge: 60 * 60 * 24 * 365, sameSite: 'lax' })
+    return res
   }
 
+  // مسیرهای پیش‌فرض فارسی
   const requestHeaders = new Headers(req.headers)
-  requestHeaders.set('x-locale', locale)
+  requestHeaders.set('x-locale', 'fa')
 
-  // با Rewrite، آدرس در مرورگر /en باقی می‌ماند ولی همان کدهای قبلی با زبان انگلیسی اجرا می‌شوند
-  const url = req.nextUrl.clone()
-  url.pathname = targetPath
-
-  const response = NextResponse.rewrite(url, {
+  const res = NextResponse.next({
     request: {
       headers: requestHeaders,
     },
   })
-
-  // ذخیره کوکی هماهنگ با URL
-  response.cookies.set('locale', locale, {
-    path: '/',
-    maxAge: 60 * 60 * 24 * 365,
-    sameSite: 'lax',
-  })
-
-  return response
+  res.cookies.set('locale', 'fa', { path: '/', maxAge: 60 * 60 * 24 * 365, sameSite: 'lax' })
+  return res
 }
 
 export const config = {
-  matcher: ['/((?!api|_next|.*\\..*).*)'],
+  matcher: ['/((?!api|_next|static|.*\\..*).*)'],
 }
