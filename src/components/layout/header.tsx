@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { auth } from '@/auth'
-import { cookies, headers } from 'next/headers'
+import { cookies } from 'next/headers'
 import { L, getCategories } from '@/lib/data'
 import { type Locale } from '@/lib/i18n'
 import MobileMenu from '@/components/mobile-menu'
@@ -10,7 +10,7 @@ import LangSwitch from '@/components/layout/LangSwitch'
 
 export default async function Header({ locale: propLocale }: { locale?: Locale }) {
   const cookieStore = await cookies()
-  const locale: Locale = propLocale || cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
+  const locale: Locale = propLocale || (cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa')
   const session = await auth()
   const categories = await getCategories()
   const isAdmin = session?.user?.role === 'ADMIN'
@@ -32,17 +32,17 @@ export default async function Header({ locale: propLocale }: { locale?: Locale }
     <header className="sticky top-0 z-40 border-b border-line/60 bg-[#070503]/85 backdrop-blur">
       <div className="container-app flex h-16 items-center justify-between gap-4">
 
-        {/* سمت راست در حالت فارسی / سمت چپ در حالت انگلیسی: لوگو */}
+        {/* لوگو */}
         <div className="flex items-center gap-3">
           <MobileMenu links={mobileLinks} admin={!!isAdmin} isLoggedIn={!!session?.user} />
-          <Link href="/" className="font-display text-lg font-extrabold tracking-tight whitespace-nowrap">
+          <Link href={locale === 'en' ? '/en' : '/'} className="font-display text-lg font-extrabold tracking-tight whitespace-nowrap">
             Prompts<span className="text-gold-bright">FA</span>
           </Link>
         </div>
 
         {/* منوی ناوبری دسکتاپ */}
         <nav className="hidden items-center gap-6 text-sm text-ink-muted lg:flex">
-          <Link href="/explore" className="transition-colors hover:text-gold-bright whitespace-nowrap">
+          <Link href={locale === 'en' ? '/en/explore' : '/explore'} className="transition-colors hover:text-gold-bright whitespace-nowrap">
             {L(locale, 'کاوش', 'Explore')}
           </Link>
 
@@ -57,7 +57,7 @@ export default async function Header({ locale: propLocale }: { locale?: Locale }
               <div className="card grid grid-cols-2 gap-3 p-4 bg-[#120f0c] border border-line/80 rounded-2xl shadow-2xl">
                 {categories.map((c) => (
                   <div key={c.id} className="rounded-xl border border-line/40 bg-elevated/40 p-2.5 transition-colors hover:border-gold/40">
-                    <Link href={'/categories/' + c.slug} className="flex items-center gap-2 text-xs font-bold text-ink transition-colors hover:text-gold-bright">
+                    <Link href={(locale === 'en' ? '/en/categories/' : '/categories/') + c.slug} className="flex items-center gap-2 text-xs font-bold text-ink transition-colors hover:text-gold-bright">
                       <span className="text-gold-bright [&_svg]:h-4 [&_svg]:w-4">
                         <CategoryIcon name={c.icon} />
                       </span>
@@ -69,33 +69,31 @@ export default async function Header({ locale: propLocale }: { locale?: Locale }
             </div>
           </div>
 
-          <Link href="/blog" className="transition-colors hover:text-gold-bright whitespace-nowrap">
+          <Link href={locale === 'en' ? '/en/blog' : '/blog'} className="transition-colors hover:text-gold-bright whitespace-nowrap">
             {L(locale, 'وبلاگ', 'Blog')}
           </Link>
 
-          {/* منوی ابزارها با پشتیبانی از زبان */}
+          {/* منوی ابزارها */}
           <ToolsMenu locale={locale} />
         </nav>
 
         {/* دکمه‌های عملیاتی و سوییچر زبان */}
         <div className="flex items-center gap-3">
-          
-          {/* سوییچر زبان بهینه شده */}
           <LangSwitch currentLocale={locale} />
 
           <NotifBell />
 
           {session?.user ? (
-            <Link href="/account" className="btn-secondary hidden md:inline-flex text-xs">
+            <Link href={locale === 'en' ? '/en/account' : '/account'} className="btn-secondary hidden md:inline-flex text-xs">
               👤 {L(locale, 'حساب', 'Account')}
             </Link>
           ) : (
-            <Link href="/login" className="btn-secondary hidden md:inline-flex text-xs">
+            <Link href={locale === 'en' ? '/en/login' : '/login'} className="btn-secondary hidden md:inline-flex text-xs">
               {L(locale, 'ورود', 'Login')}
             </Link>
           )}
 
-          <Link href="/submit" className="btn-primary hidden md:inline-flex text-xs whitespace-nowrap">
+          <Link href={locale === 'en' ? '/en/submit' : '/submit'} className="btn-primary hidden md:inline-flex text-xs whitespace-nowrap">
             ✨ {L(locale, 'ارسال پرامپت', 'Submit')}
           </Link>
 
