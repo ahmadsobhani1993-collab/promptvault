@@ -6,7 +6,7 @@ export async function POST() {
   const token = crypto.randomBytes(16).toString('hex')
   await prisma.loginToken.create({ data: { token } })
 
-  const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'telegramloginbot'
+  const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'promptsfabot'
   return NextResponse.json({
     token,
     url: `https://t.me/${botUsername}?start=${token}`,
