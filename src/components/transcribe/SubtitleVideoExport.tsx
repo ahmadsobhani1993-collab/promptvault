@@ -199,9 +199,21 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       ctx.lineJoin = 'round'
       ctx.lineCap = 'round'
 
-                              const mp4Mod: any = await import(/* webpackIgnore: true */ 'https://esm.sh/mp4-muxer@5.1.4')
-      const MuxerClass = mp4Mod.Muxer
-      const TargetClass = mp4Mod.ArrayBufferTarget
+                                    const mp4Mod: any = await import(/* webpackIgnore: true */ 'https://esm.sh/mp4-muxer@5.1.4')
+      console.log('🔍 [1. mp4Mod loaded]:', mp4Mod)
+      console.log('🔍 [2. VideoEncoder support]:', typeof window !== 'undefined' && 'VideoEncoder' in window)
+      console.log('🔍 [3. AudioEncoder support]:', typeof window !== 'undefined' && 'AudioEncoder' in window)
+
+      const MuxerClass = mp4Mod.Muxer || mp4Mod.default?.Muxer
+      const TargetClass = mp4Mod.ArrayBufferTarget || mp4Mod.default?.ArrayBufferTarget
+
+      console.log('🔍 [4. MuxerClass type]:', typeof MuxerClass, MuxerClass)
+      console.log('🔍 [5. TargetClass type]:', typeof TargetClass, TargetClass)
+
+      if (typeof MuxerClass !== 'function' || typeof TargetClass !== 'function') {
+        throw new Error(`Constructor resolution failed: Muxer=${typeof MuxerClass}, Target=${typeof TargetClass}`)
+      }
+
       const target = new TargetClass()
       const muxer = new MuxerClass({
         target,
@@ -491,6 +503,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
     </div>
   )
 }
+
 
 
 
