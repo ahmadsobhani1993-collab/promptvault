@@ -42,7 +42,14 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
       openGraph: {
         title: item.titleFa,
         description: pageDesc,
-        images: [{ url: item.img.replace('output=webp', 'output=jpg'), width: 900, height: 900, alt: item.titleFa }],
+        images: [
+          {
+            url: ${appUrl}/api/og/prompt?title=&category=&model=,
+            width: 1200,
+            height: 630,
+            alt: item.titleFa,
+          },
+        ],
         locale: 'fa_IR',
         siteName: 'PromptsFA',
         url: `${appUrl}/prompts/${item.slug}`,
@@ -114,6 +121,34 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
 
   return (
     <section className="container-app py-16">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'TechArticle',
+            headline: item.titleFa,
+            description: item.descFa || item.prompt,
+            image: item.img,
+            datePublished: item.createdAt,
+            author: {
+              '@type': 'Organization',
+              name: 'PromptsFA',
+              url: 'https://promptsfa.ir',
+            },
+            publisher: {
+              '@type': 'Organization',
+              name: 'PromptsFA',
+              logo: {
+                '@type': 'ImageObject',
+                url: 'https://promptsfa.ir/favicon.ico',
+              },
+            },
+            inLanguage: locale === 'fa' ? 'fa-IR' : 'en-US',
+            keywords: (item.tagsFa || []).join(', '),
+          }),
+        }}
+      />
       <div className="grid gap-10 lg:grid-cols-[1.2fr_1fr]">
         <div>
           <SafeImg src={item.img} alt={L(locale, item.titleFa, item.titleEn)} className="glow-gold w-full rounded-2xl object-cover" loading="eager" />
@@ -242,6 +277,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
     </section>
   )
 }
+
 
 
 
