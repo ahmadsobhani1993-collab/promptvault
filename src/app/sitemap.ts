@@ -1,25 +1,29 @@
 ﻿import { MetadataRoute } from 'next'
 import { prisma } from '@/lib/db'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 3600
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://promptsfa.ir'
 
   const prompts = await prisma.prompt.findMany({
-    select: { slug: true, updatedAt: true },
-    orderBy: { updatedAt: 'desc' },
+    where: { status: 'PUBLISHED' },
+    select: { slug: true, createdAt: true },
+    orderBy: { createdAt: 'desc' },
     take: 5000,
   }).catch(() => [])
 
   const promptEntries: MetadataRoute.Sitemap = prompts.flatMap((p) => [
     {
       url: `${baseUrl}/prompts/${p.slug}`,
-      lastModified: p.updatedAt,
+      lastModified: p.createdAt,
       changeFrequency: 'weekly',
       priority: 0.8,
     },
     {
       url: `${baseUrl}/en/prompts/${p.slug}`,
-      lastModified: p.updatedAt,
+      lastModified: p.createdAt,
       changeFrequency: 'weekly',
       priority: 0.7,
     },
