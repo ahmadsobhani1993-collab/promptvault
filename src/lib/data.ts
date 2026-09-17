@@ -70,21 +70,42 @@ export async function getPromptBySlug(slug: string, includeUnpublished = false) 
 }
 
 export async function getRelatedPrompts(categoryId: string, excludeSlug: string, tagsFa: string[] = []) {
-  const items = await prisma.prompt.findMany({
-    where: {
-      status: 'PUBLISHED',
-      categoryId: categoryId,
-      NOT: { slug: excludeSlug },
-    },
-    orderBy: [
-      { likes: 'desc' },
-      { createdAt: 'desc' },
-    ],
-    take: 6,
-    include: { category: true, sub: true },
-  })
+  let items: any[] = []
 
-  return items
+  // ۱. اگر تگ دارد، اولویت کامل با اشتراک تگ‌هاست
+  if (tagsFa && tagsFa.length > 0) {
+    items = await prisma.prompt.findMany({
+      where: {
+        status: 'PUBLISHED',
+        tagsFa: { hasSome: tagsFa },
+        NOT: { slug: excludeSlug },
+      },
+      take: 24,
+      include: { category: true, sub: true },
+    })
+  }
+
+  // ۲. اگر با تگ پیدا نشد یا کم بود، از همان دسته‌بندی اضافه کن
+  if (items.length < 6) {
+    const fromCat = await prisma.prompt.findMany({
+      where: {
+        status: 'PUBLISHED',
+        categoryId: categoryId,
+        NOT: {
+          OR: [
+            { slug: excludeSlug },
+            { id: { in: items.map((i) => i.id) } },
+          ],
+        },
+      },
+      take: 24 - items.length,
+      include: { category: true, sub: true },
+    })
+    items = [...items, ...fromCat]
+  }
+
+  // ۳. مرتب‌سازی تصادفی (Shuffle) خروجی
+  return items.sort(() => Math.random() - 0.5).slice(0, 6)
 }
 
 export async function getArticles(opts?: { take?: number }) {
@@ -94,6 +115,7 @@ export async function getArticles(opts?: { take?: number }) {
 export async function getArticleBySlug(slug: string) {
   return prisma.article.findUnique({ where: { slug } })
 }
+
 
 
 
