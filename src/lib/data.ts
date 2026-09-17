@@ -1,4 +1,4 @@
-import type { Locale } from '@/lib/i18n'
+﻿import type { Locale } from '@/lib/i18n'
 import { prisma } from '@/lib/db'
 
 export const L = (locale: Locale, fa: string, en: string) =>
@@ -69,11 +69,21 @@ export async function getPromptBySlug(slug: string, includeUnpublished = false) 
   })
 }
 
-export async function getRelatedPrompts(categoryId: string, excludeSlug: string) {
+export async function getRelatedPrompts(categoryId: string, excludeSlug: string, tagsFa: string[] = []) {
   return prisma.prompt.findMany({
-    where: { categoryId, status: 'PUBLISHED', NOT: { slug: excludeSlug } },
-    orderBy: { createdAt: 'desc' },
-    take: 3,
+    where: {
+      status: 'PUBLISHED',
+      NOT: { slug: excludeSlug },
+      OR: [
+        { categoryId },
+        ...(tagsFa && tagsFa.length > 0 ? [{ tagsFa: { hasSome: tagsFa } }] : []),
+      ],
+    },
+    orderBy: [
+      { likes: 'desc' },
+      { createdAt: 'desc' },
+    ],
+    take: 6,
     include: { category: true, sub: true },
   })
 }
@@ -85,3 +95,5 @@ export async function getArticles(opts?: { take?: number }) {
 export async function getArticleBySlug(slug: string) {
   return prisma.article.findUnique({ where: { slug } })
 }
+
+

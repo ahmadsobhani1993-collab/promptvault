@@ -1,4 +1,4 @@
-import Link from 'next/link'
+﻿import Link from 'next/link'
 import { getImageUrl } from '@/lib/image-utils';
 import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
@@ -70,7 +70,7 @@ export default async function PromptDetailPage({ params }: { params: any }) {
   const item = await getPromptBySlug(slug, isAdmin)
   if (!item) notFound()
 
-  const related = await getRelatedPrompts(item.categoryId, slug)
+  const related = await getRelatedPrompts(item.categoryId, slug, item.tagsFa || [])
 
   const userId = session?.user?.id
   let liked = false
@@ -216,3 +216,4 @@ export default async function PromptDetailPage({ params }: { params: any }) {
     </section>
   )
 }
+
