@@ -26,8 +26,17 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
     if (!item) return {}
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://promptsfa.ir'
-    const pageTitle = `پرامپت ${item.titleFa} برای هوش مصنوعی | PromptsFA`
-    const pageDesc = (item.descFa ?? item.prompt).slice(0, 155)
+    const pageTitle = `پرامپت ${item.titleFa} | PromptsFA`
+    const pageDesc = (item.descFa ?? item.prompt ?? '').slice(0, 150)
+
+    let ogImageUrl = `${appUrl}/placeholder.jpg`
+    if (item.img && !item.img.includes('placeholder')) {
+      if (item.img.includes('res.cloudinary.com') && item.img.includes('/upload/')) {
+        ogImageUrl = item.img.replace('/upload/', '/upload/w_1200,h_630,c_fill,q_auto:good,f_jpg/')
+      } else {
+        ogImageUrl = item.img
+      }
+    }
 
     return {
       title: pageTitle,
@@ -44,7 +53,7 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
         description: pageDesc,
         images: [
           {
-            url: `${appUrl}/api/og/prompt?title=${encodeURIComponent(item.titleFa)}&category=${encodeURIComponent(item.category?.nameFa || "AI")}&model=${encodeURIComponent(item.model || "ChatGPT")}`,
+            url: ogImageUrl,
             width: 1200,
             height: 630,
             alt: item.titleFa,
@@ -59,7 +68,7 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
         card: 'summary_large_image',
         title: pageTitle,
         description: pageDesc,
-        images: [item.img.replace('output=webp', 'output=jpg')],
+        images: [ogImageUrl],
       },
     }
   } catch {
@@ -277,6 +286,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
     </section>
   )
 }
+
 
 
 
