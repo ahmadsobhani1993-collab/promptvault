@@ -199,15 +199,9 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       ctx.lineJoin = 'round'
       ctx.lineCap = 'round'
 
-                        const mp4Mod: any = await import('mp4-muxer')
-      const MuxerClass = typeof mp4Mod.Muxer === 'function' 
-        ? mp4Mod.Muxer 
-        : (typeof mp4Mod.default?.Muxer === 'function' ? mp4Mod.default.Muxer : mp4Mod.default)
-
-      const TargetClass = typeof mp4Mod.ArrayBufferTarget === 'function'
-        ? mp4Mod.ArrayBufferTarget
-        : (typeof mp4Mod.default?.ArrayBufferTarget === 'function' ? mp4Mod.default.ArrayBufferTarget : mp4Mod.ArrayBufferTarget)
-
+                              const mp4Mod: any = await import(/* webpackIgnore: true */ 'https://esm.sh/mp4-muxer@5.1.4')
+      const MuxerClass = mp4Mod.Muxer
+      const TargetClass = mp4Mod.ArrayBufferTarget
       const target = new TargetClass()
       const muxer = new MuxerClass({
         target,
@@ -497,6 +491,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
     </div>
   )
 }
+
 
 
 
