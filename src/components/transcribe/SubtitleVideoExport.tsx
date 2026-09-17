@@ -221,7 +221,11 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         fastStart: 'in-memory',
       })
 
-      const calculatedBitrate = Math.round(clamp((W * H * 2.2), 1_500_000, 4_500_000))
+            const calculatedBitrate = Math.round(clamp((W * H * 2.2), 1_500_000, 4_500_000))
+      const VideoFrameClass = typeof VideoFrame !== 'undefined' ? VideoFrame : (window as any).VideoFrame
+      if (typeof VideoFrameClass !== 'function') {
+        throw new Error('WebCodecs VideoFrame در مرورگر پشتیبانی نمی‌شود.')
+      }
 
       const encoder = new (window as any).VideoEncoder({
         output: (chunk: any, meta: any) => muxer.addVideoChunk(chunk, meta),
@@ -356,7 +360,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
 
         renderSubtitleLayer(currentTime)
 
-        const frame = new (window as any).VideoFrame(canvas, {
+        const frame = new VideoFrameClass(canvas, {
           timestamp: Math.round(frameIndex * frameDurationMicroseconds),
         })
 
@@ -503,6 +507,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
     </div>
   )
 }
+
 
 
 
