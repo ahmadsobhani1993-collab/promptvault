@@ -1,4 +1,4 @@
-import HeroCanvas from '@/components/hero-canvas'
+﻿import HeroCanvas from '@/components/hero-canvas'
 import { cookies } from 'next/headers'
 import { dictionaries, type Locale } from '@/lib/i18n'
 import { getCategories, getPrompts, getArticles, L } from '@/lib/data'
@@ -21,16 +21,55 @@ const chips = [
 ]
 
 export const metadata = {
-  title: 'PromptsFA | پلتفرم پرامپت‌های هوش مصنوعی',
-  description: 'هزاران پرامپت حرفه‌ای هوش مصنوعی برای تصویر، ویدیو، متن، کد و موسیقی + آموزش‌های روز هوش مصنوعی',
+  title: 'پرامپت یار | مرجع دانلود و کپی پرامپت هوش مصنوعی فارسی و انگلیسی',
+  description: 'هزاران پرامپت حرفه‌ای و تست‌شده برای میدجورنی (Midjourney)، چت جی پی تی (ChatGPT)، ساخت عکس با هوش مصنوعی، پرامپت ویدیوساز و تولید محتوا به زبان فارسی.',
+  keywords: [
+    'پرامپت هوش مصنوعی',
+    'پرامپت فارسی',
+    'پرامپت میدجورنی',
+    'پرامپت midjourney',
+    'پرامپت عکس هوش مصنوعی',
+    'پرامپت chatgpt',
+    'دستور هوش مصنوعی',
+    'پرامپت نویسی',
+    'هوش مصنوعی فارسی',
+    'استودیو زیرنویس هوش مصنوعی',
+    'پرامپت فتورئالیستیک',
+    'PromptsFA',
+    'Prompt AI'
+  ],
+  alternates: {
+    canonical: 'https://promptsfa.ir',
+    languages: {
+      'fa-IR': 'https://promptsfa.ir',
+      'en-US': 'https://promptsfa.ir/en',
+    },
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
   openGraph: {
-    title: 'PromptsFA | پلتفرم پرامپت‌های هوش مصنوعی',
-    description: 'کشف، کپی و اشتراک پرامپت‌های حرفه‌ای AI + آموزش روز',
+    title: 'پرامپت یار | مرجع تخصصی پرامپت‌های هوش مصنوعی',
+    description: 'کشف، کپی تمیز و شخصی‌سازی هزاران پرامپت واقعی هوش مصنوعی برای تولید عکس، ویدیو و متن.',
     siteName: 'PromptsFA',
     locale: 'fa_IR',
-    images: [{ url: (process.env.NEXT_PUBLIC_APP_URL ?? 'https://promptsfa.ir') + '/icon.svg' }],
+    url: 'https://promptsfa.ir',
+    images: [{ url: 'https://promptsfa.ir/icon.svg', width: 800, height: 800, alt: 'PromptsFA' }],
+    type: 'website',
   },
-  twitter: { card: 'summary_large_image', title: 'PromptsFA', description: 'پلتفرم پرامپت‌های هوش مصنوعی' },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'پرامپت یار | مرجع پرامپت هوش مصنوعی',
+    description: 'کامل‌ترین کالکشن پرامپت‌های میدجورنی و چت‌جی‌پی‌تی به همراه ویرایشگر هوشمند.',
+  },
 }
 
 export const dynamic = 'force-dynamic'
@@ -186,3 +225,4 @@ export default async function HomePage() {
     </>
   )
 }
+

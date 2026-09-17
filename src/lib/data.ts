@@ -70,14 +70,12 @@ export async function getPromptBySlug(slug: string, includeUnpublished = false) 
 }
 
 export async function getRelatedPrompts(categoryId: string, excludeSlug: string, tagsFa: string[] = []) {
-  return prisma.prompt.findMany({
+  // اولویت ۱: جستجوی اختصاصی و مستقیم در همان دسته‌بندی
+  let items = await prisma.prompt.findMany({
     where: {
       status: 'PUBLISHED',
+      categoryId: categoryId,
       NOT: { slug: excludeSlug },
-      OR: [
-        { categoryId },
-        ...(tagsFa && tagsFa.length > 0 ? [{ tagsFa: { hasSome: tagsFa } }] : []),
-      ],
     },
     orderBy: [
       { likes: 'desc' },
@@ -86,6 +84,28 @@ export async function getRelatedPrompts(categoryId: string, excludeSlug: string,
     take: 6,
     include: { category: true, sub: true },
   })
+
+  // اگر هنوز کمتر از ۳ تا بود، از تگ‌های مشابه اضافه کن
+  if (items.length < 3 && tagsFa && tagsFa.length > 0) {
+    const fallback = await prisma.prompt.findMany({
+      where: {
+        status: 'PUBLISHED',
+        tagsFa: { hasSome: tagsFa },
+        NOT: {
+          OR: [
+            { slug: excludeSlug },
+            { id: { in: items.map(i => i.id) } },
+          ]
+        },
+      },
+      take: 6 - items.length,
+      include: { category: true, sub: true },
+    })
+    items = [...items, ...fallback]
+  }
+
+  return items
+}
 }
 
 export async function getArticles(opts?: { take?: number }) {
@@ -95,5 +115,6 @@ export async function getArticles(opts?: { take?: number }) {
 export async function getArticleBySlug(slug: string) {
   return prisma.article.findUnique({ where: { slug } })
 }
+
 
 

@@ -1,4 +1,4 @@
-/** @type {import('next').NextConfig} */
+﻿/** @type {import('next').NextConfig} */
 const securityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'X-Frame-Options', value: 'DENY' },
@@ -22,6 +22,18 @@ const nextConfig = {
   },
   typescript: {
     ignoreBuildErrors: true,
+  },
+  async rewrites() {
+    return [
+      {
+        source: '/en/prompts/:slug',
+        destination: '/prompts/:slug',
+      },
+      {
+        source: '/en/:path*',
+        destination: '/:path*',
+      },
+    ]
   },
   async headers() {
     return [
