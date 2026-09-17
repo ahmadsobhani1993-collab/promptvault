@@ -1,7 +1,7 @@
 ﻿'use client'
 
 import { useEffect, useRef, useState } from 'react'
-let FFmpeg: any
+// dynamic ffmpeg loader
 import {
   DEFAULT_STYLE,
   getAnimationState,
@@ -28,7 +28,9 @@ let cachedFFmpeg: FFmpeg | null = null
 async function getOrInitFFmpeg(): Promise<FFmpeg> {
   if (cachedFFmpeg && cachedFFmpeg.loaded) return cachedFFmpeg
 
-  const ffmpeg = new FFmpeg()
+    const ffmpegMod: any = await import(/* webpackIgnore: true */ 'https://esm.sh/@ffmpeg/ffmpeg@0.12.10')
+  const FFmpegClass = ffmpegMod.FFmpeg || ffmpegMod.default?.FFmpeg || ffmpegMod.default
+  const ffmpeg = new FFmpegClass()
   const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
   const [coreResponse, wasmResponse] = await Promise.all([
     fetch(`${baseURL}/ffmpeg-core.js`),
@@ -507,6 +509,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
     </div>
   )
 }
+
 
 
 
