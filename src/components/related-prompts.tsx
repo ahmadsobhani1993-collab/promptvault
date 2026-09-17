@@ -27,7 +27,18 @@ export default async function RelatedPrompts({
         ...(categoryId ? [{ categoryId }] : []),
       ],
     },
-    include: { category: true },
+    select: {
+      id: true,
+      slug: true,
+      titleFa: true,
+      titleEn: true,
+      img: true,
+      model: true,
+      type: true,
+      views: true,
+      likes: true,
+      category: { select: { nameFa: true, nameEn: true, slug: true } },
+    },
     orderBy: [
       { likes: 'desc' },
       { createdAt: 'desc' },
@@ -105,3 +116,4 @@ export default async function RelatedPrompts({
     </section>
   )
 }
+
