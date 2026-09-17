@@ -199,9 +199,11 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       ctx.lineJoin = 'round'
       ctx.lineCap = 'round'
 
-            const { Muxer: MuxClass, ArrayBufferTarget: TargetClass } = await getMuxer()
+                  const mp4Mod = await import('mp4-muxer')
+      const MuxerClass = (mp4Mod as any).Muxer || (mp4Mod as any).default?.Muxer || mp4Mod
+      const TargetClass = (mp4Mod as any).ArrayBufferTarget || (mp4Mod as any).default?.ArrayBufferTarget
       const target = new TargetClass()
-      const muxer = new MuxClass({
+      const muxer = new MuxerClass({
         target,
         video: { codec: 'avc', width: W, height: H },
         fastStart: 'in-memory',
@@ -489,6 +491,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
     </div>
   )
 }
+
 
 
 

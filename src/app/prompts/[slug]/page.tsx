@@ -44,12 +44,17 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
 
 export const dynamic = 'force-dynamic'
 
-export default async function PromptDetailPage({ params }: { params: any }) {
+export default async function PromptDetailPage({ params, forcedLocale }: { params: any, forcedLocale?: Locale }) {
   const resolvedParams = params ? (params instanceof Promise ? await params : params) : null
   const slug = resolvedParams && typeof resolvedParams === 'object' ? (resolvedParams as any).slug : undefined
 
   const cookieStore = await cookies()
-  const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
+    const { headers } = await import('next/headers')
+  const reqHeaders = await headers()
+  const referer = reqHeaders.get('referer') || ''
+  const currentPath = reqHeaders.get('x-pathname') || reqHeaders.get('x-invoke-path') || ''
+  const isEnRoute = currentPath.startsWith('/en') || referer.includes('/en/')
+  const locale: Locale = forcedLocale || (isEnRoute || cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa')
 
   if (!slug || typeof slug !== 'string') {
     return (
@@ -153,7 +158,7 @@ export default async function PromptDetailPage({ params }: { params: any }) {
               copyLabel={L(locale, 'کپی پرامپت', 'Copy Prompt')}
               copiedLabel={L(locale, 'کپی شد!', 'Copied!')}
               hint={L(locale, 'پرامپت برای محافظت در برابر اسکرپینگ، فقط بعد از کلیک نمایش داده می‌شود.', 'The prompt is revealed on click to protect against scraping.') }
-            />
+             locale={locale} />
           ) : (
             <div className="mt-8 rounded-2xl border border-dashed border-gold/40 bg-gold/5 p-6 text-center">
               <p className="text-sm text-ink-muted">
@@ -216,4 +221,8 @@ export default async function PromptDetailPage({ params }: { params: any }) {
     </section>
   )
 }
+
+
+
+
 
