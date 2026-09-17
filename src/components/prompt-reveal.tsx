@@ -169,7 +169,7 @@ export default function PromptReveal({
 }) {
   const [text, setText] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [viewMode, setViewMode] = useState<'anatomy' | 'raw'>('anatomy')
+  const [viewMode, setViewMode] = useState<'anatomy' | 'raw'>('raw')
   const [editableSections, setEditableSections] = useState<Section[]>([])
 
   const isEn = locale === 'en'
@@ -340,5 +340,6 @@ export default function PromptReveal({
     </div>
   )
 }
+
 
 
