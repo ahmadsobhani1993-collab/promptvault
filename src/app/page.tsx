@@ -23,20 +23,22 @@ const chips = [
 export const metadata = {
   title: 'پرامپت یار | مرجع دانلود و کپی پرامپت هوش مصنوعی فارسی و انگلیسی',
   description: 'هزاران پرامپت حرفه‌ای و تست‌شده برای میدجورنی (Midjourney)، چت جی پی تی (ChatGPT)، ساخت عکس با هوش مصنوعی، پرامپت ویدیوساز و تولید محتوا به زبان فارسی.',
-  keywords: [
+    keywords: [
     'پرامپت هوش مصنوعی',
     'پرامپت فارسی',
     'پرامپت میدجورنی',
-    'پرامپت midjourney',
-    'پرامپت عکس هوش مصنوعی',
-    'پرامپت chatgpt',
-    'دستور هوش مصنوعی',
-    'پرامپت نویسی',
+    'پرامپت عکس',
+    'پرامپت چت جی پی تی',
     'هوش مصنوعی فارسی',
     'استودیو زیرنویس هوش مصنوعی',
-    'پرامپت فتورئالیستیک',
+    'AI prompts',
+    'Midjourney prompts',
+    'ChatGPT prompts library',
+    'AI image prompt generator',
+    'Stable Diffusion prompts',
     'PromptsFA',
-    'Prompt AI'
+    'Realistic portrait prompt',
+    'AI video captions'
   ],
   alternates: {
     canonical: 'https://promptsfa.ir',
@@ -225,4 +227,5 @@ export default async function HomePage() {
     </>
   )
 }
+
 

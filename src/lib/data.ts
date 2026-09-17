@@ -70,7 +70,7 @@ export async function getPromptBySlug(slug: string, includeUnpublished = false) 
 }
 
 export async function getRelatedPrompts(categoryId: string, excludeSlug: string, tagsFa: string[] = []) {
-  let items = await prisma.prompt.findMany({
+  const items = await prisma.prompt.findMany({
     where: {
       status: 'PUBLISHED',
       categoryId: categoryId,
@@ -84,24 +84,6 @@ export async function getRelatedPrompts(categoryId: string, excludeSlug: string,
     include: { category: true, sub: true },
   })
 
-  if (items.length < 3 && tagsFa && tagsFa.length > 0) {
-    const fallback = await prisma.prompt.findMany({
-      where: {
-        status: 'PUBLISHED',
-        tagsFa: { hasSome: tagsFa },
-        NOT: {
-          OR: [
-            { slug: excludeSlug },
-            { id: { in: items.map(i => i.id) } },
-          ]
-        },
-      },
-      take: 6 - items.length,
-      include: { category: true, sub: true },
-    })
-    items = [...items, ...fallback]
-  }
-
   return items
 }
 
@@ -112,6 +94,7 @@ export async function getArticles(opts?: { take?: number }) {
 export async function getArticleBySlug(slug: string) {
   return prisma.article.findUnique({ where: { slug } })
 }
+
 
 
 
