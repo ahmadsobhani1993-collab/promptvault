@@ -1,3 +1,5 @@
+﻿import { Vazirmatn } from 'next/font/google'
+const vazir = Vazirmatn({ subsets: ['arabic', 'latin'], display: 'swap', variable: '--font-vazir' })
 import type { Metadata } from 'next'
 import { cookies, headers } from 'next/headers'
 import { type Locale } from '@/lib/i18n'
@@ -56,3 +58,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     </html>
   )
 }
+
+
+
