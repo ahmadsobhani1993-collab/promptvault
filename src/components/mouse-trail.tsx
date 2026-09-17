@@ -43,8 +43,8 @@ export default function MouseTrail() {
     }
     window.addEventListener('resize', handleResize)
 
-    // ذرات ثابت پس‌زمینه
-    const particleCount = Math.min(Math.floor((width * height) / 15000), 65)
+    // ذرات شناور پس‌زمینه
+    const particleCount = Math.min(Math.floor((width * height) / 15000), 60)
     const particles: Particle[] = Array.from({ length: particleCount }, () => ({
       x: Math.random() * width,
       y: Math.random() * height,
@@ -63,9 +63,8 @@ export default function MouseTrail() {
       mouse.y = e.clientY
       mouse.active = true
 
-      // درون‌یابی برای پر کردن پیوسته مسیر ماوس (دنباله یکدست و ممتد)
       const dist = Math.hypot(mouse.x - mouse.prevX, mouse.y - mouse.prevY)
-      const steps = Math.min(Math.max(Math.floor(dist / 3), 3), 12)
+      const steps = Math.min(Math.max(Math.floor(dist / 4), 2), 6)
 
       for (let i = 0; i < steps; i++) {
         const ratio = i / steps
@@ -73,14 +72,14 @@ export default function MouseTrail() {
         const py = mouse.prevY + (mouse.y - mouse.prevY) * ratio
 
         sparks.push({
-          x: px + (Math.random() - 0.5) * 6,
-          y: py + (Math.random() - 0.5) * 6,
-          vx: (Math.random() - 0.5) * 0.8,
-          vy: Math.random() * 0.8 - 0.1,
-          size: Math.random() * 3 + 2,
+          x: px + (Math.random() - 0.5) * 5,
+          y: py + (Math.random() - 0.5) * 5,
+          vx: (Math.random() - 0.5) * 0.7,
+          vy: Math.random() * 0.6 - 0.1,
+          size: Math.random() * 2.5 + 1.8,
           life: 0,
-          maxLife: Math.random() * 45 + 55, // افزایش ماندگاری ذرات تا دنباله طولانی بماند
-          color: Math.random() > 0.25 ? '245, 185, 66' : '255, 230, 160',
+          maxLife: Math.random() * 20 + 32, // مقدار متعادل و محوشدن نرم
+          color: Math.random() > 0.25 ? '245, 185, 66' : '255, 225, 150',
         })
       }
     }
@@ -92,18 +91,18 @@ export default function MouseTrail() {
     }
 
     const handleClick = (e: MouseEvent) => {
-      for (let i = 0; i < 30; i++) {
+      for (let i = 0; i < 22; i++) {
         const angle = Math.random() * Math.PI * 2
-        const speed = Math.random() * 5 + 1.5
+        const speed = Math.random() * 4 + 1.5
         sparks.push({
           x: e.clientX,
           y: e.clientY,
           vx: Math.cos(angle) * speed,
           vy: Math.sin(angle) * speed,
-          size: Math.random() * 3.5 + 1.5,
+          size: Math.random() * 3 + 1.5,
           life: 0,
-          maxLife: Math.random() * 40 + 35,
-          color: '255, 210, 90',
+          maxLife: Math.random() * 25 + 20,
+          color: '255, 205, 80',
         })
       }
     }
@@ -115,7 +114,7 @@ export default function MouseTrail() {
     const render = () => {
       ctx.clearRect(0, 0, width, height)
 
-      // رسم و اتصال خطوط سیناپسی
+      // ذرات شبکه و اتصالات
       for (let i = 0; i < particles.length; i++) {
         const p = particles[i]
         p.x += p.vx
@@ -130,9 +129,9 @@ export default function MouseTrail() {
           const dx = mouse.x - p.x
           const dy = mouse.y - p.y
           const dist = Math.hypot(dx, dy)
-          if (dist < 140) {
+          if (dist < 130) {
             ctx.beginPath()
-            ctx.strokeStyle = `rgba(245, 185, 66, ${0.35 * (1 - dist / 140)})`
+            ctx.strokeStyle = `rgba(245, 185, 66, ${0.3 * (1 - dist / 130)})`
             ctx.lineWidth = 0.8
             ctx.moveTo(p.x, p.y)
             ctx.lineTo(mouse.x, mouse.y)
@@ -145,9 +144,9 @@ export default function MouseTrail() {
           const dx = p.x - p2.x
           const dy = p.y - p2.y
           const dist = Math.hypot(dx, dy)
-          if (dist < 90) {
+          if (dist < 85) {
             ctx.beginPath()
-            ctx.strokeStyle = `rgba(230, 175, 45, ${0.12 * (1 - dist / 90)})`
+            ctx.strokeStyle = `rgba(230, 175, 45, ${0.1 * (1 - dist / 85)})`
             ctx.lineWidth = 0.5
             ctx.moveTo(p.x, p.y)
             ctx.lineTo(p2.x, p2.y)
@@ -161,7 +160,7 @@ export default function MouseTrail() {
         ctx.fill()
       }
 
-      // رسم دنباله طولانی با افکت گلو (Glow)
+      // رسم جرقه‌های دنباله
       for (let i = sparks.length - 1; i >= 0; i--) {
         const s = sparks[i]
         s.x += s.vx
@@ -169,14 +168,14 @@ export default function MouseTrail() {
         s.life++
 
         const progress = s.life / s.maxLife
-        const alpha = Math.max(0, 1 - Math.pow(progress, 1.5))
+        const alpha = Math.max(0, 1 - progress)
 
         ctx.save()
         ctx.beginPath()
-        ctx.arc(s.x, s.y, s.size * (1 - progress * 0.3), 0, Math.PI * 2)
+        ctx.arc(s.x, s.y, s.size * (1 - progress * 0.35), 0, Math.PI * 2)
         ctx.fillStyle = `rgba(${s.color}, ${alpha})`
-        ctx.shadowColor = `rgba(${s.color}, 0.9)`
-        ctx.shadowBlur = 12
+        ctx.shadowColor = `rgba(${s.color}, 0.8)`
+        ctx.shadowBlur = 10
         ctx.fill()
         ctx.restore()
 
@@ -203,7 +202,7 @@ export default function MouseTrail() {
     <canvas
       ref={canvasRef}
       aria-hidden="true"
-      className="pointer-events-none fixed inset-0 z-10 h-full w-full opacity-90"
+      className="pointer-events-none fixed inset-0 z-10 h-full w-full opacity-85"
     />
   )
 }
