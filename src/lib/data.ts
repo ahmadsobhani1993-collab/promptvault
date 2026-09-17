@@ -72,7 +72,25 @@ export async function getPromptBySlug(slug: string, includeUnpublished = false) 
 export async function getRelatedPrompts(categoryId: string, excludeSlug: string, tagsFa: string[] = []) {
   let items: any[] = []
 
-  // ۱. اگر تگ دارد، اولویت کامل با اشتراک تگ‌هاست
+  const cardSelect = {
+    id: true,
+    slug: true,
+    titleFa: true,
+    titleEn: true,
+    img: true,
+    model: true,
+    type: true,
+    tagsFa: true,
+    tagsEn: true,
+    views: true,
+    likes: true,
+    saves: true,
+    stars: true,
+    category: { select: { nameFa: true, nameEn: true, slug: true } },
+    sub: { select: { fa: true, en: true, slug: true } },
+  }
+
+  // ۱. اگر تگ دارد، اولویت با اشتراک تگ‌هاست
   if (tagsFa && tagsFa.length > 0) {
     items = await prisma.prompt.findMany({
       where: {
@@ -80,8 +98,8 @@ export async function getRelatedPrompts(categoryId: string, excludeSlug: string,
         tagsFa: { hasSome: tagsFa },
         NOT: { slug: excludeSlug },
       },
-      take: 24,
-      include: { category: true, sub: true },
+      take: 12,
+      select: cardSelect,
     })
   }
 
@@ -98,8 +116,8 @@ export async function getRelatedPrompts(categoryId: string, excludeSlug: string,
           ],
         },
       },
-      take: 24 - items.length,
-      include: { category: true, sub: true },
+      take: 12 - items.length,
+      select: cardSelect,
     })
     items = [...items, ...fromCat]
   }
@@ -115,6 +133,7 @@ export async function getArticles(opts?: { take?: number }) {
 export async function getArticleBySlug(slug: string) {
   return prisma.article.findUnique({ where: { slug } })
 }
+
 
 
 

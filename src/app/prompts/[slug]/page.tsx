@@ -1,4 +1,4 @@
-﻿export const revalidate = 300
+﻿export const revalidate = 3600
 import Link from 'next/link'
 import { getImageUrl } from '@/lib/image-utils';
 import { cookies } from 'next/headers'
@@ -76,8 +76,6 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
   }
 }
 
-export const dynamic = 'force-dynamic'
-
 export default async function PromptDetailPage({ params, forcedLocale }: { params: any, forcedLocale?: Locale }) {
   const resolvedParams = params ? (params instanceof Promise ? await params : params) : null
   const slug = resolvedParams && typeof resolvedParams === 'object' ? (resolvedParams as any).slug : undefined
@@ -104,7 +102,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
   const isAdmin = session?.user?.role === 'ADMIN'
 
   // شمارش بازدید
-  prisma.prompt.updateMany({ where: { slug }, data: { views: { increment: 1 } } }).catch(() => {})
+  // views counter removed from SSR to preserve edge cache
 
   const item = await getPromptBySlug(slug, isAdmin)
   if (!item) notFound()
@@ -286,6 +284,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
     </section>
   )
 }
+
 
 
 
