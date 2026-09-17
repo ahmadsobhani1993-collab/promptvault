@@ -23,19 +23,36 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
     if (!slug || typeof slug !== 'string') return {}
     const item = await getPromptBySlug(slug, true)
     if (!item) return {}
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://promptsfa.ir'
+    const pageTitle = `پرامپت ${item.titleFa} برای هوش مصنوعی | PromptsFA`
+    const pageDesc = (item.descFa ?? item.prompt).slice(0, 155)
+
     return {
-      title: item.titleFa,
-      description: (item.descFa ?? item.prompt).slice(0, 150),
+      title: pageTitle,
+      description: pageDesc,
+      alternates: {
+        canonical: `${appUrl}/prompts/${item.slug}`,
+        languages: {
+          'fa-IR': `${appUrl}/prompts/${item.slug}`,
+          'en-US': `${appUrl}/en/prompts/${item.slug}`,
+        },
+      },
       openGraph: {
-        title: '✨ ' + item.titleFa,
-        description: (item.descFa ?? item.titleFa) + ' — دیدن و کپی پرامپت در PromptsFA',
-        images: [{ url: item.img.replace('output=webp', 'output=jpg'), width: 900, height: 900 }],
+        title: item.titleFa,
+        description: pageDesc,
+        images: [{ url: item.img.replace('output=webp', 'output=jpg'), width: 900, height: 900, alt: item.titleFa }],
         locale: 'fa_IR',
         siteName: 'PromptsFA',
-        url: (process.env.NEXT_PUBLIC_APP_URL ?? '') + '/prompts/' + item.slug,
+        url: `${appUrl}/prompts/${item.slug}`,
         type: 'article',
       },
-      twitter: { card: 'summary_large_image', title: item.titleFa, description: item.descFa ?? '' },
+      twitter: {
+        card: 'summary_large_image',
+        title: pageTitle,
+        description: pageDesc,
+        images: [item.img.replace('output=webp', 'output=jpg')],
+      },
     }
   } catch {
     return {}
@@ -221,6 +238,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
     </section>
   )
 }
+
 
 
 

@@ -1,29 +1,37 @@
-import { type MetadataRoute } from 'next'
+﻿import { MetadataRoute } from 'next'
 import { prisma } from '@/lib/db'
 
-export const dynamic = 'force-dynamic'
-
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const base = 'https://promptsfa.ir'
-  const now = new Date()
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://promptsfa.ir'
 
-  const [prompts, articles, cats] = await Promise.all([
-    prisma.prompt.findMany({ where: { status: 'PUBLISHED' }, select: { slug: true, createdAt: true }, orderBy: { createdAt: 'desc' }, take: 2000 }),
-    prisma.article.findMany({ select: { slug: true, createdAt: true } }),
-    prisma.category.findMany({ select: { slug: true } }),
+  const prompts = await prisma.prompt.findMany({
+    select: { slug: true, updatedAt: true },
+    orderBy: { updatedAt: 'desc' },
+    take: 5000,
+  }).catch(() => [])
+
+  const promptEntries: MetadataRoute.Sitemap = prompts.flatMap((p) => [
+    {
+      url: `${baseUrl}/prompts/${p.slug}`,
+      lastModified: p.updatedAt,
+      changeFrequency: 'weekly',
+      priority: 0.8,
+    },
+    {
+      url: `${baseUrl}/en/prompts/${p.slug}`,
+      lastModified: p.updatedAt,
+      changeFrequency: 'weekly',
+      priority: 0.7,
+    },
   ])
 
-  const statics: MetadataRoute.Sitemap = [
-    { url: base, changeFrequency: 'daily', priority: 1 },
-    { url: base + '/explore', changeFrequency: 'daily', priority: 0.9 },
-    { url: base + '/blog', changeFrequency: 'daily', priority: 0.8 },
-    { url: base + '/categories', changeFrequency: 'weekly', priority: 0.7 },
+  const staticRoutes: MetadataRoute.Sitemap = [
+    { url: `${baseUrl}`, lastModified: new Date(), changeFrequency: 'daily', priority: 1.0 },
+    { url: `${baseUrl}/en`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.9 },
+    { url: `${baseUrl}/explore`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.8 },
+    { url: `${baseUrl}/en/explore`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.8 },
+    { url: `${baseUrl}/subtitle`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.7 },
   ]
 
-  return [
-    ...statics,
-    ...cats.map((c) => ({ url: base + '/categories/' + c.slug, changeFrequency: 'weekly' as const, priority: 0.7 })),
-    ...prompts.map((p) => ({ url: base + '/prompts/' + p.slug, lastModified: p.createdAt, changeFrequency: 'weekly' as const, priority: 0.6 })),
-    ...articles.map((a) => ({ url: base + '/blog/' + a.slug, lastModified: a.createdAt, changeFrequency: 'monthly' as const, priority: 0.7 })),
-  ]
+  return [...staticRoutes, ...promptEntries]
 }
