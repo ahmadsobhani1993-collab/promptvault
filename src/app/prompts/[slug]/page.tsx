@@ -44,7 +44,7 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
         description: pageDesc,
         images: [
           {
-            url: ${appUrl}/api/og/prompt?title=&category=&model=,
+            url: `${appUrl}/api/og/prompt?title=${encodeURIComponent(item.titleFa)}&category=${encodeURIComponent(item.category?.nameFa || "AI")}&model=${encodeURIComponent(item.model || "ChatGPT")}`,
             width: 1200,
             height: 630,
             alt: item.titleFa,
@@ -277,6 +277,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
     </section>
   )
 }
+
 
 
 
