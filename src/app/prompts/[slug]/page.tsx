@@ -26,7 +26,10 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
     if (!item) return {}
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://promptsfa.ir'
-    const pageTitle = `پرامپت ${item.titleFa} | PromptsFA`
+    const cleanTitle = (item.titleFa || '').trim().startsWith('پرامپت')
+      ? (item.titleFa || '').trim()
+      : پرامپت 
+    const pageTitle = ${cleanTitle} | PromptsFA${item.titleFa} | PromptsFA`
     const pageDesc = (item.descFa ?? item.prompt ?? '').slice(0, 150)
 
     let ogImageUrl = `${appUrl}/placeholder.jpg`
@@ -49,7 +52,7 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
         },
       },
       openGraph: {
-        title: item.titleFa,
+        title: cleanTitle,
         description: pageDesc,
         images: [
           {

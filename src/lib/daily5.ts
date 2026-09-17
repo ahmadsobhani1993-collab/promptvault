@@ -122,11 +122,29 @@ export async function sendDueDaily5() {
     if (d.target === 'daily5tg') {
       const out = process.env.TELEGRAM_OUTPUT
       if (out) {
-        const tagLine = (p.tagsFa ?? []).map((t: string) => '#' + t.replace(/\s+/g, '_')).join(' ')
-        const footer = tagLine + '\n\nPROMPTSFA.IR\n@Prompts_fa'
+        const cleanTitle = p.titleFa.trim().startsWith('پرامپت')
+          ? p.titleFa.trim()
+          : پرامپت 
+        const tagLine = (p.tagsFa ?? []).slice(0, 5).map((t: string) => '#' + t.replace(/\s+/g, '_')).join(' ')
+        const promptUrl = https://promptsfa.ir/prompts/
+        const footer = ${tagLine}\n\n🔗 مشاهده و کپی کامل:\n\n\n@Prompts_fa
+
+        const overheadLen = (✨  ✨\n\n\\
+\n\\
+\n + footer).length
+        const maxPromptLen = Math.max(100, 980 - overheadLen)
+
+        let displayPrompt = p.prompt
+        if (displayPrompt.length > maxPromptLen) {
+          displayPrompt = displayPrompt.slice(0, maxPromptLen).trim() + '...'
+        }
+
+        const singleCaption = ✨ ** ✨\n\n\${displayPrompt}\
+\n
         const buf = await photoBuffer(p.id, p.img)
-        if (buf) await tgPhotoBytes(out, buf, '✨ ' + p.titleFa + ' ✨').catch(() => {})
-        await tgSendCode(out, p.prompt, '\n\n' + footer).catch(() => {})
+        if (buf) {
+          await tgPhotoBytes(out, buf, singleCaption).catch(() => {})
+        }
       }
     } else {
       const n = parseInt(await getSet('ig_counter', '20'), 10)
