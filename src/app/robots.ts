@@ -1,10 +1,15 @@
-import type { MetadataRoute } from 'next'
-
-const BASE = process.env.NEXT_PUBLIC_APP_URL || 'https://promptvault-ahmad-5c7c.vercel.app'
+﻿import { MetadataRoute } from 'next'
 
 export default function robots(): MetadataRoute.Robots {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://promptsfa.ir'
   return {
-    rules: [{ userAgent: '*', allow: '/' }],
-    sitemap: BASE + '/sitemap.xml',
+    rules: [
+      {
+        userAgent: '*',
+        allow: '/',
+        disallow: ['/api/', '/admin/', '/_next/'],
+      },
+    ],
+    sitemap: `${baseUrl}/sitemap.xml`,
   }
 }

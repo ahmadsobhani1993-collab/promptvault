@@ -232,12 +232,16 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
             inLanguage: ['fa', 'en'],
             creator: { '@type': 'Person', name: item.user?.name ?? 'PromptsFA' },
             datePublished: item.createdAt,
+            url: `${process.env.NEXT_PUBLIC_APP_URL || "https://promptsfa.ir"}/prompts/${item.slug}`,
+            headline: item.titleFa,
+            keywords: "پرامپت, هوش مصنوعی, میدجرنی, استیبل دیفیوژن",
           }),
         }}
       />
     </section>
   )
 }
+
 
 
 
