@@ -23,31 +23,21 @@ const STYLE_STORAGE_KEY = 'promptvault.subtitle.style'
 const FPS = 30
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
 
-let cachedFFmpeg: FFmpeg | null = null
+let cachedFFmpeg: any = null
 
-async function getOrInitFFmpeg(): Promise<FFmpeg> {
+async function getOrInitFFmpeg(): Promise<any> {
   if (cachedFFmpeg && cachedFFmpeg.loaded) return cachedFFmpeg
 
-    const ffmpegMod: any = await import(/* webpackIgnore: true */ 'https://esm.sh/@ffmpeg/ffmpeg@0.12.10')
-  const FFmpegClass = ffmpegMod.FFmpeg || ffmpegMod.default?.FFmpeg || ffmpegMod.default
-  const ffmpeg = new FFmpegClass()
+  const { FFmpeg } = await import('@ffmpeg/ffmpeg')
+  const { toBlobURL } = await import('@ffmpeg/util')
+
+  const ffmpeg = new FFmpeg()
   const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
-  const [coreResponse, wasmResponse] = await Promise.all([
-    fetch(`${baseURL}/ffmpeg-core.js`),
-    fetch(`${baseURL}/ffmpeg-core.wasm`),
-  ])
-  if (!coreResponse.ok || !wasmResponse.ok) throw new Error('دانلود ماژول پردازش صوتی ناموفق بود')
 
-  const [coreBlob, wasmBlob] = await Promise.all([coreResponse.blob(), wasmResponse.blob()])
-  const coreURL = URL.createObjectURL(coreBlob)
-  const wasmURL = URL.createObjectURL(wasmBlob)
+  const coreURL = await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript')
+  const wasmURL = await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm')
 
-  try {
-    await ffmpeg.load({ coreURL, wasmURL })
-  } finally {
-    URL.revokeObjectURL(coreURL)
-    URL.revokeObjectURL(wasmURL)
-  }
+  await ffmpeg.load({ coreURL, wasmURL })
 
   cachedFFmpeg = ffmpeg
   return ffmpeg
@@ -509,6 +499,8 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
     </div>
   )
 }
+
+
 
 
 
