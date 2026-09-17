@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import Link from 'next/link'
 import { useState } from 'react'
@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/use-auth'
 import { useVideoTranscribe } from '@/lib/use-video-transcribe'
 import SubtitleStudio from './SubtitleStudio'
 import SubtitleVideoExport from './SubtitleVideoExport'
+import InstagramCaptionModal from '@/components/InstagramCaptionModal'
 import { download, toSrt, toVtt, toTxt } from '@/lib/subtitle'
 
 const MAX_FILE_SIZE_MB = 250
@@ -23,7 +24,8 @@ export default function VideoSubtitleClient() {
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (!file.type.startsWith('video/')) return
+    const isMov = file.name.toLowerCase().endsWith('.mov')
+    if (!file.type.startsWith('video/') && !isMov) return
 
     // بررسی سقف حجم فایل (۲۵۰ مگابایت)
     if (file.size > MAX_FILE_SIZE_BYTES) {
@@ -71,7 +73,7 @@ export default function VideoSubtitleClient() {
         <div className="flex flex-wrap items-center gap-3">
           <label className="cursor-pointer rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-black transition hover:bg-amber-400">
             {videoUrl ? '🎞 تغییر ویدیو' : '📥 وارد کردن ویدیو'}
-            <input type="file" accept="video/*" disabled={busy} onChange={handleFile} className="hidden" />
+            <input type="file" accept="video/*,.mov,.mp4,.mkv,.webm" disabled={busy} onChange={handleFile} className="hidden" />
           </label>
 
           <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-black/40 p-1">
@@ -139,7 +141,19 @@ export default function VideoSubtitleClient() {
               <button onClick={() => download(`${baseName}.vtt`, toVtt(segments), 'text/vtt')} className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs text-white/70 transition hover:border-amber-500/40 hover:text-amber-300">VTT</button>
               <button onClick={() => download(`${baseName}.txt`, toTxt(segments))} className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs text-white/70 transition hover:border-amber-500/40 hover:text-amber-300">TXT</button>
             </div>
-            <SubtitleVideoExport videoUrl={videoUrl} baseName={baseName} segments={segments} />
+            <SubtitleVideoExport
+        segments={segments}
+        videoUrl={videoUrl}
+        fileName={baseName}
+      />
+      {segments && segments.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4">
+          <InstagramCaptionModal
+            sourceText={segments.map((s) => s.text).join(' ')}
+            locale="fa"
+          />
+        </div>
+      )}
           </div>
         </>
       ) : (
@@ -155,3 +169,7 @@ export default function VideoSubtitleClient() {
     </div>
   )
 }
+
+
+
+
