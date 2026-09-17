@@ -1,4 +1,5 @@
-﻿import HeroCanvas from '@/components/hero-canvas'
+﻿export const revalidate = 60
+import HeroCanvas from '@/components/hero-canvas'
 import { cookies } from 'next/headers'
 import { dictionaries, type Locale } from '@/lib/i18n'
 import { getCategories, getPrompts, getArticles, L } from '@/lib/data'
@@ -227,6 +228,7 @@ export default async function HomePage() {
     </>
   )
 }
+
 
 
 

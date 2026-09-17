@@ -1,4 +1,5 @@
-﻿import Link from 'next/link'
+﻿export const revalidate = 300
+import Link from 'next/link'
 import { getImageUrl } from '@/lib/image-utils';
 import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
@@ -241,6 +242,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
     </section>
   )
 }
+
 
 
 
