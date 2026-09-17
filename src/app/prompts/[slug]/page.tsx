@@ -87,7 +87,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
   const isAdmin = session?.user?.role === 'ADMIN'
 
   // شمارش بازدید
-  await prisma.prompt.updateMany({ where: { slug }, data: { views: { increment: 1 } } })
+  prisma.prompt.updateMany({ where: { slug }, data: { views: { increment: 1 } } }).catch(() => {})
 
   const item = await getPromptBySlug(slug, isAdmin)
   if (!item) notFound()
@@ -241,6 +241,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
     </section>
   )
 }
+
 
 
 
