@@ -20,7 +20,7 @@ ${srtContent}`
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'models/gemini-3.5-live-translate-preview',
+        model: 'models/gemini-2.5-flash',
         contents: [{ parts: [{ text: promptText }] }],
       }),
     })
@@ -36,6 +36,7 @@ ${srtContent}`
 
     return NextResponse.json({ srt: translated || srtContent })
   } catch (err: any) {
+    console.error('[TRANSLATE ROUTE ERROR]:', err)
     return NextResponse.json({ error: err.message || 'خطا در ترجمه زیرنویس' }, { status: 500 })
   }
 }

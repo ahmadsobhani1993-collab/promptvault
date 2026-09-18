@@ -10,10 +10,9 @@ export interface VideoTranscriptSegment {
 export class VideoLiveTranscriber {
   private ws: WebSocket | null = null
   private secondsSent = 0
-  private lastEnd = 0
   private segments: VideoTranscriptSegment[] = []
   private segStart = 0
-  private lastText = ''
+  private fullAccumulated = ''
 
   onSegment?: (seg: VideoTranscriptSegment) => void
   onError?: (msg: string) => void
@@ -21,21 +20,18 @@ export class VideoLiveTranscriber {
 
   constructor(private model: string = TRANSCRIBE_MODEL, offset = 0) {
     this.secondsSent = offset
-    this.lastEnd = offset
     this.segStart = offset
   }
 
   async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        console.log('%c[VIDEO-WS: STEP 1] Connecting...', 'color: #3b82f6; font-weight: bold;')
         this.ws = new WebSocket(LIVE_WS_URL)
       } catch (err: any) {
         return reject(err)
       }
 
       this.ws.onopen = () => {
-        console.log('%c[VIDEO-WS: STEP 2] Connected! Sending Setup...', 'color: #10b981;')
         const setupMsg = {
           setup: {
             model: this.model,
@@ -53,7 +49,6 @@ export class VideoLiveTranscriber {
           const res = JSON.parse(event.data)
 
           if (res.setupComplete) {
-            console.log('%c[VIDEO-WS: STEP 3] Handshake Confirmed!', 'color: #06b6d4; font-weight: bold;')
             resolve()
             return
           }
@@ -63,7 +58,6 @@ export class VideoLiveTranscriber {
             return
           }
 
-          // استخراج مستقیم از کلید زنده interimInputTranscription و inputTranscription
           let txt = ''
           if (res.serverContent?.interimInputTranscription?.text) {
             txt = res.serverContent.interimInputTranscription.text
@@ -77,20 +71,15 @@ export class VideoLiveTranscriber {
 
           txt = (txt || '').trim()
 
-          // دریافت و افزودن قطعات جدید کلمات
-          if (txt && txt !== this.lastText) {
-            console.log('%c[VIDEO-WS: CAPTION EMITTED]:', 'color: #22c55e; font-size: 14px; font-weight: bold;', txt)
-            this.lastText = txt
+          if (txt) {
+            this.fullAccumulated = txt
             const segEnd = Math.max(this.segStart + 1.0, this.secondsSent)
             const seg: VideoTranscriptSegment = {
               text: txt,
               start: this.segStart,
               end: segEnd,
             }
-            this.segments.push(seg)
             this.onSegment?.(seg)
-            this.segStart = segEnd
-            this.lastEnd = segEnd
           }
         } catch (e) {
           console.warn('[VIDEO-WS: PARSE ERR]:', e)
@@ -101,8 +90,7 @@ export class VideoLiveTranscriber {
         this.onError?.('خطای وب‌سوکت لایو ویدیو')
       }
 
-      this.ws.onclose = (ev) => {
-        console.log('%c[VIDEO-WS: CLOSED]:', 'color: gray;', ev.code, ev.reason)
+      this.ws.onclose = () => {
         this.onClose?.()
       }
     })
@@ -131,17 +119,15 @@ export class VideoLiveTranscriber {
   }
 
   async finish(timeoutMs = 9000): Promise<VideoTranscriptSegment[]> {
-    console.log('%c[VIDEO-WS: FINISHING...] Waiting for pending transcripts...', 'color: #f59e0b;')
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
         this.ws.send(JSON.stringify({ clientContent: { turnComplete: true } }))
       } catch {}
-      await new Promise((r) => setTimeout(r, Math.min(timeoutMs, 4000)))
+      await new Promise((r) => setTimeout(r, Math.min(timeoutMs, 5000)))
       try {
         this.ws.close()
       } catch {}
     }
-    console.log('%c[VIDEO-WS: FINAL SEGMENTS]:', 'color: #10b981; font-weight: bold;', this.segments.length)
     return this.segments
   }
 

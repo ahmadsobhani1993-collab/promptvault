@@ -5,26 +5,26 @@ import { VideoLiveTranscriber, type VideoTranscriptSegment } from './video-live-
 
 const SESSION_SECONDS = 60
 
-const splitIntoSentences = (text: string, start: number, end: number): Seg[] => {
-  if (!text || typeof text !== 'string') return []
-  const allTokens = text.trim().split(/\s+/).filter(Boolean)
+const splitTextToSegments = (fullText: string, totalSec: number): Seg[] => {
+  if (!fullText || typeof fullText !== 'string') return []
+  const allTokens = fullText.trim().split(/\s+/).filter(Boolean)
   if (!allTokens.length) return []
 
-  const WORDS_PER_SEG = 4
+  const WORDS_PER_SEG = 5
   const chunks: string[] = []
   for (let i = 0; i < allTokens.length; i += WORDS_PER_SEG) {
     chunks.push(allTokens.slice(i, i + WORDS_PER_SEG).join(' '))
   }
 
+  const dur = Math.max(totalSec, 1)
   const totalWords = allTokens.length
-  const dur = Math.max(0.6, end - start)
   const out: Seg[] = []
-  let cursor = start
+  let cursor = 0
 
   chunks.forEach((chunkTxt) => {
     const wCount = chunkTxt.split(/\s+/).filter(Boolean).length
     const d = (wCount / totalWords) * dur
-    const segEnd = cursor + d
+    const segEnd = Math.min(cursor + d, totalSec)
     out.push({
       text: chunkTxt,
       start: cursor,
@@ -64,7 +64,7 @@ export function useVideoTranscribe() {
 
       const chunks = bufferToBase64Chunks(pcm, 1) || []
       const totalDuration = chunks.reduce((s, c) => s + (c.seconds || 0), 0)
-      setStatus(`صوت استخراج شد (${chunks.length} چانک) — در حال ارسال...`)
+      setStatus(`صوت استخراج شد (${chunks.length} چانک) — در حال ارسال به جمینای...`)
       setProgress(15)
 
       const sessions: { chunks: typeof chunks; offset: number }[] = []
@@ -86,23 +86,21 @@ export function useVideoTranscribe() {
         sessions.push({ chunks: current, offset: sessionOffset })
       }
 
-      const acc: Seg[] = []
+      let latestFullText = ''
       let sentCount = 0
 
       for (let s = 0; s < sessions.length; s++) {
         if (stopRef.current) break
         const sess = sessions[s]
 
-        setStatus(`در حال برقراری اتصال...`)
+        setStatus(`در حال ترنسکرایب لایو سشن ${s + 1}...`)
         const t = new VideoLiveTranscriber(undefined, sess.offset)
 
         t.onSegment = (rawSeg: VideoTranscriptSegment) => {
-          if (!rawSeg || !rawSeg.text) return
-          const broken = splitIntoSentences(rawSeg.text, rawSeg.start, rawSeg.end)
-          for (const item of broken) {
-            acc.push(item)
-          }
-          setSegments([...acc])
+          if (!rawSeg?.text) return
+          latestFullText = rawSeg.text
+          const parsed = splitTextToSegments(latestFullText, totalDuration)
+          setSegments(parsed)
         }
 
         t.onError = (m) => {
@@ -119,15 +117,20 @@ export function useVideoTranscribe() {
           await new Promise((r) => setTimeout(r, Math.min(sess.chunks[i].seconds * 1000, 800)))
         }
 
-        setStatus(`در حال دریافت نتایج نهایی...`)
         await t.finish()
       }
 
+      if (latestFullText) {
+        const finalSegments = splitTextToSegments(latestFullText, totalDuration)
+        setSegments(finalSegments)
+        setStatus(`تکمیل شد (${finalSegments.length} کپشن — ${totalDuration.toFixed(0)} ثانیه)`)
+      } else {
+        setStatus('متنی دریافت نشد')
+      }
       setProgress(100)
-      setStatus(acc.length === 0 ? 'متنی دریافت نشد' : `تکمیل شد (${acc.length} کپشن — ${totalDuration.toFixed(0)} ثانیه)`)
     } catch (err: any) {
       console.error('[VIDEO TRANSCRIBE ERROR]:', err)
-      setStatus('خطا در پردازش ویدیو: ' + (err.message || err))
+      setStatus('خطا: ' + (err.message || err))
     } finally {
       setBusy(false)
     }
