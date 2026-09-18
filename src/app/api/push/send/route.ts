@@ -1,3 +1,4 @@
+﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import webpush from 'web-push'
@@ -39,3 +40,4 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ ok: true, sent })
 }
+

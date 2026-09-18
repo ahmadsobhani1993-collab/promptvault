@@ -1,3 +1,4 @@
+﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://promptsfa.ir'
@@ -10,3 +11,4 @@ export async function GET() {
   const data = await res.json()
   return NextResponse.json(data)
 }
+

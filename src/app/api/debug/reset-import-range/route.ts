@@ -1,3 +1,4 @@
+﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { isCronAuthorized } from '@/lib/cron-auth'
@@ -34,3 +35,4 @@ export async function GET(req: Request) {
     nextStep: `Now run: /api/import-loop?count=50 to start importing from message ${startId}`,
   })
 }
+

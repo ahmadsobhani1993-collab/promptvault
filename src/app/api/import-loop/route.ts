@@ -1,3 +1,4 @@
+﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { analyzeWithGemini, normalizePrompt } from '@/lib/gemini'
@@ -213,3 +214,4 @@ export async function GET(req: Request) {
     debug 
   })
 }
+

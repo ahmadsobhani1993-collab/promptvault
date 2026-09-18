@@ -1,3 +1,4 @@
+﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 import { isCronAuthorized } from '@/lib/cron-auth'
 
@@ -29,3 +30,4 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: err.message })
   }
 }
+

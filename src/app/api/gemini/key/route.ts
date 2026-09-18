@@ -1,3 +1,4 @@
+﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 
 // فقط همان GEMINI_API_KEY موجود — متغیر جدید تعریف نشده
@@ -15,3 +16,4 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ key })
 }
+

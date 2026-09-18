@@ -1,3 +1,4 @@
+﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { tgSendText, tgSendPhoto, tgSendCode } from '@/lib/telegram'
@@ -156,3 +157,4 @@ export async function GET(req: Request) {
   await sendDueInstagram().catch(() => [])
   return NextResponse.json({ ok: true, phase: 'processed', newPosts: posts.length, results })
 }
+

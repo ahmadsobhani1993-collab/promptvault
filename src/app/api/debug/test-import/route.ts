@@ -1,3 +1,4 @@
+﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 import { isCronAuthorized } from '@/lib/cron-auth'
 import { prisma } from '@/lib/db'
@@ -72,3 +73,4 @@ export async function GET(req: Request) {
     }, { status: 500 })
   }
 }
+

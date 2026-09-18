@@ -1,3 +1,4 @@
+﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { sendToInstagramCustom } from '@/lib/instagram'
@@ -25,3 +26,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 })
   }
 }
+

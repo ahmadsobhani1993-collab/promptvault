@@ -1,3 +1,4 @@
+﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 import { GET as collectGET } from '@/app/api/import/collect/route'
 import { GET as importOneGET } from '@/app/api/debug/import-one/route'
@@ -86,3 +87,4 @@ document.getElementById('stop').onclick=function(){log('درخواست توقف.
 </script>
 </body>
 </html>`
+

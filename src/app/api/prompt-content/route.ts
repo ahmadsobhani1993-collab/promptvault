@@ -1,3 +1,4 @@
+﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 
@@ -23,3 +24,4 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ prompt: p.prompt })
 }
+

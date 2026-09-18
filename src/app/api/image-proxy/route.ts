@@ -1,3 +1,4 @@
+﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 
 export const maxDuration = 60
@@ -25,3 +26,4 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Failed to fetch image' }, { status: 500 })
   }
 }
+

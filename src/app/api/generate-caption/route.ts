@@ -1,4 +1,5 @@
-﻿import { NextResponse } from 'next/server'
+﻿export const dynamic = 'force-dynamic';
+import { NextResponse } from 'next/server'
 import { generateText } from '@/lib/gemini'
 
 export async function POST(req: Request) {
@@ -37,3 +38,4 @@ ${text.slice(0, 3000)}`
     return NextResponse.json({ error: err?.message || 'Server error generating caption' }, { status: 500 })
   }
 }
+

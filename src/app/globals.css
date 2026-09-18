@@ -9,7 +9,7 @@
 }
 
 html {
-  scroll-snap-type: y proximity;
+  overscroll-behavior-y: auto;
 }
 
 .snap-section {

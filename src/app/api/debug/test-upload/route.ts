@@ -1,3 +1,4 @@
+﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 import { isCronAuthorized } from '@/lib/cron-auth'
 import { uploadRemoteDirectly, uploadFromUrl } from '@/lib/cloudinary'
@@ -39,3 +40,4 @@ export async function GET(req: Request) {
     })
   }
 }
+

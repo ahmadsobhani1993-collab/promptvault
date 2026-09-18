@@ -1,3 +1,4 @@
+﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { tgSendPhoto, tgSendText } from '@/lib/telegram'
@@ -15,3 +16,4 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ output: out, textResult: text, photoResult: photo })
 }
+

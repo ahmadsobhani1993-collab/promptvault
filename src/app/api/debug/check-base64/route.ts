@@ -1,3 +1,4 @@
+﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { isCronAuthorized } from '@/lib/cron-auth'
@@ -58,3 +59,4 @@ export async function GET(req: Request) {
       : '✅ هیچ base64 قدیمی نیست → مشکل از query های صفحه explore است',
   })
 }
+

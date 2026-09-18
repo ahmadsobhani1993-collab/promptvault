@@ -1,3 +1,4 @@
+﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 import { isCronAuthorized } from '@/lib/cron-auth'
 
@@ -64,3 +65,4 @@ export async function GET(req: Request) {
     summary: `Found ${results.filter(r => r.ok).length} working models.`
   })
 }
+

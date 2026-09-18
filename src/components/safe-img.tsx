@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState } from 'react'
 
@@ -16,6 +16,28 @@ export default function SafeImg({
   loading?: 'lazy' | 'eager'
 }) {
   const [cur, setCur] = useState(src)
+  const isVideo = !!cur && (cur.match(/\.(mp4|webm|ogg|mov)$/i) || cur.includes('/video/upload/'))
+
+  if (isVideo) {
+    // تامبنیل فریم اول کلودینری به عنوان پوستر ویدیو
+    const posterUrl = cur.includes('/video/upload/')
+      ? cur.replace(/\/video\/upload\/(?:v\d+\/)?/, '$&so_0/').replace(/\.[^/.]+$/, '.jpg')
+      : undefined
+
+    return (
+      <video
+        src={cur}
+        poster={posterUrl}
+        controls
+        playsInline
+        preload="metadata"
+        className={className || "w-full rounded-2xl bg-black"}
+      >
+        مرورگر شما از پخش ویدیو پشتیبانی نمی‌کند.
+      </video>
+    )
+  }
+
   return (
     <img
       src={cur}
