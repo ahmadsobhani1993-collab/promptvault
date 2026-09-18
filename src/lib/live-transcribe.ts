@@ -1,10 +1,33 @@
-export const LIVE_WS_URL = 'wss://gemini-live-proxy.ahmadsobhani1993.workers.dev/gemini-live'
+﻿export const LIVE_WS_URL = 'wss://gemini-live-proxy.ahmadsobhani1993.workers.dev/gemini-live'
 export const TRANSCRIBE_MODEL = 'models/gemini-3.5-transcribe-live'
 
 export interface TranscriptSegment {
   text: string
   start: number
   end: number
+}
+
+function parseStreamText(payload: any): string {
+  if (!payload) return ''
+  let text = ''
+
+  // استخراج متن از پارت‌های نوبت مدل
+  const parts = payload.serverContent?.modelTurn?.parts
+  if (Array.isArray(parts)) {
+    for (const p of parts) {
+      if (typeof p?.text === 'string') text += p.text
+    }
+  }
+
+  // استخراج متن از ساختارهای ترنسکریپت اختصاصی
+  const directTranscript = payload.serverContent?.transcript || payload.serverContent?.interimTranscript
+  if (typeof directTranscript === 'string') {
+    text += directTranscript
+  } else if (typeof directTranscript?.text === 'string') {
+    text += directTranscript.text
+  }
+
+  return text
 }
 
 export class LiveTranscriber {
@@ -28,14 +51,14 @@ export class LiveTranscriber {
   async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        console.log('%c[WS] Connecting to:', 'color: orange', LIVE_WS_URL);
-        this.ws = new WebSocket(LIVE_WS_URL);
+        console.log('%c[WS] Connecting...', 'color: orange')
+        this.ws = new WebSocket(LIVE_WS_URL)
       } catch (err: any) {
-        return reject(err);
+        return reject(err)
       }
 
       this.ws.onopen = () => {
-        console.log('%c[WS] Connected! Sending setup...', 'color: green');
+        console.log('%c[WS] Connected. Handshaking...', 'color: green')
         const setupMsg = {
           setup: {
             model: this.model,
@@ -44,123 +67,105 @@ export class LiveTranscriber {
               temperature: 0.1,
             },
           },
-        };
-        this.ws?.send(JSON.stringify(setupMsg));
-        resolve();
-      };
+        }
+        this.ws?.send(JSON.stringify(setupMsg))
+        resolve()
+      }
 
       this.ws.onmessage = (event) => {
         try {
-          const res = JSON.parse(event.data);
-          console.log('%c[WS INCOMING MSG]:', 'color: cyan', res);
+          const res = JSON.parse(event.data)
 
           if (res.proxyError) {
-            console.error('[WS Proxy Error]:', res.proxyError);
-            this.onError?.(res.proxyError);
-            return;
+            console.error('PROXY_ERR:', res.proxyError)
+            this.onError?.(res.proxyError)
+            return
           }
 
-          // ۱. استخراج از ترنسکریپت اختصاصی مدل لایو
-          if (res.serverContent?.interimTranscript) {
-            const t = res.serverContent.interimTranscript.text || res.serverContent.interimTranscript;
-            if (typeof t === 'string') this.currentText += t;
-          }
-          if (res.serverContent?.transcript) {
-            const t = res.serverContent.transcript.text || res.serverContent.transcript;
-            if (typeof t === 'string') this.currentText += t;
+          // لاگ صریح محتوای متنی
+          const fragment = parseStreamText(res)
+          if (fragment) {
+            console.log('%c[TRANSCRIBE TEXT]:', 'color: lime; font-weight: bold; font-size: 13px;', fragment)
+            this.currentText += fragment
           }
 
-          // ۲. استخراج از پارت‌های استاندارد
-          const parts = res.serverContent?.modelTurn?.parts;
-          if (parts && Array.isArray(parts)) {
-            for (const part of parts) {
-              if (part.text) {
-                this.currentText += part.text;
-              }
-            }
-          }
-
-          // ثبت سگمنت با دریافت کلمات یا پایان بخش
-          const hasText = this.currentText.trim().length > 0;
-          if ((res.serverContent?.turnComplete || res.serverContent?.generationConfig) && hasText) {
-            const segEnd = Math.max(this.segStart + 0.5, this.secondsSent);
+          // ثبت نهایی سگمنت با رویداد اتمام نوبت
+          if (res.serverContent?.turnComplete && this.currentText.trim()) {
+            const segEnd = Math.max(this.segStart + 0.5, this.secondsSent)
             const seg: TranscriptSegment = {
               text: this.currentText.trim(),
               start: this.segStart,
               end: segEnd,
-            };
-            this.segments.push(seg);
-            this.onSegment?.(seg);
-            this.currentText = '';
-            this.segStart = segEnd;
-            this.lastEnd = segEnd;
+            }
+            this.segments.push(seg)
+            this.onSegment?.(seg)
+            this.currentText = ''
+            this.segStart = segEnd
+            this.lastEnd = segEnd
           }
-        } catch (e) {
-          console.warn('[WS Parse Error]:', e);
-        }
-      };
+        } catch {}
+      }
 
       this.ws.onerror = (e) => {
-        console.error('[WS Error Event]:', e);
-        this.onError?.('خطای وب‌سوکت لایو');
-      };
+        console.error('LIVE_WS_ERR:', e)
+        this.onError?.('خطای وب‌سوکت لایو')
+      }
 
-      this.ws.onclose = (ev) => {
-        console.log('%c[WS Closed]:', 'color: gray', ev.code, ev.reason);
+      this.ws.onclose = () => {
         if (this.currentText.trim()) {
-          const segEnd = Math.max(this.segStart + 0.5, this.secondsSent);
+          const segEnd = Math.max(this.segStart + 0.5, this.secondsSent)
           const seg: TranscriptSegment = {
             text: this.currentText.trim(),
             start: this.segStart,
             end: segEnd,
-          };
-          this.segments.push(seg);
-          this.onSegment?.(seg);
-          this.currentText = '';
+          }
+          this.segments.push(seg)
+          this.onSegment?.(seg)
+          this.currentText = ''
         }
-        this.onClose?.();
-      };
-    });
+        this.onClose?.()
+      }
+    })
   }
 
   sendChunk(base64Pcm: string, durationSec: number): boolean {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
     try {
-      const msg = {
-        realtimeInput: {
-          mediaChunks: [
-            {
-              mimeType: 'audio/pcm;rate=16000',
-              data: base64Pcm,
-            },
-          ],
-        },
-      };
-      this.ws.send(JSON.stringify(msg));
-      this.secondsSent += durationSec;
-      return true;
+      this.ws.send(
+        JSON.stringify({
+          realtimeInput: {
+            mediaChunks: [
+              {
+                mimeType: 'audio/pcm;rate=16000',
+                data: base64Pcm,
+              },
+            ],
+          },
+        })
+      )
+      this.secondsSent += durationSec
+      return true
     } catch {
-      return false;
+      return false
     }
   }
 
   async finish(timeoutMs = 6000): Promise<TranscriptSegment[]> {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      // ارسال سیگنال اتمام نوبت ورودی به مدل تا جواب متنی را آزاد کند
       try {
-        this.ws.send(JSON.stringify({ clientContent: { turnComplete: true } }));
+        this.ws.send(JSON.stringify({ clientContent: { turnComplete: true } }))
       } catch {}
-      await new Promise((r) => setTimeout(r, Math.min(timeoutMs, 2500)));
+      await new Promise((r) => setTimeout(r, Math.min(timeoutMs, 2500)))
       try {
-        this.ws.close();
+        this.ws.close()
       } catch {}
     }
-    return this.segments;
+    return this.segments
   }
 
   close() {
     try {
-      this.ws?.close();
+      this.ws?.close()
     } catch {}
   }
 }
