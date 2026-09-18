@@ -36,25 +36,72 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     if (!segments || segments.length === 0 || translating) return
     setTranslating(true)
     try {
-      const srt = segments.map((s, i) => `${i + 1}\n00:00:00,000 --> 00:00:00,000\n${s.text}`).join('\n\n')
+      const pad = (n: number, z = 2) => String(Math.floor(n)).padStart(z, '0')
+      const fmt = (sec: number) => {
+        const s = Math.max(0, Number(sec) || 0)
+        const h = pad(s / 3600)
+        const m = pad((s % 3600) / 60)
+        const sc = pad(s % 60)
+        const ms = pad((s % 1) * 1000, 3)
+        return `${h}:${m}:${sc},${ms}`
+      }
+
+      // ۱. ساخت فایل SRT با زمان‌بندی‌های دقیق سورس
+      const srt = segments.map((s, i) => `${i + 1}\n${fmt(s.start)} --> ${fmt(s.end)}\n${s.text}`).join('\n\n')
+
       const res = await fetch('/api/translate-srt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ srtContent: srt, targetLang: 'fa' }),
       })
+
       const data = await res.json()
-      if (data.srt) {
-        const lines = data.srt.split('\n\n')
-        const updated = segments.map((seg, idx) => {
-          const chunk = lines[idx] || ''
-          const parts = chunk.split('\n').slice(2).join(' ').trim()
-          const newTxt = parts || seg.text; return { ...seg, text: newTxt, words: typeof mkWords === "function" ? mkWords(newTxt, seg.start, seg.end) : [] }
-        })
-        pushHist()
-        setSegments(updated)
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'خطای دریافت ترجمه')
       }
-    } catch (e) {
-      console.error(e)
+
+      if (data.srt) {
+        // ۲. پارس دقیق بلاک‌های SRT دریافتی از هوش مصنوعی
+        const blocks = data.srt.trim().replace(/\r\n/g, '\n').split(/\n\s*\n/)
+        const parsedTexts: string[] = []
+
+        for (const block of blocks) {
+          const lines = block.trim().split('\n')
+          if (lines.length >= 3) {
+            // خط سوم به بعد متن اصلی دیالوگ است
+            parsedTexts.push(lines.slice(2).join(' ').trim())
+          }
+        }
+
+        // ۳. ذخیره وضعیت فعلی برای امکان Undo با Ctrl+Z
+        if (typeof pushHist === 'function') pushHist()
+
+        // ۴. جایگذاری یکپارچه متن‌ها و توزیع زمانی کلمات جدید
+        const updated = segments.map((seg, idx) => {
+          const newTxt = parsedTexts[idx] || seg.text
+          const newWords = typeof mkWords === 'function' ? mkWords(newTxt, seg.start, seg.end) : []
+          return {
+            ...seg,
+            text: newTxt,
+            words: newWords
+          }
+        })
+
+        // ۵. به‌روزرسانی سگمنت‌ها
+        setSegments(updated)
+
+        // ۶. فعال‌سازی راست‌چین و فونت متناسب فارسی در صورت وجود تابع ست استایل
+        if (typeof setStyle === 'function') {
+          setStyle((prev: any) => ({
+            ...prev,
+            direction: 'rtl',
+            fontFamily: prev?.fontFamily?.includes('Lalezar') ? prev.fontFamily : 'Vazirmatn, system-ui, sans-serif'
+          }))
+        }
+      }
+    } catch (e: any) {
+      console.error('[TRANSLATE RUNTIME ERROR]:', e)
+      alert('خطا در فرآیند ترجمه: ' + (e.message || 'پاسخی از سرور دریافت نشد'))
     } finally {
       setTranslating(false)
     }
