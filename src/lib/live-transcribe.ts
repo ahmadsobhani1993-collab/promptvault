@@ -74,6 +74,7 @@ export class LiveTranscriber {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          model: 'gemini-3.5-transcribe-live',
           contents: [
             {
               parts: [

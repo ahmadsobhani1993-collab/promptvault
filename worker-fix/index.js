@@ -22,7 +22,7 @@ export default {
       if (!key) return Response.json({ error: "Worker missing GEMINI_API_KEY secret" }, { status: 500, headers: CORS });
       try {
         const body = await req.json();
-        const model = body.model || "gemini-3.5-flash-lite";
+        const model = body.model || "gemini-3.5-transcribe-live";
         delete body.model;
         const g = await fetch(
           "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + key,
