@@ -1,4 +1,5 @@
-﻿export const TRANSCRIBE_MODEL = 'gemini-2.5-flash'
+﻿// مدل اختصاصی استخراج زیرنویس و صوت
+export const TRANSCRIBE_MODEL = 'gemini-3.5-transcribe-live'
 
 export interface TranscriptSegment {
   text: string
@@ -22,7 +23,6 @@ export class LiveTranscriber {
   }
 
   async connect(): Promise<void> {
-    // نیازی به هندشیک و سوکت نیست، بلافاصله آماده دریافت است
     return Promise.resolve()
   }
 
@@ -38,50 +38,59 @@ export class LiveTranscriber {
     const fullBase64 = this.chunkBuffer.join('')
     this.chunkBuffer = []
 
-    try {
-      const res = await fetch('https://gemini-live-proxy.ahmadsobhani1993.workers.dev/transcribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'gemini-2.5-flash',
-          contents: [
-            {
-              parts: [
-                {
-                  inlineData: {
-                    mimeType: 'audio/pcm;rate=16000',
-                    data: fullBase64,
+    // اولویت اول با مدل تخصصی ترنسکرایب و در صورت خطا مدل پشتیبان
+    const targetModels = [this.model, 'gemini-2.5-flash']
+    let transcribedText = ''
+
+    for (const m of targetModels) {
+      try {
+        const res = await fetch('https://gemini-live-proxy.ahmadsobhani1993.workers.dev/transcribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: m,
+            contents: [
+              {
+                parts: [
+                  {
+                    inlineData: {
+                      mimeType: 'audio/mp3',
+                      data: fullBase64,
+                    },
                   },
-                },
-                {
-                  text: 'Transcribe this audio verbatim, word for word, in its original spoken language. Return only the raw text transcription.',
-                },
-              ],
-            },
-          ],
-        }),
-      })
+                  {
+                    text: 'Please transcribe the exact spoken words in this audio verbatim in its original language. Output only the plain text transcript without explanations.',
+                  },
+                ],
+              },
+            ],
+          }),
+        })
 
-      if (!res.ok) {
-        const err = await res.text()
-        throw new Error(`Worker returned ${res.status}:${err.slice(0, 150)}`)
-      }
+        if (!res.ok) continue
 
-      const json = await res.json()
-      const text = json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || ''
-
-      if (text) {
-        const seg: TranscriptSegment = {
-          text,
-          start: this.lastEnd,
-          end: Math.max(this.lastEnd + 0.5, this.secondsSent),
+        const json = await res.json()
+        const text = json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || ''
+        if (text) {
+          transcribedText = text
+          break
         }
-        this.lastEnd = seg.end
-        this.segments.push(seg)
-        this.onSegment?.(seg)
+      } catch {
+        continue
       }
-    } catch (err: any) {
-      this.onError?.(err?.message || 'خطا در پردازش با ورکر')
+    }
+
+    if (transcribedText) {
+      const seg: TranscriptSegment = {
+        text: transcribedText,
+        start: this.lastEnd,
+        end: Math.max(this.lastEnd + 0.5, this.secondsSent),
+      }
+      this.lastEnd = seg.end
+      this.segments.push(seg)
+      this.onSegment?.(seg)
+    } else {
+      this.onError?.('پاسخی از مدل‌های ترنسکرایب دریافت نشد.')
     }
 
     this.onClose?.()
