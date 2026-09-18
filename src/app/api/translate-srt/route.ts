@@ -20,7 +20,7 @@ ${srtContent}`
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'models/gemini-3.5-live-translate',
+        model: 'models/gemini-3.5-live-translate-preview',
         contents: [{ parts: [{ text: promptText }] }],
       }),
     })

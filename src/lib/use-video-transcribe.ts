@@ -55,7 +55,7 @@ export const useVideoTranscribe = () => {
         acc.push(...broken)
         setSegments([...acc])
       }
-      t.onError = (m) => setStatus('❌ ' + m)
+      t.onError = (m) => { setStatus('❌ ' + m); stopRef.current = true; }
     }
 
     const connect = async (offset: number): Promise<LiveTranscriber> => {
@@ -116,7 +116,7 @@ export const useVideoTranscribe = () => {
         await t.finish()
       }
 
-      setStatus(acc.length === 0 ? '️ متنی دریافت نشد' : `✅ ${acc.length} کپشن — ${totalDuration.toFixed(0)}s`)
+      if (!status.startsWith('❌')) { setStatus(acc.length === 0 ? '⚠️ متنی دریافت نشد' : `✅ ${acc.length} کپشن — ${totalDuration.toFixed(0)}s`); }
     } catch (err: any) {
       setStatus('❌ ' + (err?.message || String(err)))
     } finally {
