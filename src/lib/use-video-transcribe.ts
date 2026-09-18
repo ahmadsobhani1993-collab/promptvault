@@ -72,7 +72,7 @@ export const useVideoTranscribe = () => {
 
     try {
       setStatus('۱. دیکود صدا…')
-      console.log('%c[AUDIO] Starting decode...', 'color: yellow'); const pcm = await decodeToPcm16k(file); console.log('%c[AUDIO DECODED BYTES]:', 'color: lime', pcm?.byteLength);
+      console.log('%c[AUDIO] Starting decode...', 'color: yellow'); const pcm = await decodeToPcm16k(file); console.log('%c[AUDIO DECODED DURATION]:', 'color: lime', pcm?.duration + 's');
       const chunks = bufferToBase64Chunks(pcm, 1)
       const totalDuration = chunks.reduce((s, c) => s + c.seconds, 0)
       setStatus(`۲. ${chunks.length} بخش — ${totalDuration.toFixed(0)}s`)
