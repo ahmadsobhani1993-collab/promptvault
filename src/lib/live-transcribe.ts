@@ -1,4 +1,4 @@
-export const TRANSCRIBE_MODEL = 'gemini-3.5-transcribe-live'
+﻿export const TRANSCRIBE_MODEL = 'gemini-2.5-flash'
 
 export interface TranscriptSegment {
   text: string
@@ -7,13 +7,11 @@ export interface TranscriptSegment {
 }
 
 export class LiveTranscriber {
-  private ws: WebSocket | null = null
   private secondsSent = 0
   private lastEnd = 0
   private segments: TranscriptSegment[] = []
-  private generationComplete = false
-  private pendingInterim: { text: string; start: number } | null = null
-  
+  private chunkBuffer: string[] = []
+
   onSegment?: (seg: TranscriptSegment) => void
   onError?: (msg: string) => void
   onClose?: () => void
@@ -23,122 +21,74 @@ export class LiveTranscriber {
     this.lastEnd = offset
   }
 
-  connect(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.ws = new WebSocket('wss://gemini-live-proxy.ahmadsobhani1993.workers.dev/gemini-live')
-      let settled = false
-
-      this.ws.onopen = () => {
-        this.ws?.send(
-          JSON.stringify({
-            setup: {
-              model: `models/${this.model}`,
-              systemInstruction: {
-                parts: [{ text: 'Transcribe the audio verbatim, word for word, in the original spoken language. Do not translate or summarize.' }],
-              },
-              generationConfig: { responseModalities: ['TEXT'] },
-            },
-          })
-        )
-      }
-
-      this.ws.onmessage = (ev) => {
-        let msg: any
-        try { msg = JSON.parse(ev.data as string) } catch { return }
-
-        if (msg?.error) {
-          this.onError?.('Gemini: ' + (msg.error?.message || JSON.stringify(msg.error)))
-          if (!settled) { settled = true; reject(new Error('Gemini error')) }
-          return
-        }
-        if (msg.setupComplete) {
-          if (!settled) { settled = true; resolve() }
-          return
-        }
-        if (msg.voiceActivity) {
-          if (msg.voiceActivity.type === 'ACTIVITY_START') this.generationComplete = false
-          else if (msg.voiceActivity.type === 'ACTIVITY_END' && this.pendingInterim) {
-            const seg: TranscriptSegment = {
-              text: this.pendingInterim.text,
-              start: this.pendingInterim.start,
-              end: Math.max(this.pendingInterim.start + 0.1, this.secondsSent),
-            }
-            this.lastEnd = seg.end
-            this.segments.push(seg)
-            this.onSegment?.(seg)
-            this.pendingInterim = null
-          }
-          return
-        }
-        if (msg.serverContent?.generationComplete) {
-          this.generationComplete = true
-          if (this.pendingInterim) {
-            const seg: TranscriptSegment = {
-              text: this.pendingInterim.text,
-              start: this.pendingInterim.start,
-              end: Math.max(this.pendingInterim.start + 0.1, this.secondsSent),
-            }
-            this.lastEnd = seg.end
-            this.segments.push(seg)
-            this.onSegment?.(seg)
-            this.pendingInterim = null
-          }
-          return
-        }
-        const text = msg?.serverContent?.modelTurn?.parts?.map((p: any) => p.text)?.filter(Boolean)?.join(' ') ||
-                     msg?.serverContent?.inputTranscription?.text ||
-                     msg?.serverContent?.outputTranscription?.text || ''
-        if (text.trim() && msg.serverContent?.inputTranscription) {
-          const seg: TranscriptSegment = {
-            text: text.trim(),
-            start: this.lastEnd,
-            end: Math.max(this.lastEnd + 0.1, this.secondsSent),
-          }
-          this.lastEnd = seg.end
-          this.segments.push(seg)
-          this.onSegment?.(seg)
-          this.pendingInterim = null
-          return
-        }
-        const interim = msg?.serverContent?.interimInputTranscription?.text || ''
-        if (interim.trim()) this.pendingInterim = { text: interim.trim(), start: this.lastEnd }
-      }
-
-      this.ws.onerror = () => {
-        this.onError?.('WebSocket error')
-        if (!settled) { settled = true; reject(new Error('WebSocket error')) }
-      }
-      this.ws.onclose = (e) => {
-        if (!settled) { settled = true; reject(new Error(`بسته شد (${e.code})`)) }
-        this.onClose?.()
-      }
-    })
+  async connect(): Promise<void> {
+    // نیازی به هندشیک و سوکت نیست، بلافاصله آماده دریافت است
+    return Promise.resolve()
   }
 
-  sendChunk(base64: string, seconds: number): boolean {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
-    this.ws.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: 'audio/pcm;rate=16000', data: base64 }] } }))
-    this.secondsSent += seconds
+  sendChunk(base64Data: string, durationSec: number): boolean {
+    this.chunkBuffer.push(base64Data)
+    this.secondsSent += durationSec
     return true
   }
 
-  // پایان session: turnComplete + صبر برای generationComplete
-  async finish(waitMs = 15000): Promise<void> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
-    try { this.ws.send(JSON.stringify({ clientContent: { turnComplete: true } })) } catch {}
-    await new Promise<void>((resolve) => {
-      const t = setTimeout(resolve, waitMs)
-      const check = () => { if (this.generationComplete) { clearTimeout(t); resolve() } else setTimeout(check, 300) }
-      check()
-    })
-    if (this.pendingInterim) {
-      const seg: TranscriptSegment = { text: this.pendingInterim.text, start: this.pendingInterim.start, end: Math.max(this.pendingInterim.start + 0.1, this.secondsSent) }
-      this.lastEnd = seg.end; this.segments.push(seg); this.onSegment?.(seg); this.pendingInterim = null
+  async finish(): Promise<TranscriptSegment[]> {
+    if (this.chunkBuffer.length === 0) return this.segments
+
+    const fullBase64 = this.chunkBuffer.join('')
+    this.chunkBuffer = []
+
+    try {
+      const res = await fetch('https://gemini-live-proxy.ahmadsobhani1993.workers.dev/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'gemini-2.5-flash',
+          contents: [
+            {
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: 'audio/pcm;rate=16000',
+                    data: fullBase64,
+                  },
+                },
+                {
+                  text: 'Transcribe this audio verbatim, word for word, in its original spoken language. Return only the raw text transcription.',
+                },
+              ],
+            },
+          ],
+        }),
+      })
+
+      if (!res.ok) {
+        const err = await res.text()
+        throw new Error(`Worker returned ${res.status}:${err.slice(0, 150)}`)
+      }
+
+      const json = await res.json()
+      const text = json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || ''
+
+      if (text) {
+        const seg: TranscriptSegment = {
+          text,
+          start: this.lastEnd,
+          end: Math.max(this.lastEnd + 0.5, this.secondsSent),
+        }
+        this.lastEnd = seg.end
+        this.segments.push(seg)
+        this.onSegment?.(seg)
+      }
+    } catch (err: any) {
+      this.onError?.(err?.message || 'خطا در پردازش با ورکر')
     }
-    try { this.ws?.close() } catch {}
+
+    this.onClose?.()
+    return this.segments
   }
 
-  isConnected() { return !!this.ws && this.ws.readyState === WebSocket.OPEN }
-  getSegments() { return this.segments }
-  getSecondsSent() { return this.secondsSent }
+  close() {
+    this.onClose?.()
+  }
 }

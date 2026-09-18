@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+﻿import { useRef, useState } from 'react'
 import { LiveTranscriber, type TranscriptSegment } from './live-transcribe'
 import { decodeToPcm16k, bufferToBase64Chunks } from './audio'
 import { mkWords, type Seg } from './subtitle-studio'
@@ -47,7 +47,7 @@ export const useVideoTranscribe = () => {
         const t = new LiveTranscriber(undefined, offset)
         wire(t, offset)
         try {
-          await Promise.race([t.connect(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000))])
+          await t.connect()
           return t
         } catch (e) { await sleep(1500) }
       }
