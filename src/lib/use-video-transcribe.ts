@@ -131,7 +131,11 @@ export function useVideoTranscribe() {
         }
 
         setStatus(`در حال انتظار برای پاسخ نهایی جمینای...`)
-        await t.finish()
+        // SILENCE PADDING: تخلیه بافر صوتی جمینای لایو
+        const silencePcm = Buffer.alloc(16000 * 2 * 0.5).toString('base64');
+        t.sendChunk(silencePcm, 0.5);
+        await new Promise((r) => setTimeout(r, 1200));
+        await t.finish(5000);
       }
 
       if (latestFullText) {

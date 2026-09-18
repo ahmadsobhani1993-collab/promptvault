@@ -57,7 +57,7 @@ export async function extractAudioFromVideo(
     })
   }
 
-  const inputName = 'input' + (videoFile.name.match(/\.[^.]+$/)?.[0] || '.mp4')
+  const inputName = 'input' + ((videoFile?.name || 'video.mp4').match(/\.[^.]+$/)?.[0] || '.mp4')
   const outputName = 'output.wav'
 
   await ff.writeFile(inputName, await fetchFile(videoFile))
