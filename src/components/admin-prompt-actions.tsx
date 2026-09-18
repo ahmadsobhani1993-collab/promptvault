@@ -1,68 +1,84 @@
-'use client'
+﻿'use client'
 
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { L } from '@/lib/data'
-import { type Locale } from '@/lib/i18n'
 
-export default function PromptActions({ 
-  promptId, 
-  status, 
-  locale 
-}: { 
+interface PromptActionsProps {
   promptId: string
-  status: string
-  locale: Locale
-}) {
+  status?: string
+  currentStatus?: string
+  locale?: string
+}
+
+export default function PromptActions({
+  promptId,
+  status,
+  currentStatus,
+  locale = 'fa'
+}: PromptActionsProps) {
   const router = useRouter()
+  const [loading, setLoading] = useState(false)
+  const actualStatus = (currentStatus || status || '').toUpperCase()
 
   const handlePublish = async () => {
+    if (loading) return
+    setLoading(true)
     try {
-      await fetch('/api/admin/prompts', {
+      const res = await fetch('/api/admin/prompts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: promptId, action: 'publish' }),
       })
-      router.push('/admin/prompts')
+      if (!res.ok) throw new Error()
       router.refresh()
-    } catch (err) {
-      console.error('Publish error:', err)
-      alert(locale === 'fa' ? 'خطا در انتشار' : 'Publish failed')
+    } catch {
+      alert('خطا در انتشار پرامپت')
+    } finally {
+      setLoading(false)
     }
   }
 
-  const handleReject = async () => {
+  const handleDelete = async () => {
+    if (loading) return
+    if (!confirm('آیا از حذف کامل این پرامپت مطمئن هستید؟')) return
+    setLoading(true)
     try {
-      await fetch('/api/admin/prompts', {
+      const res = await fetch(`/api/admin/prompts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: promptId, action: 'reject' }),
+        body: JSON.stringify({ id: promptId, action: 'delete' }),
       })
-      router.push('/admin/prompts')
+      if (!res.ok) {
+        const delRes = await fetch(`/api/admin/prompts?id=${promptId}`, { method: 'DELETE' })
+        if (!delRes.ok) throw new Error()
+      }
       router.refresh()
-    } catch (err) {
-      console.error('Reject error:', err)
-      alert(locale === 'fa' ? 'خطا در رد کردن' : 'Reject failed')
+    } catch {
+      alert('خطا در حذف پرامپت')
+    } finally {
+      setLoading(false)
     }
   }
 
   return (
-    <div className="mt-8 flex gap-3">
-      {status !== 'PUBLISHED' && (
+    <div className="flex items-center gap-2">
+      {actualStatus !== 'PUBLISHED' && (
         <button
           onClick={handlePublish}
-          className="btn-primary"
+          disabled={loading}
+          className="rounded-lg bg-emerald-500/15 border border-emerald-500/30 px-3 py-1.5 text-xs font-bold text-emerald-400 hover:bg-emerald-500/25 transition-colors disabled:opacity-50"
         >
-          {L(locale, '✅ انتشار', 'Publish')}
+          انتشار
         </button>
       )}
-      {status === 'PENDING' && (
-        <button
-          onClick={handleReject}
-          className="btn-secondary"
-        >
-          {L(locale, 'رد کردن', 'Reject')}
-        </button>
-      )}
+
+      <button
+        onClick={handleDelete}
+        disabled={loading}
+        className="rounded-lg bg-red-500/15 border border-red-500/30 px-3 py-1.5 text-xs font-bold text-red-400 hover:bg-red-500/25 transition-colors disabled:opacity-50"
+      >
+        حذف
+      </button>
     </div>
   )
 }
