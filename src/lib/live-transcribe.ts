@@ -1,4 +1,4 @@
-﻿export const TRANSCRIBE_MODEL = 'gemini-2.5-flash'
+﻿export const TRANSCRIBE_MODEL = 'models/gemini-3.5-transcribe-live'
 
 export interface TranscriptSegment {
   text: string
