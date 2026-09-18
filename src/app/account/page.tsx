@@ -1,3 +1,14 @@
+function getMediaCover(url) {
+  if (!url) return '';
+  if (url.includes('/video/upload/')) {
+    return url.replace('/video/upload/', '/video/upload/so_0,f_jpg/').replace(/.[^/.]+$/, '.jpg');
+  }
+  if (url.match(/.(mp4|mov|webm|mkv)$/i)) {
+    return url.replace(/.[^/.]+$/, '.jpg');
+  }
+  return url;
+}
+
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { auth } from '@/auth'
@@ -25,7 +36,7 @@ export default async function AccountPage() {
       orderBy: { id: "desc" },
       take: 20,
     }),
-    prisma.bookmark.findMany({
+    prisma.save.findMany({
       where: { userId },
       include: { prompt: { include: { category: true } } },
       orderBy: { id: "desc" },
@@ -92,7 +103,7 @@ export default async function AccountPage() {
           {likedPrompts.map((l) => l.prompt).filter(Boolean).map((p) => (
             <Link key={p.id} href={'/prompts/' + p.slug} className="card overflow-hidden transition-all hover:border-gold/40">
               <div className="aspect-square overflow-hidden bg-[#0f0d0a]">
-                {p.img && <img src={p.img} alt={p.titleFa} className="h-full w-full object-cover" />}
+                {p.img && <img src={getMediaCover(p.img)} alt={p.titleFa} className="h-full w-full object-cover" />}
               </div>
               <div className="p-3">
                 <p className="line-clamp-2 text-xs font-bold">{p.titleFa}</p>
@@ -115,7 +126,7 @@ export default async function AccountPage() {
           {savedPrompts.map((b) => b.prompt).filter(Boolean).map((p) => (
             <Link key={p.id} href={'/prompts/' + p.slug} className="card overflow-hidden transition-all hover:border-gold/40">
               <div className="aspect-square overflow-hidden bg-[#0f0d0a]">
-                {p.img && <img src={p.img} alt={p.titleFa} className="h-full w-full object-cover" />}
+                {p.img && <img src={getMediaCover(p.img)} alt={p.titleFa} className="h-full w-full object-cover" />}
               </div>
               <div className="p-3">
                 <p className="line-clamp-2 text-xs font-bold">{p.titleFa}</p>

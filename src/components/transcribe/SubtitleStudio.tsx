@@ -31,6 +31,35 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
   const [zoom, setZoom] = useState(40)
   const [showSafe, setShowSafe] = useState(false)
   const [showAdv, setShowAdv] = useState(false)
+  const [translating, setTranslating] = useState(false)
+  const translateSubtitles = async () => {
+    if (!segments || segments.length === 0 || translating) return
+    setTranslating(true)
+    try {
+      const srt = segments.map((s, i) => `${i + 1}\n00:00:00,000 --> 00:00:00,000\n${s.text}`).join('\n\n')
+      const res = await fetch('/api/translate-srt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ srtContent: srt, targetLang: 'fa' }),
+      })
+      const data = await res.json()
+      if (data.srt) {
+        const lines = data.srt.split('\n\n')
+        const updated = segments.map((seg, idx) => {
+          const chunk = lines[idx] || ''
+          const parts = chunk.split('\n').slice(2).join(' ').trim()
+          return { ...seg, text: parts || seg.text }
+        })
+        pushHist()
+        setSegments(updated)
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setTranslating(false)
+    }
+  }
+
   const [aspect, setAspect] = useState<AspectRatio>('original')
   const [findQ, setFindQ] = useState('')
   const [replQ, setReplQ] = useState('')
@@ -286,6 +315,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
           <button onClick={undo} title="واگرد (Ctrl+Z)" className={iconBtn}>↩</button>
           <button onClick={redo} title="ازنو (Ctrl+Shift+Z)" className={iconBtn}>↪</button>
           <button onClick={() => setShowSafe(!showSafe)} title="ناحیه امن اینستاگرام" className={`${iconBtn} ${showSafe ? '!border-amber-500/60 !text-amber-300' : ''}`}>▦</button>
+          <button onClick={translateSubtitles} disabled={translating} title="ترجمه به فارسی با هوش مصنوعی" className={`${iconBtn} ${translating ? '!border-amber-500 text-amber-400 animate-pulse' : ''}`}>🌐</button>
           <button onClick={() => setShowAdv(!showAdv)} title="تنظیمات استایل" className={`${iconBtn} ${showAdv ? '!border-amber-500/60 !text-amber-300' : ''}`}>⚙</button>
         </div>
 
