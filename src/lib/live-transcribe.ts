@@ -7,29 +7,6 @@ export interface TranscriptSegment {
   end: number
 }
 
-function parseStreamText(payload: any): string {
-  if (!payload) return ''
-  let text = ''
-
-  // استخراج متن از پارت‌های نوبت مدل
-  const parts = payload.serverContent?.modelTurn?.parts
-  if (Array.isArray(parts)) {
-    for (const p of parts) {
-      if (typeof p?.text === 'string') text += p.text
-    }
-  }
-
-  // استخراج متن از ساختارهای ترنسکریپت اختصاصی
-  const directTranscript = payload.serverContent?.transcript || payload.serverContent?.interimTranscript
-  if (typeof directTranscript === 'string') {
-    text += directTranscript
-  } else if (typeof directTranscript?.text === 'string') {
-    text += directTranscript.text
-  }
-
-  return text
-}
-
 export class LiveTranscriber {
   private ws: WebSocket | null = null
   private secondsSent = 0
@@ -51,14 +28,12 @@ export class LiveTranscriber {
   async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        console.log('%c[WS] Connecting...', 'color: orange')
         this.ws = new WebSocket(LIVE_WS_URL)
       } catch (err: any) {
         return reject(err)
       }
 
       this.ws.onopen = () => {
-        console.log('%c[WS] Connected. Handshaking...', 'color: green')
         const setupMsg = {
           setup: {
             model: this.model,
@@ -69,60 +44,53 @@ export class LiveTranscriber {
           },
         }
         this.ws?.send(JSON.stringify(setupMsg))
-        resolve()
       }
 
       this.ws.onmessage = (event) => {
         try {
           const res = JSON.parse(event.data)
 
+          // پس از تایید ستاپ، اجازه ارسال صوت را می‌دهیم
+          if (res.setupComplete) {
+            resolve()
+            return
+          }
+
           if (res.proxyError) {
-            console.error('PROXY_ERR:', res.proxyError)
             this.onError?.(res.proxyError)
             return
           }
 
-          // لاگ صریح محتوای متنی
-          const fragment = parseStreamText(res)
-          if (fragment) {
-            console.log('%c[TRANSCRIBE TEXT]:', 'color: lime; font-weight: bold; font-size: 13px;', fragment)
-            this.currentText += fragment
+          // استخراج دقیق بر اساس ساختار ارسالی مدل جمینای لایو
+          let txt = ''
+          if (res.serverContent?.inputTranscription?.text) {
+            txt = res.serverContent.inputTranscription.text
+          } else if (res.serverContent?.modelTurn?.parts) {
+            for (const p of res.serverContent.modelTurn.parts) {
+              if (p.text) txt += p.text
+            }
           }
 
-          // ثبت نهایی سگمنت با رویداد اتمام نوبت
-          if (res.serverContent?.turnComplete && this.currentText.trim()) {
-            const segEnd = Math.max(this.segStart + 0.5, this.secondsSent)
+          if (txt.trim()) {
+            const segEnd = Math.max(this.segStart + 1.0, this.secondsSent)
             const seg: TranscriptSegment = {
-              text: this.currentText.trim(),
+              text: txt.trim(),
               start: this.segStart,
               end: segEnd,
             }
             this.segments.push(seg)
             this.onSegment?.(seg)
-            this.currentText = ''
             this.segStart = segEnd
             this.lastEnd = segEnd
           }
         } catch {}
       }
 
-      this.ws.onerror = (e) => {
-        console.error('LIVE_WS_ERR:', e)
-        this.onError?.('خطای وب‌سوکت لایو')
+      this.ws.onerror = () => {
+        this.onError?.('خطای اتصال به وب‌سوکت لایو')
       }
 
       this.ws.onclose = () => {
-        if (this.currentText.trim()) {
-          const segEnd = Math.max(this.segStart + 0.5, this.secondsSent)
-          const seg: TranscriptSegment = {
-            text: this.currentText.trim(),
-            start: this.segStart,
-            end: segEnd,
-          }
-          this.segments.push(seg)
-          this.onSegment?.(seg)
-          this.currentText = ''
-        }
         this.onClose?.()
       }
     })
@@ -150,12 +118,12 @@ export class LiveTranscriber {
     }
   }
 
-  async finish(timeoutMs = 6000): Promise<TranscriptSegment[]> {
+  async finish(timeoutMs = 8000): Promise<TranscriptSegment[]> {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
         this.ws.send(JSON.stringify({ clientContent: { turnComplete: true } }))
       } catch {}
-      await new Promise((r) => setTimeout(r, Math.min(timeoutMs, 2500)))
+      await new Promise((r) => setTimeout(r, Math.min(timeoutMs, 4000)))
       try {
         this.ws.close()
       } catch {}
