@@ -200,7 +200,7 @@ export default async function HomePage() {
                   <Link href={'/blog/' + a.slug} className="card group block overflow-hidden transition-colors hover:border-line-strong">
                     <div className="overflow-hidden">
                       <img
-                        src={a.img}
+                        src={a.img ? (a.img.includes('/upload/') ? a.img.replace('/upload/', '/upload/f_auto,q_auto,w_800/') : a.img) : ''}
                         alt={L(locale, a.titleFa, a.titleEn)}
                         loading="lazy"
                         className="h-44 w-full object-cover transition-transform duration-500 group-hover:scale-105"
