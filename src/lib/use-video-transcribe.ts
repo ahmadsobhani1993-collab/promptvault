@@ -41,6 +41,7 @@ export function useVideoTranscribe() {
   const [status, setStatus] = useState<string>('')
   const [progress, setProgress] = useState<number>(0)
   const [transcribing, setTranscribing] = useState<boolean>(false)
+  const [segments, setSegments] = useState<Seg[]>([])
   const stopRef = useRef<boolean>(false)
 
   const stop = () => {
@@ -51,18 +52,19 @@ export function useVideoTranscribe() {
 
   const transcribeVideo = async (
     file: File | Blob,
-    onSegments: (segments: Seg[]) => void
+    onSegments?: (segments: Seg[]) => void
   ) => {
     if (!file) return
     stopRef.current = false
     setTranscribing(true)
+    setSegments([])
     setStatus('در حال استخراج صوت از ویدیو...')
     setProgress(5)
 
     try {
       console.log('%c[VIDEO-PIPELINE: STEP 1] File:', 'color: #ec4899;', file.name || 'video_blob')
       const pcm = await decodeToPcm16k(file)
-      if (!pcm) throw new Error('عدم امکان دیکود فایل صوتی ویدیو')
+      if (!pcm) throw new Error('عدم امکان استخراج صوت')
 
       const chunks = bufferToBase64Chunks(pcm, 1) || []
       const totalDuration = chunks.reduce((s, c) => s + (c.seconds || 0), 0)
@@ -95,7 +97,7 @@ export function useVideoTranscribe() {
         if (stopRef.current) break
         const sess = sessions[s]
 
-        setStatus(`سشن ${s + 1}/${sessions.length}...`)
+        setStatus(`در حال برقراری ارتباط سشن ${s + 1}/${sessions.length}...`)
         const t = new VideoLiveTranscriber(undefined, sess.offset)
 
         t.onSegment = (rawSeg: VideoTranscriptSegment) => {
@@ -104,8 +106,10 @@ export function useVideoTranscribe() {
           for (const item of broken) {
             acc.push(item)
           }
+          const updated = [...acc]
+          setSegments(updated)
           if (typeof onSegments === 'function') {
-            onSegments([...acc])
+            onSegments(updated)
           }
         }
 
@@ -131,7 +135,7 @@ export function useVideoTranscribe() {
       setStatus(acc.length === 0 ? 'متنی دریافت نشد' : `تکمیل شد (${acc.length} کپشن)`)
     } catch (err: any) {
       console.error('[VIDEO TRANSCRIBE ERROR]:', err)
-      setStatus('خطا: ' + (err.message || err))
+      setStatus('خطا در پردازش ویدیو: ' + (err.message || err))
     } finally {
       setTranscribing(false)
     }
@@ -142,7 +146,11 @@ export function useVideoTranscribe() {
     progress,
     transcribing,
     isTranscribing: transcribing,
+    segments,
+    subtitles: segments,
+    captions: segments,
     stop,
     transcribeVideo,
+    transcribe: transcribeVideo,
   }
 }
