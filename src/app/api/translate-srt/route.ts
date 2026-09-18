@@ -1,11 +1,18 @@
 ﻿import { NextResponse } from 'next/server'
 
 export async function POST(req: Request) {
+  console.log('%c[TRANSLATE-API: HIT] Request Received at /api/translate-srt', 'color: #3b82f6; font-weight: bold;')
   try {
-    const { srtContent, targetLang = 'fa' } = await req.json()
-    console.log('[TRANSLATE REQUEST] Input Length:', srtContent?.length, 'Target:', targetLang)
+    const body = await req.json().catch(() => ({}))
+    console.log('[TRANSLATE-API: BODY]:', {
+      hasSrt: !!body.srtContent,
+      srtLength: body.srtContent?.length,
+      targetLang: body.targetLang || 'fa',
+    })
 
+    const { srtContent, targetLang = 'fa' } = body
     if (!srtContent) {
+      console.error('[TRANSLATE-API: ERROR] Missing srtContent')
       return NextResponse.json({ error: 'محتوای زیرنویس یافت نشد' }, { status: 400 })
     }
 
@@ -18,7 +25,7 @@ CRITICAL RULES:
 SRT to translate:
 ${srtContent}`
 
-    // تست با مدل پیش‌فرض که ورکر از آن پشتیبانی می‌کند
+    console.log('[TRANSLATE-API: CALLING CLOUDFLARE WORKER]...')
     const res = await fetch('https://gemini-live-proxy.ahmadsobhani1993.workers.dev/transcribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -28,20 +35,22 @@ ${srtContent}`
       }),
     })
 
+    console.log('[TRANSLATE-API: WORKER RESPONSE STATUS]:', res.status)
     const rawResp = await res.text()
-    console.log('[TRANSLATE WORKER STATUS]:', res.status, 'RAW:', rawResp.slice(0, 300))
 
     if (!res.ok) {
-      throw new Error(`Cloudflare Worker returned ${res.status}: ${rawResp}`)
+      console.error('[TRANSLATE-API: WORKER RAW ERROR]:', rawResp)
+      throw new Error(`Worker returned ${res.status}: ${rawResp}`)
     }
 
     const result = JSON.parse(rawResp)
     const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text || ''
     const translated = rawText.replace(/^```[a-z]*\n?/i, '').replace(/```$/i, '').trim()
 
+    console.log('%c[TRANSLATE-API: SUCCESS]: Translated chars:', 'color: #10b981; font-weight: bold;', translated.length)
     return NextResponse.json({ srt: translated || srtContent })
   } catch (err: any) {
-    console.error('[TRANSLATE BACKEND ERROR]:', err)
+    console.error('[TRANSLATE-API: CATCH ERROR]:', err)
     return NextResponse.json({ error: err.message || 'خطا در ترجمه زیرنویس' }, { status: 500 })
   }
 }

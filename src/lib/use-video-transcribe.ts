@@ -67,16 +67,9 @@ export function useVideoTranscribe() {
       const pcm = await decodeToPcm16k(file)
       if (!pcm) throw new Error('خطا در دیکود صدای ویدیو')
 
-      console.log('%c[AUDIO DECODED DURATION]:', 'color: lime; font-weight: bold;', pcm.duration + 's')
-
       const chunks = bufferToBase64Chunks(pcm, 1) || []
-      console.log('%c[VIDEO-PIPELINE: STEP 2] Audio Split into Chunks:', 'color: #ec4899; font-weight: bold;', {
-        totalChunks: chunks.length,
-        totalAudioSec: pcm.duration,
-      })
-
       const totalDuration = chunks.reduce((s, c) => s + (c.seconds || 0), 0)
-      setStatus(`صوت استخراج شد (${chunks.length} چانک) — در حال ارسال به جمینای...`)
+      setStatus(`صوت استخراج شد (${chunks.length} چانک) — در حال ارسال...`)
       setProgress(15)
 
       const sessions: { chunks: typeof chunks; offset: number }[] = []
@@ -98,7 +91,8 @@ export function useVideoTranscribe() {
         sessions.push({ chunks: current, offset: sessionOffset })
       }
 
-      let latestFullText = ''
+      let masterAccumulatedText = ''
+      let sessionTextBuffer = ''
       let sentCount = 0
 
       for (let s = 0; s < sessions.length; s++) {
@@ -110,9 +104,11 @@ export function useVideoTranscribe() {
 
         t.onSegment = (rawSeg: VideoTranscriptSegment) => {
           if (!rawSeg?.text) return
-          latestFullText = rawSeg.text
-          console.log('%c[VIDEO-PIPELINE: RE-CALCULATING CAPTIONS]:', 'color: #facc15;', latestFullText)
-          const parsed = splitTextToSegments(latestFullText, totalDuration)
+          sessionTextBuffer = rawSeg.text
+          // ادغام متن جلسات قبلی با جلسه جاری تا هیچ جمله‌ای پاک نشود
+          const currentCombined = (masterAccumulatedText ? masterAccumulatedText + ' ' : '') + sessionTextBuffer
+          console.log('%c[VIDEO-PIPELINE: PRESERVING ALL SENTENCES]:', 'color: #facc15;', currentCombined)
+          const parsed = splitTextToSegments(currentCombined, totalDuration)
           setSegments(parsed)
         }
 
@@ -130,18 +126,18 @@ export function useVideoTranscribe() {
           await new Promise((r) => setTimeout(r, Math.min(sess.chunks[i].seconds * 1000, 800)))
         }
 
-        setStatus(`در حال انتظار برای پاسخ نهایی جمینای...`)
-        // SILENCE PADDING: تخلیه بافر صوتی جمینای لایو
-        const silencePcm = Buffer.alloc(16000 * 2 * 0.5).toString('base64');
-        t.sendChunk(silencePcm, 0.5);
-        await new Promise((r) => setTimeout(r, 1200));
-        await t.finish(5000);
+        setStatus(`در حال انتظار برای پردازش نهایی...`)
+        await t.finish()
+        if (sessionTextBuffer) {
+          masterAccumulatedText = (masterAccumulatedText ? masterAccumulatedText + ' ' : '') + sessionTextBuffer
+          sessionTextBuffer = ''
+        }
       }
 
-      if (latestFullText) {
-        const finalSegments = splitTextToSegments(latestFullText, totalDuration)
+      if (masterAccumulatedText) {
+        const finalSegments = splitTextToSegments(masterAccumulatedText, totalDuration)
         setSegments(finalSegments)
-        console.log('%c[VIDEO-PIPELINE: COMPLETED SUCCESSFULLY]:', 'color: #10b981; font-weight: bold;', finalSegments)
+        console.log('%c[VIDEO-PIPELINE: ALL SEGMENTS SECURED]:', 'color: #10b981; font-weight: bold;', finalSegments)
         setStatus(`تکمیل شد (${finalSegments.length} کپشن — ${totalDuration.toFixed(0)} ثانیه)`)
       } else {
         setStatus('متنی دریافت نشد')
