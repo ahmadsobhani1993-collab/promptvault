@@ -10,6 +10,7 @@ const PAGE_SIZE = 20
 
 // 🔑 فقط فیلدهای لازم برای کارت — بدون prompt text سنگین
 const CARD_SELECT = {
+  id: true,
   slug: true,
   titleFa: true,
   titleEn: true,

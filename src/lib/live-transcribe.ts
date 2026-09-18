@@ -6,11 +6,29 @@ export interface TranscriptSegment {
   end: number
 }
 
+function base64ToBytes(base64: string): Uint8Array {
+  const binaryString = atob(base64)
+  const bytes = new Uint8Array(binaryString.length)
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i)
+  }
+  return bytes
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  const len = bytes.byteLength
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return btoa(binary)
+}
+
 export class LiveTranscriber {
   private secondsSent = 0
   private lastEnd = 0
   private segments: TranscriptSegment[] = []
-  private chunkBuffer: string[] = []
+  private byteChunks: Uint8Array[] = []
 
   onSegment?: (seg: TranscriptSegment) => void
   onError?: (msg: string) => void
@@ -26,16 +44,30 @@ export class LiveTranscriber {
   }
 
   sendChunk(base64Data: string, durationSec: number): boolean {
-    this.chunkBuffer.push(base64Data)
-    this.secondsSent += durationSec
-    return true
+    try {
+      const bytes = base64ToBytes(base64Data)
+      this.byteChunks.push(bytes)
+      this.secondsSent += durationSec
+      return true
+    } catch {
+      return false
+    }
   }
 
   async finish(): Promise<TranscriptSegment[]> {
-    if (this.chunkBuffer.length === 0) return this.segments
+    if (this.byteChunks.length === 0) return this.segments
 
-    const fullBase64 = this.chunkBuffer.join('')
-    this.chunkBuffer = []
+    // ادغام بایت‌های خالص
+    const totalLen = this.byteChunks.reduce((acc, c) => acc + c.length, 0)
+    const merged = new Uint8Array(totalLen)
+    let offset = 0
+    for (const c of this.byteChunks) {
+      merged.set(c, offset)
+      offset += c.length
+    }
+    this.byteChunks = []
+
+    const validBase64 = bytesToBase64(merged)
 
     try {
       const res = await fetch('https://gemini-live-proxy.ahmadsobhani1993.workers.dev/transcribe', {
@@ -44,16 +76,15 @@ export class LiveTranscriber {
         body: JSON.stringify({
           contents: [
             {
-              role: 'user',
               parts: [
                 {
                   inlineData: {
                     mimeType: 'audio/wav',
-                    data: fullBase64,
+                    data: validBase64,
                   },
                 },
                 {
-                  text: 'Transcribe every spoken word in this audio verbatim in its original language. Output only the transcript.',
+                  text: 'Please transcribe all spoken words in this audio verbatim into plain text. Return only the transcription.',
                 },
               ],
             },
@@ -62,9 +93,9 @@ export class LiveTranscriber {
       })
 
       if (!res.ok) {
-        const errBody = await res.text()
-        console.error('TRANSCRIBE_WORKER_ERROR:', res.status, errBody)
-        throw new Error(`Worker status ${res.status}: ${errBody.slice(0, 150)}`)
+        const err = await res.text()
+        console.error('TRANSCRIBE_WORKER_ERROR:', res.status, err)
+        throw new Error(`Worker status ${res.status}: ${err.slice(0, 100)}`)
       }
 
       const json = await res.json()
@@ -81,7 +112,6 @@ export class LiveTranscriber {
         this.onSegment?.(seg)
       }
     } catch (err: any) {
-      console.error(err)
       this.onError?.(err?.message || 'خطا در ارتباط با سرور')
     }
 
