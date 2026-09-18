@@ -86,7 +86,7 @@ html[dir='rtl'] * { letter-spacing: 0 !important; }
 }
 
 html {
-  scroll-behavior: smooth;
+  /* scroll-behavior removed for mobile pull-to-refresh */
 }
 
 @keyframes fx-float {

@@ -160,7 +160,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
       />
       <div className="grid gap-10 lg:grid-cols-[1.2fr_1fr]">
         <div>
-          <SafeImg src={item.img} alt={L(locale, item.titleFa, item.titleEn)} className="glow-gold w-full rounded-2xl object-cover" loading="eager" />
+          <SafeImg src={item.img} isDetail={true} alt={L(locale, item.titleFa, item.titleEn)} className="glow-gold w-full rounded-2xl object-cover" loading="eager" />
         </div>
 
         <div>
