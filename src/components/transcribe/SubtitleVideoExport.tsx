@@ -1,7 +1,6 @@
 ﻿'use client'
 
 import { useEffect, useRef, useState } from 'react'
-// dynamic ffmpeg loader
 import {
   DEFAULT_STYLE,
   getAnimationState,
@@ -14,7 +13,7 @@ import {
 
 type Props = {
   videoUrl: string
-  baseName: string
+  baseName?: string
   segments: Seg[]
   style?: Style
 }
@@ -106,7 +105,7 @@ function fitSubtitle(
   }
 }
 
-export default function SubtitleVideoExport({ videoUrl, baseName, segments, style }: Props) {
+export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segments, style }: Props) {
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState('')
@@ -119,7 +118,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
   const segRef = useRef(segments)
   segRef.current = segments
 
-  // پری‌لود دارایی‌های بصری (Asset Pre-warming) به محض لود شدن کامپوننت
   useEffect(() => {
     loadFont(currentStyle.fontId || 'Vazirmatn').catch(() => {})
     getOrInitFFmpeg().catch(() => {})
@@ -131,11 +129,11 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
   }
 
   const exportVideo = async () => {
-      // تشخیص فرمت فایل ورودی
-      const matchExt = baseName.match(/\.(mp4|mov|webm|mkv)$/i);
-      const ext = matchExt ? matchExt[1].toLowerCase() : 'mp4';
-      const cleanBaseName = baseName.replace(/\.[^/.]+$/, '');
-      const mimeType = ext === 'webm' ? 'video/webm' : (ext === 'mov' ? 'video/quicktime' : 'video/mp4');
+    const safeBaseName = String(baseName || 'video')
+    const matchExt = safeBaseName.match(/\.(mp4|mov|webm|mkv)$/i)
+    const ext = matchExt ? matchExt[1].toLowerCase() : 'mp4'
+    const cleanBaseName = safeBaseName.replace(/\.[^/.]+$/, '') || 'video'
+    const mimeType = ext === 'webm' ? 'video/webm' : ext === 'mov' ? 'video/quicktime' : 'video/mp4'
 
     if (exporting || !videoUrl) return
     setExporting(true)
@@ -150,10 +148,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       if (typeof (window as any).VideoEncoder === 'undefined') {
         throw new Error('مرورگر شما از WebCodecs پشتیبانی نمی‌کند. لطفاً از آخرین نسخه Chrome یا Edge استفاده کنید.')
       }
-
-      const { Muxer, ArrayBufferTarget } = await import(
-        /* webpackIgnore: true */ 'https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.4/+esm'
-      )
 
       const storedStyle = readStoredStyle()
       const exportStyle: Style = { ...DEFAULT_STYLE, ...(storedStyle || {}), ...(style || {}) }
@@ -197,11 +191,11 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       ctx.lineJoin = 'round'
       ctx.lineCap = 'round'
 
-                                    const mp4Mod: any = await import(/* webpackIgnore: true */ 'https://esm.sh/mp4-muxer@5.1.4')
+      const mp4Mod: any = await import(/* webpackIgnore: true */ 'https://esm.sh/mp4-muxer@5.1.4')
       const MuxerClass = mp4Mod.Muxer || mp4Mod.default?.Muxer
       const TargetClass = mp4Mod.ArrayBufferTarget || mp4Mod.default?.ArrayBufferTarget
       if (typeof MuxerClass !== 'function' || typeof TargetClass !== 'function') {
-        throw new Error(`Constructor resolution failed: Muxer=${typeof MuxerClass}, Target=${typeof TargetClass}`)
+        throw new Error('عدم امکان بارگذاری کامپوننت سازنده MP4')
       }
 
       const target = new TargetClass()
@@ -211,7 +205,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         fastStart: 'in-memory',
       })
 
-            const calculatedBitrate = Math.round(clamp((W * H * 2.2), 1_500_000, 4_500_000))
+      const calculatedBitrate = Math.round(clamp((W * H * 2.2), 1_500_000, 4_500_000))
       const VideoFrameClass = typeof VideoFrame !== 'undefined' ? VideoFrame : (window as any).VideoFrame
       if (typeof VideoFrameClass !== 'function') {
         throw new Error('WebCodecs VideoFrame در مرورگر پشتیبانی نمی‌شود.')
@@ -362,11 +356,10 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           await encoder.flush()
         }
 
-        // تخمین زمان باقی‌مانده (ETA)
         const elapsedSec = (performance.now() - startTime) / 1000
         const framesDone = frameIndex + 1
         const remainingFrames = totalFrames - framesDone
-        const fpsReal = framesDone / elapsedSec
+        const fpsReal = framesDone / Math.max(elapsedSec, 0.1)
         const remainingSeconds = Math.round(remainingFrames / fpsReal)
 
         if (framesDone > 10 && remainingSeconds > 0) {
@@ -387,25 +380,25 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       setStatus('در حال ادغام صدای اصلی...')
 
       const ffmpeg = await getOrInitFFmpeg()
-
       const videoArrayBuffer = target.buffer
       await ffmpeg.writeFile('sub_video.mp4', new Uint8Array(videoArrayBuffer))
 
       const sourceResponse = await fetch(videoUrl)
       const sourceBlob = await sourceResponse.blob()
-      const sourceExt = ext === 'mov' ? 'source_input.mov' : 'source_input.mp4';
-        await ffmpeg.writeFile(sourceExt, new Uint8Array(await sourceBlob.arrayBuffer()))
+      const sourceInName = ext === 'mov' ? 'source_input.mov' : 'source_input.mp4'
+      await ffmpeg.writeFile(sourceInName, new Uint8Array(await sourceBlob.arrayBuffer()))
 
       setProgress(92)
+      const outFileName = 'final_output.mp4'
       await ffmpeg.exec([
         '-i', 'sub_video.mp4',
-        '-i', 'source_input.mp4',
+        '-i', sourceInName,
         '-map', '0:v:0',
         '-map', '1:a:0?',
         '-c:v', 'copy',
         '-c:a', 'copy',
         '-movflags', '+faststart',
-        'final_output.mp4',
+        outFileName,
       ])
 
       const finalData = (await ffmpeg.readFile(outFileName)) as Uint8Array
@@ -471,47 +464,30 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
           <span className="text-xs font-mono text-gray-300 text-left">{safeProgress}%</span>
         </div>
       ) : (
-  (() => {
-    const isReady = Boolean(videoUrl && segments && segments.length > 0)
-    return (
-      <button
-        onClick={exportVideo}
-        disabled={exporting || !isReady}
-        className={`w-full rounded-xl py-4 font-bold transition-all duration-300 flex items-center justify-center gap-2 ${
-          !isReady
-            ? 'bg-zinc-900 border border-zinc-800 text-zinc-600 cursor-not-allowed opacity-50 shadow-none'
-            : 'bg-gradient-to-r from-amber-500 to-orange-500 text-black shadow-lg shadow-amber-500/20 hover:from-amber-400 hover:to-orange-400 cursor-pointer active:scale-[0.99]'
-        }`}
-      >
-        <span>📹</span>
-        <span>
-          {!videoUrl
-            ? 'ابتدا ویدیو را بارگذاری کنید'
-            : !segments || segments.length === 0
-            ? 'در انتظار پردازش و تکمیل زیرنویس...'
-            : 'خروجی MP4 با زیرنویس'}
-        </span>
-      </button>
-    )
-  })()
-)}
+        (() => {
+          const isReady = Boolean(videoUrl && segments && segments.length > 0)
+          return (
+            <button
+              onClick={exportVideo}
+              disabled={exporting || !isReady}
+              className={`w-full rounded-xl py-4 font-bold transition-all duration-300 flex items-center justify-center gap-2 ${
+                !isReady
+                  ? 'bg-zinc-900 border border-zinc-800 text-zinc-600 cursor-not-allowed opacity-50 shadow-none'
+                  : 'bg-gradient-to-r from-amber-500 to-orange-500 text-black shadow-lg shadow-amber-500/20 hover:from-amber-400 hover:to-orange-400 cursor-pointer active:scale-[0.99]'
+              }`}
+            >
+              <span>📹</span>
+              <span>
+                {!videoUrl
+                  ? 'ابتدا ویدیو را بارگذاری کنید'
+                  : !segments || segments.length === 0
+                  ? 'در انتظار پردازش و تکمیل زیرنویس...'
+                  : 'خروجی MP4 با زیرنویس'}
+              </span>
+            </button>
+          )
+        })()
+      )}
     </div>
   )
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
