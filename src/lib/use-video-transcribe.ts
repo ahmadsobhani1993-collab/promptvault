@@ -55,24 +55,16 @@ export function useVideoTranscribe() {
     stopRef.current = false
     setBusy(true)
     setSegments([])
-    setStatus('در حال آماده‌سازی و استخراج صوت از ویدیو...')
+    setStatus('در حال استخراج صوت از ویدیو...')
     setProgress(5)
 
     try {
-      console.log('%c[VIDEO-PIPELINE: STEP 1] File:', 'color: #ec4899; font-weight: bold;', file.name || 'video_blob')
       const pcm = await decodeToPcm16k(file)
-      if (!pcm) throw new Error('عدم امکان استخراج صوت از ویدیو')
-
-      console.log('%c[AUDIO DECODED DURATION]:', 'color: lime;', pcm.duration + 's')
+      if (!pcm) throw new Error('خطا در دیکود صدای ویدیو')
 
       const chunks = bufferToBase64Chunks(pcm, 1) || []
-      console.log('%c[VIDEO-PIPELINE: STEP 2] Audio Split into Chunks:', 'color: #ec4899; font-weight: bold;', {
-        totalChunks: chunks.length,
-        totalAudioSec: pcm.duration,
-      })
-
       const totalDuration = chunks.reduce((s, c) => s + (c.seconds || 0), 0)
-      setStatus(`صوت استخراج شد (${chunks.length} بخش) — در حال اتصال به وب‌سوکت...`)
+      setStatus(`صوت استخراج شد (${chunks.length} چانک) — در حال ارسال...`)
       setProgress(15)
 
       const sessions: { chunks: typeof chunks; offset: number }[] = []
@@ -101,7 +93,7 @@ export function useVideoTranscribe() {
         if (stopRef.current) break
         const sess = sessions[s]
 
-        setStatus(`در حال برقراری سشن ${s + 1}/${sessions.length}...`)
+        setStatus(`در حال برقراری اتصال...`)
         const t = new VideoLiveTranscriber(undefined, sess.offset)
 
         t.onSegment = (rawSeg: VideoTranscriptSegment) => {
@@ -114,7 +106,6 @@ export function useVideoTranscribe() {
         }
 
         t.onError = (m) => {
-          console.error('[VIDEO WS ERROR]:', m)
           setStatus('خطا: ' + m)
         }
 
@@ -128,6 +119,7 @@ export function useVideoTranscribe() {
           await new Promise((r) => setTimeout(r, Math.min(sess.chunks[i].seconds * 1000, 800)))
         }
 
+        setStatus(`در حال دریافت نتایج نهایی...`)
         await t.finish()
       }
 
