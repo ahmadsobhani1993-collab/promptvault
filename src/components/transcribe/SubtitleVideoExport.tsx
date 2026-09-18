@@ -131,6 +131,12 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
   }
 
   const exportVideo = async () => {
+      // تشخیص فرمت فایل ورودی
+      const matchExt = baseName.match(/\.(mp4|mov|webm|mkv)$/i);
+      const ext = matchExt ? matchExt[1].toLowerCase() : 'mp4';
+      const cleanBaseName = baseName.replace(/\.[^/.]+$/, '');
+      const mimeType = ext === 'webm' ? 'video/webm' : (ext === 'mov' ? 'video/quicktime' : 'video/mp4');
+
     if (exporting || !videoUrl) return
     setExporting(true)
     setProgress(0)
@@ -387,7 +393,8 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
 
       const sourceResponse = await fetch(videoUrl)
       const sourceBlob = await sourceResponse.blob()
-      await ffmpeg.writeFile('source_input.mp4', new Uint8Array(await sourceBlob.arrayBuffer()))
+      const sourceExt = ext === 'mov' ? 'source_input.mov' : 'source_input.mp4';
+        await ffmpeg.writeFile(sourceExt, new Uint8Array(await sourceBlob.arrayBuffer()))
 
       setProgress(92)
       await ffmpeg.exec([
@@ -401,8 +408,8 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
         'final_output.mp4',
       ])
 
-      const finalData = (await ffmpeg.readFile('final_output.mp4')) as Uint8Array
-      const finalBlob = new Blob([finalData], { type: 'video/mp4' })
+      const finalData = (await ffmpeg.readFile(outFileName)) as Uint8Array
+      const finalBlob = new Blob([finalData], { type: mimeType })
 
       setProgress(100)
       setStatus('✅ ذخیره‌سازی ویدیو...')
@@ -410,7 +417,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       const url = URL.createObjectURL(finalBlob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${baseName}.subtitled.mp4`
+      a.download = `${cleanBaseName}.subtitled.${ext}`
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -418,8 +425,8 @@ export default function SubtitleVideoExport({ videoUrl, baseName, segments, styl
       window.setTimeout(() => {
         URL.revokeObjectURL(url)
         ffmpeg.deleteFile('sub_video.mp4').catch(() => {})
-        ffmpeg.deleteFile('source_input.mp4').catch(() => {})
-        ffmpeg.deleteFile('final_output.mp4').catch(() => {})
+        ffmpeg.deleteFile(sourceInName).catch(() => {})
+        ffmpeg.deleteFile(outFileName).catch(() => {})
       }, 5000)
 
     } catch (error: any) {
