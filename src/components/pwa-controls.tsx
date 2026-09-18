@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
 
@@ -8,6 +8,12 @@ export default function PWAControls() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').then((reg) => {
+          reg.update()
+        }).catch(() => {})
+      }
+
       if (window.matchMedia('(display-mode: standalone)').matches) {
         setIsInstalled(true)
         return

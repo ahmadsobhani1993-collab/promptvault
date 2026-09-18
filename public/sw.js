@@ -1,3 +1,11 @@
+﻿self.addEventListener('install', (e) => {
+  self.skipWaiting()
+})
+
+self.addEventListener('activate', (e) => {
+  e.waitUntil(self.clients.claim())
+})
+
 self.addEventListener('push', (e) => {
   const data = e.data?.json() ?? { title: 'PromptsFA', body: 'خبر جدید!' }
   e.waitUntil(
