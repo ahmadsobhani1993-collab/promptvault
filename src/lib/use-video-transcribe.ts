@@ -6,19 +6,35 @@ import { mkWords, type Seg } from './subtitle-studio'
 const SESSION_SECONDS = 60  // هر ۶۰ ثانیه یک session جدید
 
 const splitIntoSentences = (text: string, start: number, end: number): Seg[] => {
-  const sentences = text.match(/[^.!?؟\n]+[.!?؟]?/g)?.map((s) => s.trim()).filter(Boolean) || [text]
-  const words = sentences.map((s) => s.split(/\s+/).filter(Boolean).length)
-  const totalW = words.reduce((a, b) => a + b, 0) || 1
-  const dur = end - start
-  const out: Seg[] = []
-  let cursor = start
-  sentences.forEach((txt, k) => {
-    const d = Math.max(0.4, (words[k] / totalW) * dur)
-    out.push({ text: txt, start: cursor, end: cursor + d, words: mkWords(txt, cursor, cursor + d) })
-    cursor += d
-  })
-  return out
-}
+  const allTokens = text.trim().split(/s+/).filter(Boolean);
+  if (!allTokens.length) return [];
+
+  const WORDS_PER_SEG = 4;
+  const chunks: string[] = [];
+  for (let i = 0; i < allTokens.length; i += WORDS_PER_SEG) {
+    chunks.push(allTokens.slice(i, i + WORDS_PER_SEG).join(' '));
+  }
+
+  const totalWords = allTokens.length;
+  const dur = Math.max(0.5, end - start);
+  const out: Seg[] = [];
+  let cursor = start;
+
+  chunks.forEach((chunkTxt) => {
+    const wCount = chunkTxt.split(/s+/).filter(Boolean).length;
+    const d = (wCount / totalWords) * dur;
+    const segEnd = cursor + d;
+    out.push({
+      text: chunkTxt,
+      start: cursor,
+      end: segEnd,
+      words: mkWords(chunkTxt, cursor, segEnd)
+    });
+    cursor = segEnd;
+  });
+
+  return out;
+};
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 

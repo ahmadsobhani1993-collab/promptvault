@@ -7,12 +7,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'محتوای زیرنویس یافت نشد' }, { status: 400 })
     }
 
-    const apiKey = process.env.GEMINI_API_KEY
-    if (!apiKey) {
-      return NextResponse.json({ error: 'کلید جمینای تنظیم نشده است' }, { status: 500 })
-    }
-
-    const promptText = `You are an expert subtitle translator. Translate the dialogue in the following SRT subtitles to natural, fluent ${targetLang}. 
+    const promptText = `Translate the dialogue in the following SRT subtitles to natural, fluent ${targetLang}.
 CRITICAL RULES:
 1. Preserve every subtitle index number and timestamp format EXACTLY as they are.
 2. Only translate the text lines. Do not alter any timestamps or index markers.
@@ -21,8 +16,7 @@ CRITICAL RULES:
 SRT to translate:
 ${srtContent}`
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
-    const response = await fetch(url, {
+    const res = await fetch('https://gemini-live-proxy.ahmadsobhani1993.workers.dev/transcribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -30,16 +24,16 @@ ${srtContent}`
       }),
     })
 
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}))
-      throw new Error(errData?.error?.message || `Gemini API returned ${response.status}`)
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '')
+      throw new Error(`Worker status ${res.status}: ${errText}`)
     }
 
-    const result = await response.json()
+    const result = await res.json()
     const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text || ''
     const translated = rawText.replace(/^```[a-z]*\n?/i, '').replace(/```$/i, '').trim()
 
-    return NextResponse.json({ srt: translated })
+    return NextResponse.json({ srt: translated || srtContent })
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'خطا در ترجمه زیرنویس' }, { status: 500 })
   }

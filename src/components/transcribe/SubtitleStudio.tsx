@@ -30,7 +30,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
   const [selected, setSelected] = useState(-1)
   const [zoom, setZoom] = useState(40)
   const [showSafe, setShowSafe] = useState(false)
-  const [showAdv, setShowAdv] = useState(false)
+  const [showAdv, setShowAdv] = useState(true)
   const [translating, setTranslating] = useState(false)
   const translateSubtitles = async () => {
     if (!segments || segments.length === 0 || translating) return
@@ -390,7 +390,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                 >
                   <span
                     key={current.start + current.text}
-                    dir="rtl"
+                    dir="auto"
                     className="block w-full text-center whitespace-pre-wrap break-words"
                     style={{
                       fontFamily: `"${style.fontId}"`,
