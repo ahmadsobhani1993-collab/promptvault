@@ -1,3 +1,28 @@
+const toSrtPayload = (segs) => {
+  const pad = (n, z = 2) => String(Math.floor(n)).padStart(z, '0');
+  const fmt = (sec) => {
+    const s = Math.max(0, Number(sec) || 0);
+    const h = pad(s / 3600);
+    const m = pad((s % 3600) / 60);
+    const sc = pad(s % 60);
+    const ms = pad((s % 1) * 1000, 3);
+    return `${h}:${m}:${sc},${ms}`;
+  };
+  return segs.map((s, i) => `${i + 1}\n${fmt(s.start)} --> ${fmt(s.end)}\n${s.text}`).join('\n\n');
+};
+
+const parseSrtText = (raw) => {
+  const blocks = raw.trim().replace(/\r\n/g, '\n').split(/\n\s*\n/);
+  const map = [];
+  for (const block of blocks) {
+    const lines = block.trim().split('\n');
+    if (lines.length >= 3) {
+      const text = lines.slice(2).join(' ').trim();
+      map.push(text);
+    }
+  }
+  return map;
+};
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
@@ -36,25 +61,31 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     if (!segments || segments.length === 0 || translating) return
     setTranslating(true)
     try {
-      const srt = segments.map((s, i) => `${i + 1}\n00:00:00,000 --> 00:00:00,000\n${s.text}`).join('\n\n')
+      const srtPayload = toSrtPayload(segments)
       const res = await fetch('/api/translate-srt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ srtContent: srt, targetLang: 'fa' }),
+        body: JSON.stringify({ srtContent: srtPayload, targetLang: 'fa' }),
       })
       const data = await res.json()
       if (data.srt) {
-        const lines = data.srt.split('\n\n')
+        const translatedLines = parseSrtText(data.srt)
         const updated = segments.map((seg, idx) => {
-          const chunk = lines[idx] || ''
-          const parts = chunk.split('\n').slice(2).join(' ').trim()
-          const newTxt = parts || seg.text; return { ...seg, text: newTxt, words: typeof mkWords === "function" ? mkWords(newTxt, seg.start, seg.end) : [] }
+          const newTxt = translatedLines[idx] || seg.text
+          return {
+            ...seg,
+            text: newTxt,
+            words: typeof mkWords === "function" ? mkWords(newTxt, seg.start, seg.end) : []
+          }
         })
-        pushHist()
+        if (typeof pushHist === 'function') pushHist()
         setSegments(updated)
+      } else if (data.error) {
+        alert('خطای ترجمه: ' + data.error)
       }
-    } catch (e) {
-      console.error(e)
+    } catch (err) {
+      console.error('[TRANSLATE FRONTEND ERROR]:', err)
+      alert('خطا در ترجمه زیرنویس')
     } finally {
       setTranslating(false)
     }
