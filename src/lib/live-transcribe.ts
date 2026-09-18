@@ -1,4 +1,4 @@
-﻿export const LIVE_WS_URL = 'wss://gemini-live-proxy.ahmadsobhani1993.workers.dev/gemini-live'
+export const LIVE_WS_URL = 'wss://gemini-live-proxy.ahmadsobhani1993.workers.dev/gemini-live'
 export const TRANSCRIBE_MODEL = 'models/gemini-3.5-transcribe-live'
 
 export interface TranscriptSegment {
@@ -14,7 +14,6 @@ export class LiveTranscriber {
   private segments: TranscriptSegment[] = []
   private currentText = ''
   private segStart = 0
-  private isConnected = false
 
   onSegment?: (seg: TranscriptSegment) => void
   onError?: (msg: string) => void
@@ -29,13 +28,14 @@ export class LiveTranscriber {
   async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        this.ws = new WebSocket(LIVE_WS_URL)
+        console.log('%c[WS] Connecting to:', 'color: orange', LIVE_WS_URL);
+        this.ws = new WebSocket(LIVE_WS_URL);
       } catch (err: any) {
-        return reject(err)
+        return reject(err);
       }
 
       this.ws.onopen = () => {
-        // ارسال پیام handshake لایو به BidiGenerateContent
+        console.log('%c[WS] Connected! Sending setup...', 'color: green');
         const setupMsg = {
           setup: {
             model: this.model,
@@ -44,77 +44,76 @@ export class LiveTranscriber {
               temperature: 0.1,
             },
           },
-        }
-        this.ws?.send(JSON.stringify(setupMsg))
-        this.isConnected = true
-        resolve()
-      }
+        };
+        this.ws?.send(JSON.stringify(setupMsg));
+        resolve();
+      };
 
       this.ws.onmessage = (event) => {
         try {
-          const res = JSON.parse(event.data)
+          const res = JSON.parse(event.data);
+          console.log('%c[WS INCOMING MSG]:', 'color: cyan', res);
+
           if (res.proxyError) {
-            console.error('WS_PROXY_ERROR:', res.proxyError)
-            this.onError?.(res.proxyError)
-            return
+            console.error('[WS Proxy Error]:', res.proxyError);
+            this.onError?.(res.proxyError);
+            return;
           }
 
-          // دریافت تکست استریم شده از مدل
-          const parts = res.serverContent?.modelTurn?.parts
+          const parts = res.serverContent?.modelTurn?.parts;
           if (parts && Array.isArray(parts)) {
             for (const part of parts) {
               if (part.text) {
-                this.currentText += part.text
+                console.log('%c[STREAM WORD]:', 'color: lime', part.text);
+                this.currentText += part.text;
               }
             }
           }
 
-          // پایان یک عبارت گفتاری
           if (res.serverContent?.turnComplete && this.currentText.trim()) {
-            const segEnd = Math.max(this.segStart + 0.5, this.secondsSent)
+            const segEnd = Math.max(this.segStart + 0.5, this.secondsSent);
             const seg: TranscriptSegment = {
               text: this.currentText.trim(),
               start: this.segStart,
               end: segEnd,
-            }
-            this.segments.push(seg)
-            this.onSegment?.(seg)
-            this.currentText = ''
-            this.segStart = segEnd
-            this.lastEnd = segEnd
+            };
+            this.segments.push(seg);
+            this.onSegment?.(seg);
+            this.currentText = '';
+            this.segStart = segEnd;
+            this.lastEnd = segEnd;
           }
         } catch (e) {
-          // فریم‌های غیر JSON یا سیگنال‌های داخلی
+          console.warn('[WS Parse Error]:', e);
         }
-      }
+      };
 
       this.ws.onerror = (e) => {
-        console.error('LIVE_WS_ERROR:', e)
-        this.onError?.('خطا در وب‌سوکت ترنسکرایب لایو')
-      }
+        console.error('[WS Error Event]:', e);
+        this.onError?.('خطای وب‌سوکت لایو');
+      };
 
-      this.ws.onclose = () => {
-        this.isConnected = false
+      this.ws.onclose = (ev) => {
+        console.log('%c[WS Closed]:', 'color: gray', ev.code, ev.reason);
         if (this.currentText.trim()) {
-          const segEnd = Math.max(this.segStart + 0.5, this.secondsSent)
+          const segEnd = Math.max(this.segStart + 0.5, this.secondsSent);
           const seg: TranscriptSegment = {
             text: this.currentText.trim(),
             start: this.segStart,
             end: segEnd,
-          }
-          this.segments.push(seg)
-          this.onSegment?.(seg)
-          this.currentText = ''
+          };
+          this.segments.push(seg);
+          this.onSegment?.(seg);
+          this.currentText = '';
         }
-        this.onClose?.()
-      }
-    })
+        this.onClose?.();
+      };
+    });
   }
 
   sendChunk(base64Pcm: string, durationSec: number): boolean {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
     try {
-      // ارسال چانک صوتی با استاندارد realtimeInput در Bidi
       const msg = {
         realtimeInput: {
           mediaChunks: [
@@ -124,28 +123,32 @@ export class LiveTranscriber {
             },
           ],
         },
-      }
-      this.ws.send(JSON.stringify(msg))
-      this.secondsSent += durationSec
-      return true
+      };
+      this.ws.send(JSON.stringify(msg));
+      this.secondsSent += durationSec;
+      return true;
     } catch {
-      return false
+      return false;
     }
   }
 
   async finish(timeoutMs = 6000): Promise<TranscriptSegment[]> {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      await new Promise((r) => setTimeout(r, Math.min(timeoutMs, 2500)))
+      // ارسال سیگنال اتمام نوبت ورودی به مدل تا جواب متنی را آزاد کند
       try {
-        this.ws.close()
+        this.ws.send(JSON.stringify({ clientContent: { turnComplete: true } }));
+      } catch {}
+      await new Promise((r) => setTimeout(r, Math.min(timeoutMs, 2500)));
+      try {
+        this.ws.close();
       } catch {}
     }
-    return this.segments
+    return this.segments;
   }
 
   close() {
     try {
-      this.ws?.close()
+      this.ws?.close();
     } catch {}
   }
 }
