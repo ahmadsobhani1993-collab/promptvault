@@ -60,17 +60,29 @@ export class LiveTranscriber {
             return;
           }
 
+          // ۱. استخراج از ترنسکریپت اختصاصی مدل لایو
+          if (res.serverContent?.interimTranscript) {
+            const t = res.serverContent.interimTranscript.text || res.serverContent.interimTranscript;
+            if (typeof t === 'string') this.currentText += t;
+          }
+          if (res.serverContent?.transcript) {
+            const t = res.serverContent.transcript.text || res.serverContent.transcript;
+            if (typeof t === 'string') this.currentText += t;
+          }
+
+          // ۲. استخراج از پارت‌های استاندارد
           const parts = res.serverContent?.modelTurn?.parts;
           if (parts && Array.isArray(parts)) {
             for (const part of parts) {
               if (part.text) {
-                console.log('%c[STREAM WORD]:', 'color: lime', part.text);
                 this.currentText += part.text;
               }
             }
           }
 
-          if (res.serverContent?.turnComplete && this.currentText.trim()) {
+          // ثبت سگمنت با دریافت کلمات یا پایان بخش
+          const hasText = this.currentText.trim().length > 0;
+          if ((res.serverContent?.turnComplete || res.serverContent?.generationConfig) && hasText) {
             const segEnd = Math.max(this.segStart + 0.5, this.secondsSent);
             const seg: TranscriptSegment = {
               text: this.currentText.trim(),
