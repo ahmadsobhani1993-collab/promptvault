@@ -3,31 +3,27 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-interface PromptActionsProps {
-  promptId: string
+interface Props {
+  id?: string
+  promptId?: string
   status?: string
   currentStatus?: string
-  locale?: string
 }
 
-export default function PromptActions({
-  promptId,
-  status,
-  currentStatus,
-  locale = 'fa'
-}: PromptActionsProps) {
+export default function PromptActions({ id, promptId, status, currentStatus }: Props) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
-  const actualStatus = (currentStatus || status || '').toUpperCase()
+  const targetId = promptId || id || ''
+  const currentStat = (currentStatus || status || '').toUpperCase()
 
   const handlePublish = async () => {
-    if (loading) return
+    if (loading || !targetId) return
     setLoading(true)
     try {
       const res = await fetch('/api/admin/prompts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: promptId, action: 'publish' }),
+        body: JSON.stringify({ id: targetId, action: 'publish' }),
       })
       if (!res.ok) throw new Error()
       router.refresh()
@@ -39,17 +35,17 @@ export default function PromptActions({
   }
 
   const handleDelete = async () => {
-    if (loading) return
-    if (!confirm('آیا از حذف کامل این پرامپت مطمئن هستید؟')) return
+    if (loading || !targetId) return
+    if (!confirm('آیا از حذف این پرامپت اطمینان دارید؟')) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/admin/prompts`, {
+      const res = await fetch('/api/admin/prompts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: promptId, action: 'delete' }),
+        body: JSON.stringify({ id: targetId, action: 'delete' }),
       })
       if (!res.ok) {
-        const delRes = await fetch(`/api/admin/prompts?id=${promptId}`, { method: 'DELETE' })
+        const delRes = await fetch(`/api/admin/prompts?id=${targetId}`, { method: 'DELETE' })
         if (!delRes.ok) throw new Error()
       }
       router.refresh()
@@ -62,7 +58,7 @@ export default function PromptActions({
 
   return (
     <div className="flex items-center gap-2">
-      {actualStatus !== 'PUBLISHED' && (
+      {currentStat !== 'PUBLISHED' && (
         <button
           onClick={handlePublish}
           disabled={loading}
