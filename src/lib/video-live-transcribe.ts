@@ -13,6 +13,7 @@ export class VideoLiveTranscriber {
   private segments: VideoTranscriptSegment[] = []
   private segStart = 0
   private fullAccumulated = ''
+  private isDone = false
 
   onSegment?: (seg: VideoTranscriptSegment) => void
   onError?: (msg: string) => void
@@ -26,12 +27,15 @@ export class VideoLiveTranscriber {
   async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
+        console.log('%c[VIDEO-WS: STEP 1] Connecting...', 'color: #3b82f6; font-weight: bold;')
         this.ws = new WebSocket(LIVE_WS_URL)
       } catch (err: any) {
+        console.error('[VIDEO-WS: INIT ERROR]:', err)
         return reject(err)
       }
 
       this.ws.onopen = () => {
+        console.log('%c[VIDEO-WS: STEP 2] Connected! Sending Setup...', 'color: #10b981; font-weight: bold;')
         const setupMsg = {
           setup: {
             model: this.model,
@@ -47,13 +51,16 @@ export class VideoLiveTranscriber {
       this.ws.onmessage = (event) => {
         try {
           const res = JSON.parse(event.data)
+          console.log('%c[VIDEO-WS: INCOMING FRAME]:', 'color: #c084fc;', res)
 
           if (res.setupComplete) {
+            console.log('%c[VIDEO-WS: STEP 3] Handshake Confirmed (setupComplete)!', 'color: #06b6d4; font-weight: bold;')
             resolve()
             return
           }
 
           if (res.proxyError) {
+            console.error('[VIDEO-WS: PROXY ERROR]:', res.proxyError)
             this.onError?.(res.proxyError)
             return
           }
@@ -72,6 +79,7 @@ export class VideoLiveTranscriber {
           txt = (txt || '').trim()
 
           if (txt) {
+            console.log('%c[VIDEO-WS: LIVE CAPTION]:', 'color: #22c55e; font-size: 13px; font-weight: bold;', txt)
             this.fullAccumulated = txt
             const segEnd = Math.max(this.segStart + 1.0, this.secondsSent)
             const seg: VideoTranscriptSegment = {
@@ -81,23 +89,33 @@ export class VideoLiveTranscriber {
             }
             this.onSegment?.(seg)
           }
+
+          if (res.serverContent?.generationComplete || res.serverContent?.turnComplete) {
+            console.log('%c[VIDEO-WS: SERVER TURN COMPLETE]', 'color: #38bdf8; font-weight: bold;')
+            this.isDone = true
+          }
         } catch (e) {
           console.warn('[VIDEO-WS: PARSE ERR]:', e)
         }
       }
 
-      this.ws.onerror = () => {
+      this.ws.onerror = (e) => {
+        console.error('[VIDEO-WS: SOCKET ERROR]:', e)
         this.onError?.('خطای وب‌سوکت لایو ویدیو')
       }
 
-      this.ws.onclose = () => {
+      this.ws.onclose = (ev) => {
+        console.warn('%c[VIDEO-WS: CLOSED]:', 'color: #94a3b8;', `Code: ${ev.code}, Reason: "${ev.reason}"`)
         this.onClose?.()
       }
     })
   }
 
   sendChunk(base64Pcm: string, durationSec: number): boolean {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.error('[VIDEO-WS: CHUNK DROP] Socket closed.')
+      return false
+    }
     try {
       this.ws.send(
         JSON.stringify({
@@ -112,22 +130,33 @@ export class VideoLiveTranscriber {
         })
       )
       this.secondsSent += durationSec
+      console.log(`%c[VIDEO-WS: CHUNK SENT] +${durationSec.toFixed(2)}s | Total: ${this.secondsSent.toFixed(2)}s`, 'color: #60a5fa;')
       return true
     } catch {
       return false
     }
   }
 
-  async finish(timeoutMs = 9000): Promise<VideoTranscriptSegment[]> {
+  async finish(maxWaitMs = 12000): Promise<VideoTranscriptSegment[]> {
+    console.log('%c[VIDEO-WS: FINISHING...] Sending clientContent turnComplete', 'color: #f59e0b; font-weight: bold;')
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
         this.ws.send(JSON.stringify({ clientContent: { turnComplete: true } }))
       } catch {}
-      await new Promise((r) => setTimeout(r, Math.min(timeoutMs, 5000)))
+
+      // صبر هوشمند تا دریافت کامل خروجی سرور بدون بستن اجباری
+      const startTime = Date.now()
+      while (!this.isDone && Date.now() - startTime < maxWaitMs) {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) break
+        await new Promise((r) => setTimeout(r, 400))
+      }
+
+      console.log('%c[VIDEO-WS: CLOSING INTENTIONALLY]', 'color: #f59e0b;')
       try {
         this.ws.close()
       } catch {}
     }
+    console.log('%c[VIDEO-WS: FINAL SEGMENTS EMITTED]:', 'color: #10b981; font-weight: bold;', this.fullAccumulated ? 1 : 0)
     return this.segments
   }
 

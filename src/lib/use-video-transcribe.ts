@@ -59,10 +59,22 @@ export function useVideoTranscribe() {
     setProgress(5)
 
     try {
+      console.log('%c[VIDEO-PIPELINE: STEP 1] Video File Received:', 'color: #ec4899; font-weight: bold;', {
+        sizeBytes: file.size,
+        type: file.type,
+      })
+
       const pcm = await decodeToPcm16k(file)
       if (!pcm) throw new Error('خطا در دیکود صدای ویدیو')
 
+      console.log('%c[AUDIO DECODED DURATION]:', 'color: lime; font-weight: bold;', pcm.duration + 's')
+
       const chunks = bufferToBase64Chunks(pcm, 1) || []
+      console.log('%c[VIDEO-PIPELINE: STEP 2] Audio Split into Chunks:', 'color: #ec4899; font-weight: bold;', {
+        totalChunks: chunks.length,
+        totalAudioSec: pcm.duration,
+      })
+
       const totalDuration = chunks.reduce((s, c) => s + (c.seconds || 0), 0)
       setStatus(`صوت استخراج شد (${chunks.length} چانک) — در حال ارسال به جمینای...`)
       setProgress(15)
@@ -93,12 +105,13 @@ export function useVideoTranscribe() {
         if (stopRef.current) break
         const sess = sessions[s]
 
-        setStatus(`در حال ترنسکرایب لایو سشن ${s + 1}...`)
+        setStatus(`سشن ${s + 1}/${sessions.length}...`)
         const t = new VideoLiveTranscriber(undefined, sess.offset)
 
         t.onSegment = (rawSeg: VideoTranscriptSegment) => {
           if (!rawSeg?.text) return
           latestFullText = rawSeg.text
+          console.log('%c[VIDEO-PIPELINE: RE-CALCULATING CAPTIONS]:', 'color: #facc15;', latestFullText)
           const parsed = splitTextToSegments(latestFullText, totalDuration)
           setSegments(parsed)
         }
@@ -117,12 +130,14 @@ export function useVideoTranscribe() {
           await new Promise((r) => setTimeout(r, Math.min(sess.chunks[i].seconds * 1000, 800)))
         }
 
+        setStatus(`در حال انتظار برای پاسخ نهایی جمینای...`)
         await t.finish()
       }
 
       if (latestFullText) {
         const finalSegments = splitTextToSegments(latestFullText, totalDuration)
         setSegments(finalSegments)
+        console.log('%c[VIDEO-PIPELINE: COMPLETED SUCCESSFULLY]:', 'color: #10b981; font-weight: bold;', finalSegments)
         setStatus(`تکمیل شد (${finalSegments.length} کپشن — ${totalDuration.toFixed(0)} ثانیه)`)
       } else {
         setStatus('متنی دریافت نشد')
@@ -130,7 +145,7 @@ export function useVideoTranscribe() {
       setProgress(100)
     } catch (err: any) {
       console.error('[VIDEO TRANSCRIBE ERROR]:', err)
-      setStatus('خطا: ' + (err.message || err))
+      setStatus('خطا در پردازش ویدیو: ' + (err.message || err))
     } finally {
       setBusy(false)
     }
