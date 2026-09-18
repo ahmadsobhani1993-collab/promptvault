@@ -13,6 +13,7 @@ export class VideoLiveTranscriber {
   private lastEnd = 0
   private segments: VideoTranscriptSegment[] = []
   private segStart = 0
+  private lastText = ''
 
   onSegment?: (seg: VideoTranscriptSegment) => void
   onError?: (msg: string) => void
@@ -50,9 +51,6 @@ export class VideoLiveTranscriber {
       this.ws.onmessage = (event) => {
         try {
           const res = JSON.parse(event.data)
-          if (typeof window !== 'undefined') {
-            (window as any).__last_video_frame = res
-          }
 
           if (res.setupComplete) {
             console.log('%c[VIDEO-WS: STEP 3] Handshake Confirmed!', 'color: #06b6d4; font-weight: bold;')
@@ -65,9 +63,11 @@ export class VideoLiveTranscriber {
             return
           }
 
-          // استخراج دقیق متن از تمام حالت‌های پاسخ جمینای لایو
+          // استخراج مستقیم از کلید زنده interimInputTranscription و inputTranscription
           let txt = ''
-          if (res.serverContent?.inputTranscription?.text) {
+          if (res.serverContent?.interimInputTranscription?.text) {
+            txt = res.serverContent.interimInputTranscription.text
+          } else if (res.serverContent?.inputTranscription?.text) {
             txt = res.serverContent.inputTranscription.text
           } else if (res.serverContent?.modelTurn?.parts) {
             for (const p of res.serverContent.modelTurn.parts) {
@@ -75,11 +75,15 @@ export class VideoLiveTranscriber {
             }
           }
 
-          if (txt && txt.trim()) {
-            console.log('%c[VIDEO-WS: TEXT RECEIVED]:', 'color: #22c55e; font-size: 14px; font-weight: bold;', txt)
+          txt = (txt || '').trim()
+
+          // دریافت و افزودن قطعات جدید کلمات
+          if (txt && txt !== this.lastText) {
+            console.log('%c[VIDEO-WS: CAPTION EMITTED]:', 'color: #22c55e; font-size: 14px; font-weight: bold;', txt)
+            this.lastText = txt
             const segEnd = Math.max(this.segStart + 1.0, this.secondsSent)
             const seg: VideoTranscriptSegment = {
-              text: txt.trim(),
+              text: txt,
               start: this.segStart,
               end: segEnd,
             }
@@ -132,8 +136,7 @@ export class VideoLiveTranscriber {
       try {
         this.ws.send(JSON.stringify({ clientContent: { turnComplete: true } }))
       } catch {}
-      // فرصت کافی به جمینای برای بازگرداندن متن چانک‌های آخر
-      await new Promise((r) => setTimeout(r, Math.min(timeoutMs, 5000)))
+      await new Promise((r) => setTimeout(r, Math.min(timeoutMs, 4000)))
       try {
         this.ws.close()
       } catch {}
