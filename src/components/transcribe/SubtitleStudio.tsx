@@ -360,9 +360,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
               </>
             )}
             {current && videoFrame.width > 0 && (
-              <div
-                onPointerDown={onSubPointerDown}
-                className="absolute cursor-move overflow-hidden"
+              <div className="absolute pointer-events-none overflow-hidden"
                 style={{
                   left: videoFrame.left,
                   top: videoFrame.top,
@@ -370,9 +368,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                   height: videoFrame.height,
                 }}
               >
-                <div
-                  className="absolute"
-                  style={{
+                <div onPointerDown={onSubPointerDown} className="absolute pointer-events-auto cursor-grab active:cursor-grabbing" style={{
                     left: `${style.x ?? 50}%`,
                     top: `${style.y ?? 90}%`,
                     transform: 'translate(-50%,-50%)',

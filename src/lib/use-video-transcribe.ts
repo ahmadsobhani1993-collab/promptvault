@@ -1,12 +1,12 @@
-﻿import { useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { LiveTranscriber, type TranscriptSegment } from './live-transcribe'
 import { decodeToPcm16k, bufferToBase64Chunks } from './audio'
 import { mkWords, type Seg } from './subtitle-studio'
 
-const SESSION_SECONDS = 60  // هر ۶۰ ثانیه یک session جدید
+const SESSION_SECONDS = 60
 
 const splitIntoSentences = (text: string, start: number, end: number): Seg[] => {
-  const allTokens = text.trim().split(/s+/).filter(Boolean);
+  const allTokens = text.trim().split(/\s+/).filter(Boolean);
   if (!allTokens.length) return [];
 
   const WORDS_PER_SEG = 4;
@@ -16,12 +16,12 @@ const splitIntoSentences = (text: string, start: number, end: number): Seg[] => 
   }
 
   const totalWords = allTokens.length;
-  const dur = Math.max(0.5, end - start);
+  const dur = Math.max(0.6, end - start);
   const out: Seg[] = [];
   let cursor = start;
 
   chunks.forEach((chunkTxt) => {
-    const wCount = chunkTxt.split(/s+/).filter(Boolean).length;
+    const wCount = chunkTxt.split(/\s+/).filter(Boolean).length;
     const d = (wCount / totalWords) * dur;
     const segEnd = cursor + d;
     out.push({
@@ -77,7 +77,6 @@ export const useVideoTranscribe = () => {
       const totalDuration = chunks.reduce((s, c) => s + c.seconds, 0)
       setStatus(`۲. ${chunks.length} بخش — ${totalDuration.toFixed(0)}s`)
 
-      // گروه‌بندی به session های ۶۰ ثانیه‌ای
       const sessions: { chunks: typeof chunks; offset: number }[] = []
       let current: typeof chunks = []
       let currentSec = 0
@@ -112,11 +111,9 @@ export const useVideoTranscribe = () => {
           }
           totalChunks++
           setProgress(Math.round((totalChunks / totalAllChunks) * 100))
-          await sleep(sess.chunks[i].seconds * 1000)
         }
         
-        // پایان session — صبر برای جواب Gemini
-        await t.finish(15000)
+        await t.finish()
       }
 
       setStatus(acc.length === 0 ? '️ متنی دریافت نشد' : `✅ ${acc.length} کپشن — ${totalDuration.toFixed(0)}s`)
