@@ -40,35 +40,39 @@ const splitIntoSentences = (text: string, start: number, end: number): Seg[] => 
 export function useVideoTranscribe() {
   const [status, setStatus] = useState<string>('')
   const [progress, setProgress] = useState<number>(0)
-  const [transcribing, setTranscribing] = useState<boolean>(false)
+  const [busy, setBusy] = useState<boolean>(false)
   const [segments, setSegments] = useState<Seg[]>([])
   const stopRef = useRef<boolean>(false)
 
   const stop = () => {
     stopRef.current = true
-    setTranscribing(false)
+    setBusy(false)
     setStatus('عملیات متوقف شد')
   }
 
-  const transcribeVideo = async (
-    file: File | Blob,
-    onSegments?: (segments: Seg[]) => void
-  ) => {
+  const run = async (file: File | Blob) => {
     if (!file) return
     stopRef.current = false
-    setTranscribing(true)
+    setBusy(true)
     setSegments([])
-    setStatus('در حال استخراج صوت از ویدیو...')
+    setStatus('در حال آماده‌سازی و استخراج صوت از ویدیو...')
     setProgress(5)
 
     try {
-      console.log('%c[VIDEO-PIPELINE: STEP 1] File:', 'color: #ec4899;', file.name || 'video_blob')
+      console.log('%c[VIDEO-PIPELINE: STEP 1] File:', 'color: #ec4899; font-weight: bold;', file.name || 'video_blob')
       const pcm = await decodeToPcm16k(file)
-      if (!pcm) throw new Error('عدم امکان استخراج صوت')
+      if (!pcm) throw new Error('عدم امکان استخراج صوت از ویدیو')
+
+      console.log('%c[AUDIO DECODED DURATION]:', 'color: lime;', pcm.duration + 's')
 
       const chunks = bufferToBase64Chunks(pcm, 1) || []
+      console.log('%c[VIDEO-PIPELINE: STEP 2] Audio Split into Chunks:', 'color: #ec4899; font-weight: bold;', {
+        totalChunks: chunks.length,
+        totalAudioSec: pcm.duration,
+      })
+
       const totalDuration = chunks.reduce((s, c) => s + (c.seconds || 0), 0)
-      setStatus(`صوت استخراج شد (${chunks.length} چانک)`)
+      setStatus(`صوت استخراج شد (${chunks.length} بخش) — در حال اتصال به وب‌سوکت...`)
       setProgress(15)
 
       const sessions: { chunks: typeof chunks; offset: number }[] = []
@@ -97,7 +101,7 @@ export function useVideoTranscribe() {
         if (stopRef.current) break
         const sess = sessions[s]
 
-        setStatus(`در حال برقراری ارتباط سشن ${s + 1}/${sessions.length}...`)
+        setStatus(`در حال برقراری سشن ${s + 1}/${sessions.length}...`)
         const t = new VideoLiveTranscriber(undefined, sess.offset)
 
         t.onSegment = (rawSeg: VideoTranscriptSegment) => {
@@ -106,11 +110,7 @@ export function useVideoTranscribe() {
           for (const item of broken) {
             acc.push(item)
           }
-          const updated = [...acc]
-          setSegments(updated)
-          if (typeof onSegments === 'function') {
-            onSegments(updated)
-          }
+          setSegments([...acc])
         }
 
         t.onError = (m) => {
@@ -132,25 +132,24 @@ export function useVideoTranscribe() {
       }
 
       setProgress(100)
-      setStatus(acc.length === 0 ? 'متنی دریافت نشد' : `تکمیل شد (${acc.length} کپشن)`)
+      setStatus(acc.length === 0 ? 'متنی دریافت نشد' : `تکمیل شد (${acc.length} کپشن — ${totalDuration.toFixed(0)} ثانیه)`)
     } catch (err: any) {
       console.error('[VIDEO TRANSCRIBE ERROR]:', err)
       setStatus('خطا در پردازش ویدیو: ' + (err.message || err))
     } finally {
-      setTranscribing(false)
+      setBusy(false)
     }
   }
 
   return {
     status,
     progress,
-    transcribing,
-    isTranscribing: transcribing,
+    busy,
     segments,
-    subtitles: segments,
-    captions: segments,
+    setSegments,
+    run,
     stop,
-    transcribeVideo,
-    transcribe: transcribeVideo,
+    transcribeVideo: run,
+    transcribe: run,
   }
 }
