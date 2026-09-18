@@ -48,7 +48,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
         const updated = segments.map((seg, idx) => {
           const chunk = lines[idx] || ''
           const parts = chunk.split('\n').slice(2).join(' ').trim()
-          return { ...seg, text: parts || seg.text }
+          const newTxt = parts || seg.text; return { ...seg, text: newTxt, words: mkWords(newTxt, seg.start, seg.end) }
         })
         pushHist()
         setSegments(updated)
