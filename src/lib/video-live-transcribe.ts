@@ -1,4 +1,4 @@
-﻿export const LIVE_WS_URL = 'wss://gemini-live-proxy.ahmadsobhani1993.workers.dev/gemini-live'
+export const LIVE_WS_URL = 'wss://gemini-live-proxy.ahmadsobhani1993.workers.dev/gemini-live'
 export const TRANSCRIBE_MODEL = 'models/gemini-3.5-transcribe-live'
 
 export interface VideoTranscriptSegment {
@@ -12,7 +12,8 @@ export class VideoLiveTranscriber {
   private secondsSent = 0
   private segments: VideoTranscriptSegment[] = []
   private segStart = 0
-  private fullAccumulated = ''
+  private currentTurnText = ''
+  private committedText = ''
 
   onSegment?: (seg: VideoTranscriptSegment) => void
   onError?: (msg: string) => void
@@ -58,28 +59,43 @@ export class VideoLiveTranscriber {
             return
           }
 
-          let txt = ''
-          if (res.serverContent?.interimInputTranscription?.text) {
-            txt = res.serverContent.interimInputTranscription.text
-          } else if (res.serverContent?.inputTranscription?.text) {
-            txt = res.serverContent.inputTranscription.text
+          let incoming = ''
+          let isFinal = false
+
+          if (res.serverContent?.inputTranscription?.text) {
+            incoming = res.serverContent.inputTranscription.text
+            isFinal = true
+          } else if (res.serverContent?.interimInputTranscription?.text) {
+            incoming = res.serverContent.interimInputTranscription.text
           } else if (res.serverContent?.modelTurn?.parts) {
             for (const p of res.serverContent.modelTurn.parts) {
-              if (p.text) txt += p.text
+              if (p.text) incoming += p.text
             }
           }
 
-          txt = (txt || '').trim()
+          if (incoming) {
+            this.currentTurnText = incoming.trim()
 
-          if (txt) {
-            this.fullAccumulated = txt
-            const segEnd = Math.max(this.segStart + 1.0, this.secondsSent)
+            const fullCombined = this.committedText 
+              ? `${this.committedText} ${this.currentTurnText}`.trim()
+              : this.currentTurnText
+
+            const segEnd = Math.max(this.segStart + 0.5, this.secondsSent)
             const seg: VideoTranscriptSegment = {
-              text: txt,
+              text: fullCombined,
               start: this.segStart,
               end: segEnd,
             }
             this.onSegment?.(seg)
+          }
+
+          if (res.serverContent?.turnComplete || isFinal) {
+            if (this.currentTurnText) {
+              this.committedText = this.committedText 
+                ? `${this.committedText} ${this.currentTurnText}`.trim() 
+                : this.currentTurnText
+              this.currentTurnText = ''
+            }
           }
         } catch {}
       }
@@ -116,12 +132,11 @@ export class VideoLiveTranscriber {
     }
   }
 
-  async finish(drainMs = 4500): Promise<VideoTranscriptSegment[]> {
+  async finish(drainMs = 3500): Promise<VideoTranscriptSegment[]> {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
         this.ws.send(JSON.stringify({ clientContent: { turnComplete: true } }))
       } catch {}
-      // تاخیر لازم برای دریافت پکت‌های پایانی گفتار
       await new Promise((r) => setTimeout(r, drainMs))
       try {
         this.ws.close()
