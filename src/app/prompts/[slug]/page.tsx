@@ -1,7 +1,6 @@
-﻿export const revalidate = 3600
+export const revalidate = 3600
 import Link from 'next/link'
-import { getImageUrl } from '@/lib/image-utils';
-import { cookies } from 'next/headers'
+import { getImageUrl } from '@/lib/image-utils'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { type Locale } from '@/lib/i18n'
@@ -9,13 +8,17 @@ import { getPromptBySlug, getRelatedPrompts, getPromptTypeLabel, L } from '@/lib
 import { prisma } from '@/lib/db'
 import { auth } from '@/auth'
 import PromptCard from '@/components/prompt-card'
-import CopyButton from '@/components/copy-button'
 import RealLikeButton from '@/components/real-like-button'
 import SaveButton from '@/components/save-button'
 import SafeImg from '@/components/safe-img'
 import PromptReveal from '@/components/prompt-reveal'
 import ShareButtons from '@/components/share-buttons'
 import RealCommentBox from '@/components/real-comment-box'
+
+function buildSeoTitle(raw: string): string {
+  const clean = (raw || '').trim().replace(/^پرامپت\s+/i, '').trim()
+  return `پرامپت ${clean} | PromptsFA`
+}
 
 export async function generateMetadata({ params }: { params: any }): Promise<Metadata> {
   try {
@@ -26,10 +29,8 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
     if (!item) return {}
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://promptsfa.ir'
-    const rawTitle = (item.titleFa || '').trim();
-    const cleanTitle = rawTitle.startsWith('پرامپت') ? rawTitle : 'پرامپت ' + rawTitle;
-    const pageTitle = cleanTitle + ' | PromptsFA';
-    const pageDesc = (item.descFa ?? item.prompt ?? '').slice(0, 150)
+    const pageTitle = buildSeoTitle(item.titleFa || '')
+    const pageDesc = `${pageTitle}. مشاهده، کپی و راهنمای استفاده از پرامپت برای مدل هوش مصنوعی ${item.model}.`.slice(0, 160)
 
     let ogImageUrl = `${appUrl}/placeholder.jpg`
     if (item.img && !item.img.includes('placeholder')) {
@@ -51,16 +52,9 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
         },
       },
       openGraph: {
-        title: cleanTitle,
+        title: pageTitle,
         description: pageDesc,
-        images: [
-          {
-            url: ogImageUrl,
-            width: 1200,
-            height: 630,
-            alt: item.titleFa,
-          },
-        ],
+        images: [{ url: ogImageUrl, width: 1200, height: 630, alt: pageTitle }],
         locale: 'fa_IR',
         siteName: 'PromptsFA',
         url: `${appUrl}/prompts/${item.slug}`,
@@ -78,17 +72,10 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
   }
 }
 
-export default async function PromptDetailPage({ params, forcedLocale }: { params: any, forcedLocale?: Locale }) {
+export default async function PromptDetailPage({ params, forcedLocale }: { params: any; forcedLocale?: Locale }) {
   const resolvedParams = params ? (params instanceof Promise ? await params : params) : null
   const slug = resolvedParams && typeof resolvedParams === 'object' ? (resolvedParams as any).slug : undefined
-
-  const cookieStore = await cookies()
-    const { headers } = await import('next/headers')
-  const reqHeaders = await headers()
-  const referer = reqHeaders.get('referer') || ''
-  const currentPath = reqHeaders.get('x-pathname') || reqHeaders.get('x-invoke-path') || ''
-  const isEnRoute = currentPath.startsWith('/en') || referer.includes('/en/')
-  const locale: Locale = forcedLocale || (isEnRoute || cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa')
+  const locale: Locale = forcedLocale || 'fa'
 
   if (!slug || typeof slug !== 'string') {
     return (
@@ -102,9 +89,6 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
 
   const session = await auth()
   const isAdmin = session?.user?.role === 'ADMIN'
-
-  // شمارش بازدید
-  // views counter removed from SSR to preserve edge cache
 
   const item = await getPromptBySlug(slug, isAdmin)
   if (!item) notFound()
@@ -127,6 +111,8 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
 
   const desc = L(locale, item.descFa ?? '', item.descEn ?? '')
   const usage = L(locale, item.usageFa ?? '', item.usageEn ?? '')
+  const pageHeading = buildSeoTitle(item.titleFa || '')
+  const categoryName = L(locale, item.category?.nameFa ?? '', item.category?.nameEn ?? '')
 
   return (
     <section className="container-app py-16">
@@ -136,37 +122,31 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
           __html: JSON.stringify({
             '@context': 'https://schema.org',
             '@type': 'TechArticle',
-            headline: item.titleFa,
+            headline: pageHeading,
             description: item.descFa || item.prompt,
             image: item.img,
             datePublished: item.createdAt,
-            author: {
-              '@type': 'Organization',
-              name: 'PromptsFA',
-              url: 'https://promptsfa.ir',
-            },
+            author: { '@type': 'Organization', name: 'PromptsFA', url: 'https://promptsfa.ir' },
             publisher: {
               '@type': 'Organization',
               name: 'PromptsFA',
-              logo: {
-                '@type': 'ImageObject',
-                url: 'https://promptsfa.ir/favicon.ico',
-              },
+              logo: { '@type': 'ImageObject', url: 'https://promptsfa.ir/favicon.ico' },
             },
             inLanguage: locale === 'fa' ? 'fa-IR' : 'en-US',
             keywords: (item.tagsFa || []).join(', '),
           }),
         }}
       />
+
       <div className="grid gap-10 lg:grid-cols-[1.2fr_1fr]">
         <div>
-          <SafeImg src={item.img} isDetail={true} alt={L(locale, item.titleFa, item.titleEn)} className="glow-gold w-full rounded-2xl object-cover" loading="eager" />
+          <SafeImg src={item.img} isDetail={true} alt={`تصویر ${pageHeading}`} className="glow-gold w-full rounded-2xl object-cover" loading="eager" />
         </div>
 
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <Link href={'/categories/' + item.category.slug} className="gold-badge transition-colors hover:bg-gold/25">
-              {L(locale, item.category.nameFa, item.category.nameEn)}
+              {categoryName}
             </Link>
             {item.sub && (
               <Link href={'/categories/' + item.category.slug + '?sub=' + item.sub.slug} className="badge transition-colors hover:border-gold/60 hover:text-gold-bright">
@@ -178,7 +158,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
           </div>
 
           <h1 className="mt-5 font-display text-3xl font-extrabold tracking-tight">
-            {L(locale, item.titleFa, item.titleEn)}
+            {pageHeading}
           </h1>
 
           <div className="mt-4 flex items-center gap-3">
@@ -193,12 +173,17 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
             </div>
           </div>
 
-          {desc && <p className="mt-4 text-sm leading-7 text-ink-muted">{desc}</p>}
+          <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.02] p-4 text-sm leading-7 text-ink-muted">
+            <p>
+              دستور و <strong>{pageHeading}</strong> در زمینه هوش مصنوعی و مدل <strong>{item.model}</strong>. با استفاده از این پرامپت آماده می‌توانید به بهترین کیفیت خروجی دست پیدا کنید.
+            </p>
+            {desc && <p className="mt-3">{desc}</p>}
+          </div>
 
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <RealLikeButton promptId={item.id} initialLiked={liked} initialCount={item.likes} label={L(locale, 'پسند', 'likes')} requireLogin={L(locale, 'برای لایک کردن ابتدا وارد شو', 'Login to like')} />
             <SaveButton promptId={item.id} initialSaved={saved} initialCount={item.saves} label={L(locale, 'ذخیره', 'saves')} requireLogin={L(locale, 'برای ذخیره کردن ابتدا وارد شو', 'Login to save')} />
-            <ShareButtons title={L(locale, item.titleFa, item.titleEn)} desc={L(locale, item.descFa ?? '', item.descEn ?? '')} />
+            <ShareButtons title={pageHeading} desc={desc} />
           </div>
 
           <div className="mt-5 flex flex-wrap gap-1">
@@ -208,7 +193,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
                 href={'/explore?tags=' + encodeURIComponent(tag)}
                 className="badge transition-colors hover:border-gold/60 hover:text-gold-bright"
               >
-                {tag}
+                #{tag}
               </Link>
             ))}
           </div>
@@ -219,8 +204,9 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
               revealLabel={L(locale, 'نمایش پرامپت', 'Reveal Prompt')}
               copyLabel={L(locale, 'کپی پرامپت', 'Copy Prompt')}
               copiedLabel={L(locale, 'کپی شد!', 'Copied!')}
-              hint={L(locale, 'پرامپت برای محافظت در برابر اسکرپینگ، فقط بعد از کلیک نمایش داده می‌شود.', 'The prompt is revealed on click to protect against scraping.') }
-             locale={locale} />
+              hint={L(locale, 'پرامپت برای محافظت در برابر اسکرپینگ، فقط بعد از کلیک نمایش داده می‌شود.', 'The prompt is revealed on click to protect against scraping.')}
+              locale={locale}
+            />
           ) : (
             <div className="mt-8 rounded-2xl border border-dashed border-gold/40 bg-gold/5 p-6 text-center">
               <p className="text-sm text-ink-muted">
@@ -234,9 +220,9 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
 
           {usage && (
             <div className="mt-6 rounded-2xl border border-line bg-elevated p-5">
-              <p className="text-xs font-bold text-gold-bright">
+              <h2 className="text-sm font-bold text-gold-bright">
                 {L(locale, '📘 راهنمای استفاده', '📘 How to use')}
-              </p>
+              </h2>
               <p className="mt-3 text-sm leading-7 text-ink-muted">{usage}</p>
             </div>
           )}
@@ -244,7 +230,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
       </div>
 
       {related.length > 0 && (
-        <div className="mt-20">
+        <div className="mt-16">
           <h2 className="font-display text-xl font-bold tracking-tight">{L(locale, 'پرامپت‌های مشابه', 'Related prompts')}</h2>
           <div className="mt-6 grid grid-cols-2 gap-5 md:grid-cols-3">
             {related.map((r) => (
@@ -264,38 +250,6 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
         loginRequired={L(locale, 'برای ارسال دیدگاه ابتدا وارد شو', 'Login to comment')}
         isLoggedIn={!!userId}
       />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            '@context': 'https://schema.org',
-            '@type': 'CreativeWork',
-            name: item.titleFa,
-            alternateName: item.titleEn,
-            description: item.descFa ?? '',
-            image: item.img,
-            inLanguage: ['fa', 'en'],
-            creator: { '@type': 'Person', name: item.user?.name ?? 'PromptsFA' },
-            datePublished: item.createdAt,
-            url: `${process.env.NEXT_PUBLIC_APP_URL || "https://promptsfa.ir"}/prompts/${item.slug}`,
-            headline: item.titleFa,
-            keywords: "پرامپت, هوش مصنوعی, میدجرنی, استیبل دیفیوژن",
-          }),
-        }}
-      />
     </section>
   )
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
