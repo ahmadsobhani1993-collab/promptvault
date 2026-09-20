@@ -19,6 +19,14 @@ function takeObject(idx) {
     return ret;
 }
 
+function addHeapObject(obj) {
+    if (heap_next === heap.length) heap.push(heap.length + 1);
+    const idx = heap_next;
+    heap_next = heap[idx];
+    heap[idx] = obj;
+    return idx;
+}
+
 const cachedTextDecoder = (typeof TextDecoder !== 'undefined' ? new TextDecoder('utf-8', { ignoreBOM: true, fatal: true }) : { decode: () => { throw Error('TextDecoder not available') } } );
 
 if (typeof TextDecoder !== 'undefined') { cachedTextDecoder.decode(); };
@@ -53,15 +61,6 @@ function passArrayF32ToWasm0(arg, malloc) {
     getFloat32ArrayMemory0().set(arg, ptr / 4);
     WASM_VECTOR_LEN = arg.length;
     return ptr;
-}
-
-let cachedUint8ClampedArrayMemory0 = null;
-
-function getUint8ClampedArrayMemory0() {
-    if (cachedUint8ClampedArrayMemory0 === null || cachedUint8ClampedArrayMemory0.byteLength === 0) {
-        cachedUint8ClampedArrayMemory0 = new Uint8ClampedArray(wasm.memory.buffer);
-    }
-    return cachedUint8ClampedArrayMemory0;
 }
 
 function passArray8ToWasm0(arg, malloc) {
@@ -125,7 +124,7 @@ async function __wbg_init(input) {
         input = fetch(input);
     }
 
-    const { instance, module } = await WebAssembly.instantiateStreaming(input, imports).catch(async () => {
+    const { instance } = await WebAssembly.instantiateStreaming(input, imports).catch(async () => {
         const resp = await fetch('/model/v3/pkg/df_bg.wasm');
         const bytes = await resp.arrayBuffer();
         return await WebAssembly.instantiate(bytes, imports);
@@ -138,13 +137,24 @@ async function __wbg_init(input) {
 function __wbg_get_imports() {
     const imports = {};
     imports.wbg = {};
+    
+    // تابع مورد نیاز که ارور داده بود
+    imports.wbg.__wbindgen_object_drop_ref = function(arg0) {
+        takeObject(arg0);
+    };
+
+    imports.wbg.__wbindgen_string_new = function(arg0, arg1) {
+        const ret = getStringFromWasm0(arg0, arg1);
+        return addHeapObject(ret);
+    };
+
     imports.wbg.__wbindgen_throw = function(arg0, arg1) {
         throw new Error(getStringFromWasm0(arg0, arg1));
     };
+
     return imports;
 }
 
-// قرار دادن روی آبجکت گلوبال
 if (typeof window !== 'undefined') {
     window.DfInit = __wbg_init;
     window.DfState = DfState;
