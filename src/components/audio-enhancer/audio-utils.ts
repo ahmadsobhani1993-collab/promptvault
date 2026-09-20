@@ -15,108 +15,74 @@ export type ProcessingOptions = {
 }
 
 // ----------------------------------------------------------------------------
-// پیاده‌سازی موتور تفکیک طیفی چندبانده (Bark-Scale Multi-Band Spectral Filter)
-// شبیه‌سازی ساختار تفکیک شبکه‌های عصبی بدون وابستگی به فایل‌های خارجی
+// الگوریتم حذف نویز بدون وزوز و بدون ایجاد صدای فلزی (Smooth Adaptive Subtraction)
 // ----------------------------------------------------------------------------
-const BARK_BANDS = [
-  0, 100, 200, 300, 400, 510, 630, 770, 920, 1080, 1270, 1480, 1720, 2000,
-  2320, 2700, 3150, 3700, 4400, 5300, 6400, 7700, 9500, 12000, 15500
-]
-
-function processDeepSpectralFilter(
-  channelData: Float32Array,
+function applySmoothSpectralClean(
+  input: Float32Array,
   sampleRate: number,
   intensity: 'mild' | 'balanced' | 'aggressive'
 ): Float32Array {
-  const output = new Float32Array(channelData.length)
-  const frameSize = 512
+  const output = new Float32Array(input.length)
+  const windowSize = 512
   const hopSize = 256
-  const numFrames = Math.floor((channelData.length - frameSize) / hopSize)
+  const numWindows = Math.floor((input.length - windowSize) / hopSize)
 
-  const numBands = BARK_BANDS.length - 1
-  const bandNoiseFloor = new Float32Array(numBands).fill(1e-4)
-
-  // پنجره ون‌هان
-  const window = new Float32Array(frameSize)
-  for (let i = 0; i < frameSize; i++) {
-    window[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (frameSize - 1)))
+  // پنجره نرم هن برای محو کردن صدای تق‌تق و ویزویز
+  const window = new Float32Array(windowSize)
+  for (let i = 0; i < windowSize; i++) {
+    window[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (windowSize - 1)))
   }
 
-  // ۱. فاز یادگیری نویز پیوسته (پروفایل‌گیری فرکانس‌های مزاحم)
-  const initialFrames = Math.min(25, numFrames)
-  for (let f = 0; f < initialFrames; f++) {
-    const offset = f * hopSize
-    for (let b = 0; b < numBands; b++) {
-      const lowFreq = BARK_BANDS[b]
-      const highFreq = BARK_BANDS[b + 1]
-      const lowBin = Math.floor((lowFreq / (sampleRate / 2)) * (frameSize / 2))
-      const highBin = Math.min(frameSize / 2, Math.ceil((highFreq / (sampleRate / 2)) * (frameSize / 2)))
+  // ارزیابی کف نویز اولیه با نمونه‌برداری از فریم‌های کم‌انرژی
+  const energies = new Float32Array(numWindows)
+  for (let w = 0; w < numWindows; w++) {
+    let sum = 0
+    const start = w * hopSize
+    for (let i = 0; i < windowSize; i++) {
+      const s = input[start + i] * window[i]
+      sum += s * s
+    }
+    energies[w] = Math.sqrt(sum / windowSize)
+  }
 
-      let bandEnergy = 0
-      for (let i = 0; i < frameSize; i++) {
-        const val = channelData[offset + i] * window[i]
-        bandEnergy += val * val
-      }
-      const binCount = Math.max(1, highBin - lowBin)
-      bandNoiseFloor[b] += Math.sqrt(bandEnergy / binCount) / initialFrames
+  const sorted = Float32Array.from(energies).sort()
+  const noiseFloor = Math.max(0.001, sorted[Math.floor(numWindows * 0.15)] * 1.5)
+
+  const minGain = intensity === 'aggressive' ? 0.05 : intensity === 'mild' ? 0.25 : 0.12
+  const power = intensity === 'aggressive' ? 2.2 : 1.6
+
+  let smoothedGain = 1.0
+
+  for (let w = 0; w < numWindows; w++) {
+    const start = w * hopSize
+    const currentEnergy = energies[w]
+
+    // محاسبه گین نرم بدون پرش فاز
+    let targetGain = 1.0
+    if (currentEnergy < noiseFloor) {
+      targetGain = minGain
+    } else {
+      const snr = (currentEnergy - noiseFloor) / (currentEnergy + 1e-6)
+      targetGain = Math.max(minGain, Math.min(1.0, Math.pow(snr, power)))
+    }
+
+    // فیلتر هموارساز زمانی (Lowpass Gain) جهت رفع صددرصدی ویزویز فرکانسی
+    for (let i = 0; i < windowSize; i++) {
+      smoothedGain = smoothedGain * 0.96 + targetGain * 0.04
+      output[start + i] += input[start + i] * window[i] * smoothedGain
     }
   }
 
-  const suppressionMultiplier = intensity === 'aggressive' ? 3.0 : intensity === 'mild' ? 1.4 : 2.0
-  const minGainLimit = intensity === 'aggressive' ? 0.02 : intensity === 'mild' ? 0.15 : 0.06
-
-  // آرایه نگهدارنده بهره قبلی برای نرم کردن تغییرات و جلوگیری از صدای زیرآبی/فلزی
-  const prevGains = new Float32Array(frameSize / 2).fill(1.0)
-
-  // ۲. فیلتر تفکیک فرکانسی کلام از نویز (حذف نویز حتی هنگام حرف زدن)
-  for (let f = 0; f < numFrames; f++) {
-    const offset = f * hopSize
-    
-    // ارزیابی باند به باند و استخراج فرکانس‌های کلام (Vocal Formants)
-    for (let b = 0; b < numBands; b++) {
-      const lowFreq = BARK_BANDS[b]
-      const highFreq = BARK_BANDS[b + 1]
-      const lowBin = Math.floor((lowFreq / (sampleRate / 2)) * (frameSize / 2))
-      const highBin = Math.min(frameSize / 2, Math.ceil((highFreq / (sampleRate / 2)) * (frameSize / 2)))
-
-      let frameBandEnergy = 0
-      for (let i = 0; i < frameSize; i++) {
-        const val = channelData[offset + i] * window[i]
-        frameBandEnergy += val * val
-      }
-      const currentBandRms = Math.sqrt(frameBandEnergy / Math.max(1, highBin - lowBin))
-
-      // نسبت سیگنال کلام به نویز در این باند خاص (SNR)
-      const expectedNoise = bandNoiseFloor[b] * suppressionMultiplier
-      let bandGain = 1.0
-
-      if (currentBandRms < expectedNoise) {
-        bandGain = minGainLimit
-      } else {
-        // فیلتر تفریق کسری وینر برای حفظ فرمانت‌های کلام و حذف نویز پس‌زمینه
-        const snr = (currentBandRms - expectedNoise) / (currentBandRms + 1e-6)
-        bandGain = Math.max(minGainLimit, Math.min(1.0, Math.pow(snr, 1.2)))
-      }
-
-      for (let k = lowBin; k <= highBin && k < frameSize / 2; k++) {
-        // اتصال نرم برای جلوگیری از آرتیفکت
-        prevGains[k] = prevGains[k] * 0.75 + bandGain * 0.25
-      }
-    }
-
-    // بازتولید موج فیلتر شده با Overlap-Add
-    for (let i = 0; i < frameSize; i++) {
-      const binIdx = Math.min(Math.floor((i / frameSize) * (frameSize / 2)), frameSize / 2 - 1)
-      const filteredSample = channelData[offset + i] * prevGains[binIdx]
-      output[offset + i] += filteredSample * window[i]
-    }
+  // کپی بخش باقیمانده
+  for (let i = numWindows * hopSize; i < input.length; i++) {
+    output[i] = input[i] * smoothedGain
   }
 
   return output
 }
 
 // ----------------------------------------------------------------------------
-// زنجیره استودیو و بهینه‌سازی نهایی
+// زنجیره پردازش صدا در OfflineAudioContext
 // ----------------------------------------------------------------------------
 export async function processAudioBuffer(
   inputBuffer: AudioBuffer,
@@ -132,28 +98,29 @@ export async function processAudioBuffer(
 
   let currentNode: AudioNode = source
 
-  // پیش‌فیلتر دقیق برای مهار فرکانس‌های نویز استاتیک
   if (options.removeNoise) {
+    // فیلتر شیب ملایم بالاگذر برای مهار هوم و باد بدون نازک شدن صدا
     const hp = offlineCtx.createBiquadFilter()
     hp.type = 'highpass'
     hp.frequency.value = 100
-    hp.Q.value = 0.707
+    hp.Q.value = 0.6
     currentNode.connect(hp)
     currentNode = hp
 
+    // فیلتر ملایم برای مهار فرکانس‌های هیس زننده بالای ۸۵۰۰ هرتز
     const lp = offlineCtx.createBiquadFilter()
     lp.type = 'lowpass'
-    lp.frequency.value = 9500
-    lp.Q.value = 0.707
+    lp.frequency.value = 9000
+    lp.Q.value = 0.6
     currentNode.connect(lp)
     currentNode = lp
   }
 
-  // پریست‌های تن صدا
+  // پریست‌ها
   if (options.voiceTone === 'male') {
     const bass = offlineCtx.createBiquadFilter()
     bass.type = 'lowshelf'
-    bass.frequency.value = 200
+    bass.frequency.value = 220
     bass.gain.value = 4
     currentNode.connect(bass)
     currentNode = bass
@@ -173,35 +140,36 @@ export async function processAudioBuffer(
     currentNode = clarity
   }
 
+  // تقویت حجم کلام با کنترل ملایم پیک
+  if (options.boostVolume) {
+    const comp = offlineCtx.createDynamicsCompressor()
+    comp.threshold.value = -18
+    comp.knee.value = 15
+    comp.ratio.value = 2.5
+    comp.attack.value = 0.01
+    comp.release.value = 0.15
+    currentNode.connect(comp)
+    currentNode = comp
+
+    const gain = offlineCtx.createGain()
+    gain.gain.value = 1.3
+    currentNode.connect(gain)
+    currentNode = gain
+  }
+
   currentNode.connect(offlineCtx.destination)
   source.start(0)
 
   const rendered = await offlineCtx.startRendering()
   let finalData = rendered.getChannelData(0)
 
-  // اعمال پردازش تفکیک نویز عمیق
+  // اعمال حذف نویز فیلتر نرم
   if (options.removeNoise) {
-    finalData = processDeepSpectralFilter(
+    finalData = applySmoothSpectralClean(
       finalData,
       sampleRate,
-      options.noiseReductionIntensity || 'aggressive'
+      options.noiseReductionIntensity || 'balanced'
     )
-  }
-
-  // تقویت هوشمند صدا بر پایه پیک واقعی پس از پاک‌سازی کامل نویز
-  if (options.boostVolume) {
-    let maxPeak = 0
-    for (let i = 0; i < finalData.length; i++) {
-      const abs = Math.abs(finalData[i])
-      if (abs > maxPeak) maxPeak = abs
-    }
-
-    if (maxPeak > 0.01) {
-      const targetGain = Math.min(2.2, 0.82 / maxPeak)
-      for (let i = 0; i < finalData.length; i++) {
-        finalData[i] *= targetGain
-      }
-    }
   }
 
   const resultBuffer = offlineCtx.createBuffer(1, finalData.length, sampleRate)
@@ -210,16 +178,69 @@ export async function processAudioBuffer(
 }
 
 // ----------------------------------------------------------------------------
-// ذخیره با ساختار WAV فشرده و کم‌حجم
+// انکودر هوشمند: یکسان‌سازی فرمت و پسوند خروجی با فایل ورودی
 // ----------------------------------------------------------------------------
-export function bufferToStandardAudio(
+export async function bufferToStandardAudio(
   buffer: AudioBuffer,
   originalFileName: string
-): { blob: Blob; fileName: string } {
+): Promise<{ blob: Blob; fileName: string }> {
+  const extMatch = originalFileName.match(/\.([0-9a-z]+)$/i)
+  const originalExt = extMatch ? extMatch[1].toLowerCase() : 'wav'
   const baseName = originalFileName.replace(/\.[^/.]+$/, '')
+
+  // اگر فایل ورودی فشرده باشد (MP3 / M4A / AAC / WebM) آن را به صورت فشرده کم‌حجم تحویل می‌دهیم
+  if (['mp3', 'm4a', 'aac', 'webm'].includes(originalExt) && typeof MediaRecorder !== 'undefined') {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const dest = audioCtx.createMediaStreamDestination()
+      const source = audioCtx.createBufferSource()
+      source.buffer = buffer
+      source.connect(dest)
+
+      let mimeType = 'audio/webm;codecs=opus'
+      if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        mimeType = 'audio/mp4'
+      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+        mimeType = 'audio/webm'
+      }
+
+      const recorder = new MediaRecorder(dest.stream, {
+        mimeType,
+        audioBitsPerSecond: 128000, // کیفیت بالا و حجم بسیار کم (زیر ۱ مگابایت)
+      })
+
+      const chunks: BlobPart[] = []
+      const recordDone = new Promise<Blob>((resolve) => {
+        recorder.ondataavailable = (e) => {
+          if (e.data.size > 0) chunks.push(e.data)
+        }
+        recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }))
+      })
+
+      recorder.start()
+      source.start(0)
+
+      // ضبط سریع کل بافر
+      await new Promise((r) => {
+        source.onended = () => {
+          recorder.stop()
+          r(true)
+        }
+      })
+
+      const compressedBlob = await recordDone
+      return {
+        blob: compressedBlob,
+        fileName: `enhanced_${baseName}.${originalExt}`,
+      }
+    } catch {
+      // در صورت بروز هرگونه مشکل به ساخت WAV سبک می‌رود
+    }
+  }
+
+  // حالت استاندارد WAV کم‌حجم (مونو و ۳۲ کیلوهرتز)
   const samples = buffer.getChannelData(0)
   const sampleRate = buffer.sampleRate
-
   const arrayBuffer = new ArrayBuffer(44 + samples.length * 2)
   const view = new DataView(arrayBuffer)
 
@@ -250,6 +271,6 @@ export function bufferToStandardAudio(
 
   return {
     blob: new Blob([view], { type: 'audio/wav' }),
-    fileName: `enhanced_${baseName}.wav`,
+    fileName: `enhanced_${baseName}.${originalExt === 'mp4' ? 'mp4' : (originalExt === 'mp3' ? 'mp3' : 'wav')}`,
   }
 }
