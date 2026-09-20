@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import dynamic from 'next/dynamic'
+import AudioEnhancerStudio from '@/components/audio-enhancer/AudioEnhancerStudio'
 
 export const metadata: Metadata = {
   title: 'تقویت و شفاف‌ساز صدا با هوش مصنوعی | PromptsFA',
@@ -8,11 +8,6 @@ export const metadata: Metadata = {
     canonical: 'https://promptsfa.ir/audio-enhancer',
   },
 }
-
-const AudioEnhancerStudio = dynamic(
-  () => import('@/components/audio-enhancer/AudioEnhancerStudio'),
-  { ssr: false }
-)
 
 export default function AudioEnhancerPage() {
   return (
