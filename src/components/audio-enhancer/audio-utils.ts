@@ -6,53 +6,68 @@ export function formatAudioTime(seconds: number): string {
 }
 
 export type ProcessingOptions = {
-  removeNoise: boolean
-  boostVolume: boolean
-  noiseReductionIntensity?: 'mild' | 'balanced' | 'aggressive'
+  attenuationLevel: number // 0 تا 100
+  loudnessNormalization: boolean
+  voiceEq: boolean
 }
 
 export const SAMPLE_RATE = 48000
 
-let coreInstance: any = null
+let corePromise: Promise<any> | null = null
 
-export async function getDeepFilterCore() {
-  if (coreInstance) return coreInstance
+export async function getDeepFilterCore(): Promise<any> {
+  if (corePromise) return corePromise
 
-  let DeepFilterNet3Core: any = null
+  corePromise = (async () => {
+    // ۱. شبیه‌سازی محیط ماژولار برای جلوگیری از ارور exports is not defined
+    if (typeof window !== 'undefined') {
+      const w = window as any
+      if (!w.exports) w.exports = {}
+      if (!w.module) w.module = { exports: w.exports }
+    }
 
-  try {
-    const mod = await import(/* webpackIgnore: true */ '/lib/deepfilternet3.js')
-    DeepFilterNet3Core = mod.DeepFilterNet3Core || mod.default?.DeepFilterNet3Core || mod.default
-  } catch (err) {
-    console.warn('تلاش برای لود از طریق window:', err)
-  }
+    let DeepFilterNet3Core: any = null
 
-  if (!DeepFilterNet3Core) {
+    // ۲. بارگذاری اسکریپت
+    const w = window as any
+    if (!w.DeepFilterNet3Core && !w.deepfilternet3?.DeepFilterNet3Core && !w.exports?.DeepFilterNet3Core && !w.module?.exports?.DeepFilterNet3Core) {
+      await new Promise<void>((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = '/lib/deepfilternet3.js'
+        script.onload = () => resolve()
+        script.onerror = () => reject(new Error('فایل public/lib/deepfilternet3.js یافت نشد.'))
+        document.head.appendChild(script)
+      })
+    }
+
     DeepFilterNet3Core =
-      (window as any).DeepFilterNet3Core ||
-      (window as any).deepfilternet3?.DeepFilterNet3Core ||
-      (window as any).mezonNoiseSuppression?.DeepFilterNet3Core
-  }
+      w.DeepFilterNet3Core ||
+      w.deepfilternet3?.DeepFilterNet3Core ||
+      w.exports?.DeepFilterNet3Core ||
+      w.module?.exports?.DeepFilterNet3Core ||
+      w.mezonNoiseSuppression?.DeepFilterNet3Core
 
-  if (!DeepFilterNet3Core) {
-    throw new Error('کلاس DeepFilterNet3Core یافت نشد. لطفاً بررسی کنید فایل public/lib/deepfilternet3.js وجود داشته باشد.')
-  }
+    if (!DeepFilterNet3Core) {
+      throw new Error('کلاس DeepFilterNet3Core یافت نشد.')
+    }
 
-  const modelBaseUrl = new URL('/model', window.location.href).toString()
+    const modelBaseUrl = new URL('/model', window.location.href).toString()
 
-  const core = new DeepFilterNet3Core({
-    sampleRate: SAMPLE_RATE,
-    noiseReductionLevel: 80,
-    assetConfig: { cdnUrl: modelBaseUrl },
-  })
+    const core = new DeepFilterNet3Core({
+      sampleRate: SAMPLE_RATE,
+      noiseReductionLevel: 80,
+      assetConfig: { cdnUrl: modelBaseUrl },
+    })
 
-  await core.initialize()
-  coreInstance = core
-  return coreInstance
+    await core.initialize()
+    return core
+  })()
+
+  return corePromise
 }
 
 // ----------------------------------------------------------------------------
-// پردازش بافر صوتی (پشتیبانی از کل فایل یا ۶۰ ثانیه اول)
+// پردازش بافر صوتی با قابلیت انتخاب زمان (پیش‌نمایش ۶۰ ثانیه یا کامل)
 // ----------------------------------------------------------------------------
 export async function processAudioBuffer(
   inputBuffer: AudioBuffer,
@@ -66,7 +81,11 @@ export async function processAudioBuffer(
 
   const targetLength = Math.ceil(targetDuration * SAMPLE_RATE)
 
-  onProgress?.(10, 'آماده‌سازی بافر و محیط پردازش...')
+  onProgress?.(15, 'بارگذاری مدل هوش مصنوعی DeepFilterNet3...')
+  const core = await getDeepFilterCore()
+  core.setSuppressionLevel(options.attenuationLevel)
+
+  onProgress?.(35, 'آماده‌سازی خط لوله AudioWorklet...')
   const offlineCtx = new OfflineAudioContext(1, targetLength, SAMPLE_RATE)
 
   const sourceNode = offlineCtx.createBufferSource()
@@ -74,44 +93,34 @@ export async function processAudioBuffer(
 
   let currentNode: AudioNode = sourceNode
 
-  if (options.removeNoise) {
-    onProgress?.(30, 'بارگذاری مدل هوش مصنوعی DeepFilterNet3...')
-    const core = await getDeepFilterCore()
+  // اتصال به نود شبکه عصبی
+  const filterNode = await core.createAudioWorkletNode(offlineCtx)
+  currentNode.connect(filterNode)
+  currentNode = filterNode
 
-    const attenuation =
-      options.noiseReductionIntensity === 'aggressive' ? 100 :
-      options.noiseReductionIntensity === 'mild' ? 50 : 80
+  // اعمال Voice EQ در صورت فعال بودن
+  if (options.voiceEq) {
+    const highpass = offlineCtx.createBiquadFilter()
+    highpass.type = 'highpass'
+    highpass.frequency.value = 80
+    highpass.Q.value = 0.7
+    currentNode.connect(highpass)
+    currentNode = highpass
 
-    core.setSuppressionLevel(attenuation)
-
-    onProgress?.(50, 'ایجاد فیلتر پردازش در AudioWorklet...')
-    const filterNode = await core.createAudioWorkletNode(offlineCtx)
-
-    currentNode.connect(filterNode)
-    currentNode = filterNode
+    const presence = offlineCtx.createBiquadFilter()
+    presence.type = 'peaking'
+    presence.frequency.value = 3000
+    presence.gain.value = 3.0
+    presence.Q.value = 1.0
+    currentNode.connect(presence)
+    currentNode = presence
   }
 
-  // تنظیم ملایم شفافیت استودیویی
-  const highpass = offlineCtx.createBiquadFilter()
-  highpass.type = 'highpass'
-  highpass.frequency.value = 80
-  highpass.Q.value = 0.7
-  currentNode.connect(highpass)
-  currentNode = highpass
-
-  const presence = offlineCtx.createBiquadFilter()
-  presence.type = 'peaking'
-  presence.frequency.value = 3200
-  presence.gain.value = 2.5
-  presence.Q.value = 1.0
-  currentNode.connect(presence)
-  currentNode = presence
-
-  // افزایش حجم هوشمند
-  if (options.boostVolume) {
+  // اعمال نرمال‌سازی و کنترل دامنه
+  if (options.loudnessNormalization) {
     const comp = offlineCtx.createDynamicsCompressor()
     comp.threshold.value = -16
-    comp.knee.value = 14
+    comp.knee.value = 12
     comp.ratio.value = 2.5
     comp.attack.value = 0.005
     comp.release.value = 0.15
@@ -122,11 +131,10 @@ export async function processAudioBuffer(
   currentNode.connect(offlineCtx.destination)
   sourceNode.start(0)
 
-  onProgress?.(70, 'در حال تفکیک امواج و حذف نویز با شبکه عصبی...')
+  onProgress?.(60, 'در حال تفکیک هوشمند نویز با شبکه عصبی...')
   const renderedBuffer = await offlineCtx.startRendering()
 
-  // پیک کنترل شده
-  if (options.boostVolume) {
+  if (options.loudnessNormalization) {
     const data = renderedBuffer.getChannelData(0)
     let peak = 0
     for (let i = 0; i < data.length; i++) {
@@ -141,12 +149,12 @@ export async function processAudioBuffer(
     }
   }
 
-  onProgress?.(100, 'پردازش با موفقیت پایان یافت!')
+  onProgress?.(100, 'پایان پردازش!')
   return renderedBuffer
 }
 
 // ----------------------------------------------------------------------------
-// استخراج فایل خروجی با حفظ حجم بهینه (MP3, M4A, WAV)
+// تبدیل به فرمت درخواستی با حفظ حجم فشرده و سبک
 // ----------------------------------------------------------------------------
 export async function bufferToStandardAudio(
   buffer: AudioBuffer,
@@ -154,12 +162,11 @@ export async function bufferToStandardAudio(
   chosenFormat?: string
 ): Promise<{ blob: Blob; fileName: string }> {
   const extMatch = originalFileName.match(/\.([0-9a-z]+)$/i)
-  const originalExt = extMatch ? extMatch[1].toLowerCase() : 'wav'
-  const targetExt = (chosenFormat || (['mp3', 'm4a', 'aac', 'webm'].includes(originalExt) ? originalExt : 'wav')).toLowerCase()
+  const originalExt = extMatch ? extMatch[1].toLowerCase() : 'mp3'
+  const targetExt = (chosenFormat || (['mp3', 'm4a', 'aac', 'webm'].includes(originalExt) ? originalExt : 'mp3')).toLowerCase()
   const baseName = originalFileName.replace(/\.[^/.]+$/, '')
 
-  // ۱. انکود سبک به صورت فشرده برای حجم کم (زیر ۱ الی ۲ مگابایت)
-  if (['mp3', 'm4a', 'aac', 'webm', 'ogg'].includes(targetExt) && typeof MediaRecorder !== 'undefined') {
+  if (['mp3', 'm4a', 'aac', 'webm'].includes(targetExt) && typeof MediaRecorder !== 'undefined') {
     try {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: SAMPLE_RATE })
       const dest = audioCtx.createMediaStreamDestination()
@@ -168,15 +175,12 @@ export async function bufferToStandardAudio(
       source.connect(dest)
 
       let mimeType = 'audio/webm;codecs=opus'
-      if (MediaRecorder.isTypeSupported('audio/mp4')) {
-        mimeType = 'audio/mp4'
-      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-        mimeType = 'audio/webm'
-      }
+      if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4'
+      else if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm'
 
       const recorder = new MediaRecorder(dest.stream, {
         mimeType,
-        audioBitsPerSecond: 128000, // فشرده و شفاف
+        audioBitsPerSecond: 128000,
       })
 
       const chunks: BlobPart[] = []
@@ -200,12 +204,12 @@ export async function bufferToStandardAudio(
       const compressedBlob = await recordDone
       return {
         blob: compressedBlob,
-        fileName: `enhanced_${baseName}.${targetExt === 'mp3' ? 'mp3' : targetExt === 'm4a' ? 'm4a' : 'webm'}`,
+        fileName: `${baseName}_enhanced.${targetExt === 'm4a' ? 'm4a' : 'mp3'}`,
       }
     } catch {}
   }
 
-  // ۲. خروجی استاندارد WAV (در صورتی که WAV انتخاب شده باشد)
+  // خروجی WAV
   const samples = buffer.getChannelData(0)
   const sampleRate = buffer.sampleRate
   const arrayBuffer = new ArrayBuffer(44 + samples.length * 2)
@@ -221,7 +225,7 @@ export async function bufferToStandardAudio(
   writeStr(12, 'fmt ')
   view.setUint32(16, 16, true)
   view.setUint16(20, 1, true)
-  view.setUint16(22, 1, true) // Mono
+  view.setUint16(22, 1, true)
   view.setUint32(24, sampleRate, true)
   view.setUint32(28, sampleRate * 2, true)
   view.setUint16(32, 2, true)
@@ -238,6 +242,6 @@ export async function bufferToStandardAudio(
 
   return {
     blob: new Blob([view], { type: 'audio/wav' }),
-    fileName: `enhanced_${baseName}.wav`,
+    fileName: `${baseName}_enhanced.wav`,
   }
 }
