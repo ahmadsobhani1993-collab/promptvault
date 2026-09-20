@@ -84,6 +84,22 @@ export default function ToolsMenu({ locale = 'fa' }: Props) {
               </span>
             </div>
           </Link>
+
+          <Link
+            href="/audio-enhancer"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-white/80 transition hover:bg-amber-500/10 hover:text-amber-300"
+          >
+            <span className="text-base">🔊</span>
+            <div>
+              <span className="block font-medium">
+                {isEn ? 'Audio Enhancer' : 'تقویت و شفاف‌ساز صدا'}
+              </span>
+              <span className="block text-[10px] text-white/40">
+                {isEn ? 'Noise suppression & voice booster' : 'کاهش نویز و شفاف‌سازی با AI'}
+              </span>
+            </div>
+          </Link>
         </div>
       )}
     </div>
