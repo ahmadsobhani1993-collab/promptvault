@@ -16,12 +16,12 @@ export default function AudioEnhancerStudio() {
   const [options, setOptions] = useState<ProcessingOptions>({
     removeNoise: true,
     boostVolume: true,
-    voiceTone: 'studio', // پیش‌فرض استودیویی شفاف
     noiseReductionIntensity: 'balanced',
   })
 
   const [loading, setLoading] = useState(false)
   const [loadingText, setLoadingText] = useState('')
+  const [progressPercent, setProgressPercent] = useState(0)
 
   const [isPlaying, setIsPlaying] = useState(false)
   const [playEnhanced, setPlayEnhanced] = useState(true)
@@ -42,11 +42,12 @@ export default function AudioEnhancerStudio() {
     setFile(selected)
     setProcessedBuffer(null)
     setLoading(true)
-    setLoadingText('در حال تحلیل امواج صوتی در مرورگر...')
+    setProgressPercent(0)
+    setLoadingText('در حال دیکود فایل صوتی در مرورگر...')
 
     try {
       const arrayBuffer = await selected.arrayBuffer()
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 48000 })
       audioCtxRef.current = ctx
 
       const decoded = await ctx.decodeAudioData(arrayBuffer)
@@ -55,7 +56,7 @@ export default function AudioEnhancerStudio() {
       setCurrentTime(0)
       pauseOffsetRef.current = 0
     } catch {
-      alert('فرمت فایل نامعتبر است یا توسط مرورگر پشتیبانی نمی‌شود.')
+      alert('فرمت فایل نامعتبر است یا پشتیبانی نمی‌شود.')
       setFile(null)
     } finally {
       setLoading(false)
@@ -66,19 +67,21 @@ export default function AudioEnhancerStudio() {
     if (!originalBuffer) return
     stopAudio()
     setLoading(true)
-    setLoadingText('در حال حذف نویز و بهینه‌سازی استودیویی کلام...')
-
-    await new Promise((r) => setTimeout(r, 60))
+    setProgressPercent(5)
+    setLoadingText('در حال آماده‌سازی...')
 
     try {
-      const result = await processAudioBuffer(originalBuffer, options)
+      const result = await processAudioBuffer(originalBuffer, options, (pct, status) => {
+        setProgressPercent(pct)
+        setLoadingText(status)
+      })
       setProcessedBuffer(result)
       setPlayEnhanced(true)
       setDuration(result.duration)
       setCurrentTime(0)
       pauseOffsetRef.current = 0
-    } catch {
-      alert('خطا در پردازش صوت.')
+    } catch (err: any) {
+      alert(`خطا در پردازش با مدل: ${err?.message || err}`)
     } finally {
       setLoading(false)
     }
@@ -89,7 +92,7 @@ export default function AudioEnhancerStudio() {
     if (!targetBuffer) return
 
     if (!audioCtxRef.current) {
-      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 48000 })
     }
     const ctx = audioCtxRef.current
     if (ctx.state === 'suspended') ctx.resume()
@@ -147,7 +150,7 @@ export default function AudioEnhancerStudio() {
     if (!targetBuffer || !file) return
 
     setLoading(true)
-    setLoadingText('در حال آماده‌سازی و فشرده‌سازی خروجی استاندارد...')
+    setLoadingText('در حال آماده‌سازی و فشرده‌سازی خروجی نهایی...')
 
     try {
       const { blob, fileName } = await bufferToStandardAudio(targetBuffer, file.name)
@@ -160,7 +163,7 @@ export default function AudioEnhancerStudio() {
       document.body.removeChild(a)
       URL.revokeObjectURL(downloadUrl)
     } catch {
-      alert('خطا در دانلود خروجی.')
+      alert('خطا در دانلود فایل.')
     } finally {
       setLoading(false)
     }
@@ -179,7 +182,7 @@ export default function AudioEnhancerStudio() {
           استودیو تقویت و <span className="text-gold-bright">شفاف‌ساز صدا</span>
         </h1>
         <p className="mt-2 text-sm text-zinc-400">
-          حذف تطبیقی نویز محیطی، اکولایزر اصلاحی و تنظیم استودیویی کلام بدون خروج اطلاعات از مرورگر
+          مجهز به هوش مصنوعی DeepFilterNet3 جهت تفکیک کلام و حذف نویزهای محیطی در مرورگر
         </p>
       </div>
 
@@ -201,15 +204,23 @@ export default function AudioEnhancerStudio() {
               انتخاب فایل صوتی یا ویدیویی
             </span>
             <span className="mt-1 text-xs text-zinc-500">
-              پردازش ۱۰۰٪ لوکال و بدون بارگذاری روی سرور
+              پردازش ۱۰۰٪ محلی در مرورگر شما بدون آپلود به سرور
             </span>
           </label>
         </div>
       )}
 
       {loading && (
-        <div className="rounded-2xl border border-gold/30 bg-gold/5 p-6 text-center text-sm text-gold-bright animate-pulse">
-          ⚡ {loadingText}
+        <div className="space-y-3 rounded-2xl border border-gold/30 bg-gold/5 p-6 text-center">
+          <p className="text-sm font-bold text-gold-bright animate-pulse">⚡ {loadingText}</p>
+          {progressPercent > 0 && (
+            <div className="mx-auto h-2 w-full max-w-md overflow-hidden rounded-full bg-zinc-800">
+              <div
+                className="h-full bg-gold transition-all duration-300"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -221,14 +232,13 @@ export default function AudioEnhancerStudio() {
           </div>
 
           <div className="space-y-4">
-            <h3 className="text-sm font-bold text-gold-bright">تنظیمات زنجیره پردازش صدا:</h3>
+            <h3 className="text-sm font-bold text-gold-bright">تنظیمات پردازش هوش مصنوعی:</h3>
 
-            {/* گزینه اول: حذف نویز */}
             <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 space-y-3">
               <label className="flex items-center justify-between cursor-pointer">
                 <div>
-                  <span className="block text-sm font-bold text-white">حذف هوشمند و تطبیقی نویز</span>
-                  <span className="block text-xs text-zinc-400">حذف صدای کولر، فن، هیس و نویزهای فرکانسی بدون قطع کلمات</span>
+                  <span className="block text-sm font-bold text-white">تفکیک صدا با DeepFilterNet3</span>
+                  <span className="block text-xs text-zinc-400">حذف نویز مداوم فن، باد، ترافیک و کولر حتی در زمان ادای کلمات</span>
                 </div>
                 <input
                   type="checkbox"
@@ -251,18 +261,17 @@ export default function AudioEnhancerStudio() {
                           : 'border-zinc-800 text-zinc-400 hover:text-white'
                       }`}
                     >
-                      {lvl === 'mild' ? 'ملایم' : lvl === 'balanced' ? 'متعادل (پیش‌فرض)' : 'قوی'}
+                      {lvl === 'mild' ? 'ملایم (۵۰٪)' : lvl === 'balanced' ? 'متعادل (۸۰٪)' : 'قوی (۱۰۰٪)'}
                     </button>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* گزینه دوم: افزایش حجم هوشمند */}
             <label className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 cursor-pointer">
               <div>
-                <span className="block text-sm font-bold text-white">افزایش حجم هوشمند (Loudness & Limiter)</span>
-                <span className="block text-xs text-zinc-400">بهینه‌سازی داینامیک بدون دیستورشن و بدون افزایش سطح نویز</span>
+                <span className="block text-sm font-bold text-white">افزایش حجم هوشمند (Loudness Normalizer)</span>
+                <span className="block text-xs text-zinc-400">تنظیم داینامیک بلندی صدا بر پایه استانداردهای گفتار و پادکست</span>
               </div>
               <input
                 type="checkbox"
@@ -290,19 +299,18 @@ export default function AudioEnhancerStudio() {
               onClick={handleStartProcessing}
               className="btn-primary px-8 py-3 text-sm font-bold shadow-lg shadow-gold/20"
             >
-              🚀 شروع پردازش مهندسی‌شده
+              🚀 شروع پردازش هوش مصنوعی
             </button>
           </div>
         </div>
       )}
 
-      {/* پلیر مقایسه و دانلود */}
       {processedBuffer && (
         <div className="space-y-6 rounded-3xl border border-zinc-800 bg-[#120f0c] p-6 shadow-2xl">
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800 pb-4">
             <div>
               <p className="text-sm font-bold text-white truncate max-w-xs">{file?.name}</p>
-              <p className="text-xs text-zinc-500">پردازش با کیفیت استودیویی پایان یافت</p>
+              <p className="text-xs text-zinc-500">پردازش با استاندارد DeepFilterNet3 پایان یافت</p>
             </div>
 
             <div className="flex items-center gap-2 rounded-xl bg-zinc-900 p-1 border border-zinc-800">
@@ -328,7 +336,7 @@ export default function AudioEnhancerStudio() {
                   playEnhanced ? 'bg-gold/20 text-gold-bright border border-gold/40' : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                صدای بهینه‌شده ✨
+                صدای تمیز DeepFilterNet ✨
               </button>
             </div>
           </div>
