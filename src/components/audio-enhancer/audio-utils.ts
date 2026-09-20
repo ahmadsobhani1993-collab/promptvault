@@ -8,111 +8,132 @@ export function formatAudioTime(seconds: number): string {
 export type ProcessingOptions = {
   removeNoise: boolean
   boostVolume: boolean
-  voiceTone?: 'original' | 'male' | 'female' | 'studio'
   noiseReductionIntensity?: 'mild' | 'balanced' | 'aggressive'
 }
 
-// ----------------------------------------------------------------------------
-// زنجیره رندر سخت‌افزاری Web Audio (کاملاً روان، بدون تیک‌تیک و بدون لگ)
-// ----------------------------------------------------------------------------
-export async function processAudioBuffer(
-  inputBuffer: AudioBuffer,
-  options: ProcessingOptions
-): Promise<AudioBuffer> {
-  const sampleRate = inputBuffer.sampleRate
-  const channels = inputBuffer.numberOfChannels
-  const offlineCtx = new OfflineAudioContext(channels, inputBuffer.length, sampleRate)
+const SAMPLE_RATE = 48000
 
-  const source = offlineCtx.createBufferSource()
-  source.buffer = inputBuffer
+let coreInstance: any = null
 
-  let currentNode: AudioNode = source
+async function getDeepFilterCore() {
+  if (coreInstance) return coreInstance
 
-  // ۱. حذف نویز بدون تیک‌تیک با فیلتر شیب‌دار چندمرحله‌ای (24dB/Octave Cascaded Filters)
-  if (options.removeNoise) {
-    const intensity = options.noiseReductionIntensity || 'balanced'
-    const hpFreq = intensity === 'aggressive' ? 120 : intensity === 'mild' ? 75 : 95
-    const lpFreq = intensity === 'aggressive' ? 8000 : intensity === 'mild' ? 11000 : 9200
-
-    // دو استیج High-Pass متوالی برای حذف کامل صدای هوم، باد، فن و لرزش زیر صدا بدون قطعی کلمات
-    const hp1 = offlineCtx.createBiquadFilter()
-    hp1.type = 'highpass'
-    hp1.frequency.value = hpFreq
-    hp1.Q.value = 0.707
-    currentNode.connect(hp1)
-
-    const hp2 = offlineCtx.createBiquadFilter()
-    hp2.type = 'highpass'
-    hp2.frequency.value = hpFreq
-    hp2.Q.value = 0.707
-    hp1.connect(hp2)
-
-    // فیلتر شیب‌دار Low-Pass برای حذف قطعی هیس، ویزویز و فرکانس‌های مزاحم بالا
-    const lp1 = offlineCtx.createBiquadFilter()
-    lp1.type = 'lowpass'
-    lp1.frequency.value = lpFreq
-    lp1.Q.value = 0.707
-    hp2.connect(lp1)
-
-    const lp2 = offlineCtx.createBiquadFilter()
-    lp2.type = 'lowpass'
-    lp2.frequency.value = lpFreq
-    lp2.Q.value = 0.707
-    lp1.connect(lp2)
-
-    currentNode = lp2
+  // لود داینامیک اسکریپت کامپایل‌شده از دامنه خودتان
+  if (!(window as any).DeepFilterNet3Core) {
+    await new Promise<void>((resolve, reject) => {
+      const script = document.createElement('script')
+      script.src = '/lib/deepfilternet3.js'
+      script.onload = () => resolve()
+      script.onerror = () => reject(new Error('بارگذاری کتابخانه deepfilternet3.js با خطا مواجه شد.'))
+      document.head.appendChild(script)
+    })
   }
 
-  // ۲. اصلاح شفافیت استودیویی (حذف هوای گرفته و تقویت حضور کلام)
-  const deMud = offlineCtx.createBiquadFilter()
-  deMud.type = 'peaking'
-  deMud.frequency.value = 450
-  deMud.gain.value = -2.5
-  deMud.Q.value = 1.0
-  currentNode.connect(deMud)
+  const DeepFilterNet3Core =
+    (window as any).DeepFilterNet3Core || (window as any).deepfilternet3?.DeepFilterNet3Core
 
-  const clarity = offlineCtx.createBiquadFilter()
-  clarity.type = 'peaking'
-  clarity.frequency.value = 3200
-  clarity.gain.value = 3.2
-  clarity.Q.value = 1.2
-  deMud.connect(clarity)
-  currentNode = clarity
+  if (!DeepFilterNet3Core) {
+    throw new Error('کلاس DeepFilterNet3Core در اسکریپت یافت نشد.')
+  }
 
-  // ۳. افزایش بلندی صدا با Dynamic Compressor پایدار (بدون نویز پامپینگ)
+  const modelBaseUrl = new URL('/model', window.location.href).toString()
+
+  const core = new DeepFilterNet3Core({
+    sampleRate: SAMPLE_RATE,
+    noiseReductionLevel: 80,
+    assetConfig: { cdnUrl: modelBaseUrl },
+  })
+
+  await core.initialize()
+  coreInstance = core
+  return coreInstance
+}
+
+export async function processAudioBuffer(
+  inputBuffer: AudioBuffer,
+  options: ProcessingOptions,
+  onProgress?: (pct: number, status: string) => void
+): Promise<AudioBuffer> {
+  onProgress?.(10, 'آماده‌سازی موتور هوش مصنوعی DeepFilterNet3...')
+
+  // دیکود و ترکیب مونو با نرخ ۴۸ کیلوهرتز
+  const offlineCtx = new OfflineAudioContext(1, Math.ceil(inputBuffer.duration * SAMPLE_RATE), SAMPLE_RATE)
+  const sourceNode = offlineCtx.createBufferSource()
+  sourceNode.buffer = inputBuffer
+
+  let currentNode: AudioNode = sourceNode
+
+  if (options.removeNoise) {
+    onProgress?.(25, 'راه‌اندازی شبکه عصبی و مدل ONNX...')
+    const core = await getDeepFilterCore()
+
+    const attenuation =
+      options.noiseReductionIntensity === 'aggressive' ? 100 :
+      options.noiseReductionIntensity === 'mild' ? 50 : 80
+
+    core.setSuppressionLevel(attenuation)
+
+    onProgress?.(45, 'ایجاد گره پردازش در AudioWorklet...')
+    const filterNode = await core.createAudioWorkletNode(offlineCtx)
+
+    currentNode.connect(filterNode)
+    currentNode = filterNode
+  }
+
+  // اکولایزر ملایم استودیویی برای شفافیت کلام
+  const highpass = offlineCtx.createBiquadFilter()
+  highpass.type = 'highpass'
+  highpass.frequency.value = 80
+  highpass.Q.value = 0.7
+  currentNode.connect(highpass)
+  currentNode = highpass
+
+  const presence = offlineCtx.createBiquadFilter()
+  presence.type = 'peaking'
+  presence.frequency.value = 3000
+  presence.gain.value = 2.5
+  presence.Q.value = 1.0
+  currentNode.connect(presence)
+  currentNode = presence
+
+  // افزایش حجم هوشمند
   if (options.boostVolume) {
     const comp = offlineCtx.createDynamicsCompressor()
     comp.threshold.value = -16
-    comp.knee.value = 18
-    comp.ratio.value = 3.0
+    comp.knee.value = 12
+    comp.ratio.value = 2.5
     comp.attack.value = 0.005
-    comp.release.value = 0.12
+    comp.release.value = 0.15
     currentNode.connect(comp)
-
-    const makeUpGain = offlineCtx.createGain()
-    makeUpGain.gain.value = 1.35
-    comp.connect(makeUpGain)
-    currentNode = makeUpGain
+    currentNode = comp
   }
 
-  // ۴. لیمیتر محافظ پیک خروجی برای جلوگیری از هرگونه دیستورشن و کلیک
-  const limiter = offlineCtx.createDynamicsCompressor()
-  limiter.threshold.value = -0.5
-  limiter.knee.value = 0.0
-  limiter.ratio.value = 20.0
-  limiter.attack.value = 0.001
-  limiter.release.value = 0.05
-  currentNode.connect(limiter)
+  currentNode.connect(offlineCtx.destination)
+  sourceNode.start(0)
 
-  limiter.connect(offlineCtx.destination)
-  source.start(0)
+  onProgress?.(65, 'در حال تفکیک امواج صوتی با هوش مصنوعی...')
+  const renderedBuffer = await offlineCtx.startRendering()
 
-  return await offlineCtx.startRendering()
+  // نرمال‌سازی دقیق پیک خروجی
+  if (options.boostVolume) {
+    const data = renderedBuffer.getChannelData(0)
+    let peak = 0
+    for (let i = 0; i < data.length; i++) {
+      const a = Math.abs(data[i])
+      if (a > peak) peak = a
+    }
+    if (peak > 0.01) {
+      const targetGain = 0.85 / peak
+      for (let i = 0; i < data.length; i++) {
+        data[i] *= targetGain
+      }
+    }
+  }
+
+  onProgress?.(100, 'پایان پردازش استودیویی!')
+  return renderedBuffer
 }
 
-// ----------------------------------------------------------------------------
-// ذخیره با فرمت اصلی و بهینه
-// ----------------------------------------------------------------------------
 export async function bufferToStandardAudio(
   buffer: AudioBuffer,
   originalFileName: string
@@ -123,22 +144,19 @@ export async function bufferToStandardAudio(
 
   if (['mp3', 'm4a', 'aac', 'webm'].includes(originalExt) && typeof MediaRecorder !== 'undefined') {
     try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 48000 })
       const dest = audioCtx.createMediaStreamDestination()
       const source = audioCtx.createBufferSource()
       source.buffer = buffer
       source.connect(dest)
 
       let mimeType = 'audio/webm;codecs=opus'
-      if (MediaRecorder.isTypeSupported('audio/mp4')) {
-        mimeType = 'audio/mp4'
-      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-        mimeType = 'audio/webm'
-      }
+      if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4'
+      else if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm'
 
       const recorder = new MediaRecorder(dest.stream, {
         mimeType,
-        audioBitsPerSecond: 128000,
+        audioBitsPerSecond: 160000,
       })
 
       const chunks: BlobPart[] = []
@@ -167,11 +185,10 @@ export async function bufferToStandardAudio(
     } catch {}
   }
 
-  // خروجی استاندارد WAV
-  const numChannels = buffer.numberOfChannels
+  // خروجی WAV مونو استاندارد
+  const samples = buffer.getChannelData(0)
   const sampleRate = buffer.sampleRate
-  const length = buffer.length
-  const arrayBuffer = new ArrayBuffer(44 + length * numChannels * 2)
+  const arrayBuffer = new ArrayBuffer(44 + samples.length * 2)
   const view = new DataView(arrayBuffer)
 
   const writeStr = (offset: number, str: string) => {
@@ -179,26 +196,24 @@ export async function bufferToStandardAudio(
   }
 
   writeStr(0, 'RIFF')
-  view.setUint32(4, 36 + length * numChannels * 2, true)
+  view.setUint32(4, 36 + samples.length * 2, true)
   writeStr(8, 'WAVE')
   writeStr(12, 'fmt ')
   view.setUint32(16, 16, true)
   view.setUint16(20, 1, true)
-  view.setUint16(22, numChannels, true)
+  view.setUint16(22, 1, true)
   view.setUint32(24, sampleRate, true)
-  view.setUint32(28, sampleRate * numChannels * 2, true)
-  view.setUint16(32, numChannels * 2, true)
+  view.setUint32(28, sampleRate * 2, true)
+  view.setUint16(32, 2, true)
   view.setUint16(34, 16, true)
   writeStr(36, 'data')
-  view.setUint32(40, length * numChannels * 2, true)
+  view.setUint32(40, samples.length * 2, true)
 
   let offset = 44
-  for (let i = 0; i < length; i++) {
-    for (let c = 0; c < numChannels; c++) {
-      const s = Math.max(-1, Math.min(1, buffer.getChannelData(c)[i]))
-      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true)
-      offset += 2
-    }
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]))
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true)
+    offset += 2
   }
 
   return {
