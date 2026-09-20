@@ -13,154 +13,105 @@ export type ProcessingOptions = {
 }
 
 // ----------------------------------------------------------------------------
-// حذف نویز بدون لگ، بدون پرش فاز و کاملاً پیوسته (Zero-Stutter Smooth Filter)
-// ----------------------------------------------------------------------------
-function applySmoothSpectralClean(
-  input: Float32Array,
-  sampleRate: number,
-  intensity: 'mild' | 'balanced' | 'aggressive'
-): Float32Array {
-  const output = new Float32Array(input.length)
-  const frameSize = 512
-  const numFrames = Math.floor(input.length / frameSize)
-
-  // ۱. محاسبه انرژی فریم‌ها برای تخمین سطح نویز پایه
-  const energies = new Float32Array(numFrames)
-  for (let f = 0; f < numFrames; f++) {
-    let sum = 0
-    const start = f * frameSize
-    for (let i = 0; i < frameSize; i++) {
-      const s = input[start + i]
-      sum += s * s
-    }
-    energies[f] = Math.sqrt(sum / frameSize)
-  }
-
-  const sorted = Float32Array.from(energies).sort()
-  const noiseFloor = Math.max(0.001, sorted[Math.floor(numFrames * 0.15)] * 1.6)
-
-  const minGain = intensity === 'aggressive' ? 0.05 : intensity === 'mild' ? 0.25 : 0.12
-  const power = intensity === 'aggressive' ? 2.0 : 1.5
-
-  // ۲. فیلتر هموارسازی سمپل‌به‌سمپل جهت رفع کامل لگ و تق‌تق
-  let currentGain = 1.0
-
-  for (let f = 0; f < numFrames; f++) {
-    const start = f * frameSize
-    const energy = energies[f]
-
-    let targetGain = 1.0
-    if (energy < noiseFloor) {
-      targetGain = minGain
-    } else {
-      const snr = (energy - noiseFloor) / (energy + 1e-6)
-      targetGain = Math.max(minGain, Math.min(1.0, Math.pow(snr, power)))
-    }
-
-    for (let i = 0; i < frameSize; i++) {
-      // ضریب تطبیقی پیوسته برای حذف کامل لگ و لکنت صوتی
-      currentGain = currentGain * 0.992 + targetGain * 0.008
-      output[start + i] = input[start + i] * currentGain
-    }
-  }
-
-  for (let i = numFrames * frameSize; i < input.length; i++) {
-    output[i] = input[i] * currentGain
-  }
-
-  return output
-}
-
-// ----------------------------------------------------------------------------
-// زنجیره پردازش و مسترینگ استودیویی کلام
+// زنجیره رندر سخت‌افزاری Web Audio (کاملاً روان، بدون تیک‌تیک و بدون لگ)
 // ----------------------------------------------------------------------------
 export async function processAudioBuffer(
   inputBuffer: AudioBuffer,
   options: ProcessingOptions
 ): Promise<AudioBuffer> {
-  const sampleRate = 32000
-  const duration = inputBuffer.duration
-  const targetLength = Math.round(duration * sampleRate)
+  const sampleRate = inputBuffer.sampleRate
+  const channels = inputBuffer.numberOfChannels
+  const offlineCtx = new OfflineAudioContext(channels, inputBuffer.length, sampleRate)
 
-  const offlineCtx = new OfflineAudioContext(1, targetLength, sampleRate)
   const source = offlineCtx.createBufferSource()
   source.buffer = inputBuffer
 
   let currentNode: AudioNode = source
 
+  // ۱. حذف نویز بدون تیک‌تیک با فیلتر شیب‌دار چندمرحله‌ای (24dB/Octave Cascaded Filters)
   if (options.removeNoise) {
-    // فیلتر حذف صدای باد، هوم و لرزش بم
-    const hp = offlineCtx.createBiquadFilter()
-    hp.type = 'highpass'
-    hp.frequency.value = 95
-    hp.Q.value = 0.55
-    currentNode.connect(hp)
-    currentNode = hp
+    const intensity = options.noiseReductionIntensity || 'balanced'
+    const hpFreq = intensity === 'aggressive' ? 120 : intensity === 'mild' ? 75 : 95
+    const lpFreq = intensity === 'aggressive' ? 8000 : intensity === 'mild' ? 11000 : 9200
 
-    // فیلتر مهار فرکانس‌های هیس زننده بالا
-    const lp = offlineCtx.createBiquadFilter()
-    lp.type = 'lowpass'
-    lp.frequency.value = 9200
-    lp.Q.value = 0.55
-    currentNode.connect(lp)
-    currentNode = lp
+    // دو استیج High-Pass متوالی برای حذف کامل صدای هوم، باد، فن و لرزش زیر صدا بدون قطعی کلمات
+    const hp1 = offlineCtx.createBiquadFilter()
+    hp1.type = 'highpass'
+    hp1.frequency.value = hpFreq
+    hp1.Q.value = 0.707
+    currentNode.connect(hp1)
+
+    const hp2 = offlineCtx.createBiquadFilter()
+    hp2.type = 'highpass'
+    hp2.frequency.value = hpFreq
+    hp2.Q.value = 0.707
+    hp1.connect(hp2)
+
+    // فیلتر شیب‌دار Low-Pass برای حذف قطعی هیس، ویزویز و فرکانس‌های مزاحم بالا
+    const lp1 = offlineCtx.createBiquadFilter()
+    lp1.type = 'lowpass'
+    lp1.frequency.value = lpFreq
+    lp1.Q.value = 0.707
+    hp2.connect(lp1)
+
+    const lp2 = offlineCtx.createBiquadFilter()
+    lp2.type = 'lowpass'
+    lp2.frequency.value = lpFreq
+    lp2.Q.value = 0.707
+    lp1.connect(lp2)
+
+    currentNode = lp2
   }
 
-  // تنظیم دائمی کیفیت استودیویی (شفافیت کلام و حذف کدری Boxy Sound)
+  // ۲. اصلاح شفافیت استودیویی (حذف هوای گرفته و تقویت حضور کلام)
   const deMud = offlineCtx.createBiquadFilter()
   deMud.type = 'peaking'
   deMud.frequency.value = 450
-  deMud.gain.value = -2.0
+  deMud.gain.value = -2.5
   deMud.Q.value = 1.0
   currentNode.connect(deMud)
-  currentNode = deMud
 
-  const presence = offlineCtx.createBiquadFilter()
-  presence.type = 'highshelf'
-  presence.frequency.value = 4200
-  presence.gain.value = 3.8
-  currentNode.connect(presence)
-  currentNode = presence
+  const clarity = offlineCtx.createBiquadFilter()
+  clarity.type = 'peaking'
+  clarity.frequency.value = 3200
+  clarity.gain.value = 3.2
+  clarity.Q.value = 1.2
+  deMud.connect(clarity)
+  currentNode = clarity
 
-  // افزایش حجم هوشمند با کمپرسور ملایم استودیویی
+  // ۳. افزایش بلندی صدا با Dynamic Compressor پایدار (بدون نویز پامپینگ)
   if (options.boostVolume) {
     const comp = offlineCtx.createDynamicsCompressor()
     comp.threshold.value = -16
-    comp.knee.value = 15
-    comp.ratio.value = 2.5
-    comp.attack.value = 0.01
-    comp.release.value = 0.15
+    comp.knee.value = 18
+    comp.ratio.value = 3.0
+    comp.attack.value = 0.005
+    comp.release.value = 0.12
     currentNode.connect(comp)
-    currentNode = comp
 
-    const gain = offlineCtx.createGain()
-    gain.gain.value = 1.28
-    currentNode.connect(gain)
-    currentNode = gain
+    const makeUpGain = offlineCtx.createGain()
+    makeUpGain.gain.value = 1.35
+    comp.connect(makeUpGain)
+    currentNode = makeUpGain
   }
 
-  currentNode.connect(offlineCtx.destination)
+  // ۴. لیمیتر محافظ پیک خروجی برای جلوگیری از هرگونه دیستورشن و کلیک
+  const limiter = offlineCtx.createDynamicsCompressor()
+  limiter.threshold.value = -0.5
+  limiter.knee.value = 0.0
+  limiter.ratio.value = 20.0
+  limiter.attack.value = 0.001
+  limiter.release.value = 0.05
+  currentNode.connect(limiter)
+
+  limiter.connect(offlineCtx.destination)
   source.start(0)
 
-  const rendered = await offlineCtx.startRendering()
-  let finalData = rendered.getChannelData(0)
-
-  // اعمال حذف نویز پیوسته
-  if (options.removeNoise) {
-    finalData = applySmoothSpectralClean(
-      finalData,
-      sampleRate,
-      options.noiseReductionIntensity || 'balanced'
-    )
-  }
-
-  const resultBuffer = offlineCtx.createBuffer(1, finalData.length, sampleRate)
-  resultBuffer.copyToChannel(finalData, 0)
-  return resultBuffer
+  return await offlineCtx.startRendering()
 }
 
 // ----------------------------------------------------------------------------
-// ذخیره با فرمت واقعی و فشرده
+// ذخیره با فرمت اصلی و بهینه
 // ----------------------------------------------------------------------------
 export async function bufferToStandardAudio(
   buffer: AudioBuffer,
@@ -216,9 +167,11 @@ export async function bufferToStandardAudio(
     } catch {}
   }
 
-  const samples = buffer.getChannelData(0)
+  // خروجی استاندارد WAV
+  const numChannels = buffer.numberOfChannels
   const sampleRate = buffer.sampleRate
-  const arrayBuffer = new ArrayBuffer(44 + samples.length * 2)
+  const length = buffer.length
+  const arrayBuffer = new ArrayBuffer(44 + length * numChannels * 2)
   const view = new DataView(arrayBuffer)
 
   const writeStr = (offset: number, str: string) => {
@@ -226,24 +179,26 @@ export async function bufferToStandardAudio(
   }
 
   writeStr(0, 'RIFF')
-  view.setUint32(4, 36 + samples.length * 2, true)
+  view.setUint32(4, 36 + length * numChannels * 2, true)
   writeStr(8, 'WAVE')
   writeStr(12, 'fmt ')
   view.setUint32(16, 16, true)
   view.setUint16(20, 1, true)
-  view.setUint16(22, 1, true)
+  view.setUint16(22, numChannels, true)
   view.setUint32(24, sampleRate, true)
-  view.setUint32(28, sampleRate * 2, true)
-  view.setUint16(32, 2, true)
+  view.setUint32(28, sampleRate * numChannels * 2, true)
+  view.setUint16(32, numChannels * 2, true)
   view.setUint16(34, 16, true)
   writeStr(36, 'data')
-  view.setUint32(40, samples.length * 2, true)
+  view.setUint32(40, length * numChannels * 2, true)
 
   let offset = 44
-  for (let i = 0; i < samples.length; i++) {
-    const s = Math.max(-1, Math.min(1, samples[i]))
-    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true)
-    offset += 2
+  for (let i = 0; i < length; i++) {
+    for (let c = 0; c < numChannels; c++) {
+      const s = Math.max(-1, Math.min(1, buffer.getChannelData(c)[i]))
+      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true)
+      offset += 2
+    }
   }
 
   return {
