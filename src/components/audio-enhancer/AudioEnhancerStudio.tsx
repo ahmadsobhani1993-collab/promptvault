@@ -3,7 +3,7 @@
 import React, { useState, useRef } from 'react'
 import {
   processAudioBuffer,
-  bufferToCompressedWav,
+  bufferToStandardAudio,
   formatAudioTime,
   ProcessingOptions,
 } from './audio-utils'
@@ -13,17 +13,16 @@ export default function AudioEnhancerStudio() {
   const [originalBuffer, setOriginalBuffer] = useState<AudioBuffer | null>(null)
   const [processedBuffer, setProcessedBuffer] = useState<AudioBuffer | null>(null)
   
-  // تنظیمات کاربر قبل از اجرا
   const [options, setOptions] = useState<ProcessingOptions>({
     removeNoise: true,
     boostVolume: true,
     voiceTone: 'original',
+    noiseReductionIntensity: 'balanced',
   })
 
   const [loading, setLoading] = useState(false)
   const [loadingText, setLoadingText] = useState('')
 
-  // وضعیت‌های پلیر
   const [isPlaying, setIsPlaying] = useState(false)
   const [playEnhanced, setPlayEnhanced] = useState(true)
   const [currentTime, setCurrentTime] = useState(0)
@@ -35,7 +34,6 @@ export default function AudioEnhancerStudio() {
   const pauseOffsetRef = useRef<number>(0)
   const animFrameRef = useRef<number | null>(null)
 
-  // بارگذاری فایل
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0]
     if (!selected) return
@@ -44,7 +42,7 @@ export default function AudioEnhancerStudio() {
     setFile(selected)
     setProcessedBuffer(null)
     setLoading(true)
-    setLoadingText('در حال خواندن فایل صوتی...')
+    setLoadingText('در حال تحلیل امواج صوتی در مرورگر...')
 
     try {
       const arrayBuffer = await selected.arrayBuffer()
@@ -57,19 +55,18 @@ export default function AudioEnhancerStudio() {
       setCurrentTime(0)
       pauseOffsetRef.current = 0
     } catch {
-      alert('فرمت فایل پشتیبانی نمی‌شود یا فایل مخدوش است.')
+      alert('فرمت فایل نامعتبر است یا توسط مرورگر پشتیبانی نمی‌شود.')
       setFile(null)
     } finally {
       setLoading(false)
     }
   }
 
-  // اجرای پردازش با گزینه‌های انتخابی
   const handleStartProcessing = async () => {
     if (!originalBuffer) return
     stopAudio()
     setLoading(true)
-    setLoadingText('در حال پردازش هوشمند، حذف نویز و تفکیک صدا...')
+    setLoadingText('در حال اجرای مدل حذف نویز تطبیقی و بهینه‌سازی استودیویی...')
 
     await new Promise((r) => setTimeout(r, 60))
 
@@ -81,15 +78,14 @@ export default function AudioEnhancerStudio() {
       setCurrentTime(0)
       pauseOffsetRef.current = 0
     } catch {
-      alert('خطا در پردازش صدا.')
+      alert('خطا در پردازش صوت.')
     } finally {
       setLoading(false)
     }
   }
 
-  // کنترل پخش
-  const playAudio = (useEnhancedState = playEnhanced) => {
-    const targetBuffer = useEnhancedState ? (processedBuffer || originalBuffer) : originalBuffer
+  const playAudio = (useEnhanced = playEnhanced) => {
+    const targetBuffer = useEnhanced ? (processedBuffer || originalBuffer) : originalBuffer
     if (!targetBuffer) return
 
     if (!audioCtxRef.current) {
@@ -146,16 +142,15 @@ export default function AudioEnhancerStudio() {
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
   }
 
-  // دانلود خروجی کم‌حجم
   const handleExport = () => {
     const targetBuffer = processedBuffer || originalBuffer
     if (!targetBuffer || !file) return
 
-    const { blob, ext } = bufferToCompressedWav(targetBuffer, file.name)
+    const { blob, fileName } = bufferToStandardAudio(targetBuffer, file.name)
     const downloadUrl = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = downloadUrl
-    a.download = `enhanced_${file.name.replace(/\.[^/.]+$/, '')}.${ext}`
+    a.download = fileName
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -166,14 +161,13 @@ export default function AudioEnhancerStudio() {
     <div className="mx-auto max-w-3xl space-y-8">
       <div className="text-center">
         <h1 className="font-display text-3xl font-extrabold tracking-tight text-white md:text-4xl">
-          استودیو تقویت و <span className="text-gold-bright">حذف نویز صدا</span>
+          استودیو تقویت و <span className="text-gold-bright">شفاف‌ساز صدا</span>
         </h1>
         <p className="mt-2 text-sm text-zinc-400">
-          تنظیمات دلخواه را انتخاب کنید، سپس دکمه پردازش را بزنید تا خروجی شفاف و کم‌حجم تولید شود
+          حذف تطبیقی نویز محیطی، اکولایزر اصلاحی و تنظیم استودیویی کلام بدون خروج اطلاعات از مرورگر
         </p>
       </div>
 
-      {/* ۱. باکس انتخاب فایل */}
       {!file && (
         <div className="rounded-2xl border-2 border-dashed border-zinc-800 bg-zinc-950/60 p-10 text-center transition hover:border-gold/50">
           <input
@@ -192,7 +186,7 @@ export default function AudioEnhancerStudio() {
               انتخاب فایل صوتی یا ویدیویی
             </span>
             <span className="mt-1 text-xs text-zinc-500">
-              فرمت‌های MP3، MP4، WAV، M4A (۱۰۰٪ محلی در مرورگر شما)
+              پردازش ۱۰۰٪ لوکال و بدون بارگذاری روی سرور
             </span>
           </label>
         </div>
@@ -204,36 +198,54 @@ export default function AudioEnhancerStudio() {
         </div>
       )}
 
-      {/* ۲. گزینه‌های پردازش قبل از اجرا (سبک Audo.ai) */}
       {file && !processedBuffer && !loading && (
         <div className="space-y-6 rounded-3xl border border-zinc-800 bg-[#120f0c] p-6 shadow-2xl">
           <div className="border-b border-zinc-800 pb-3">
             <p className="text-sm font-bold text-white truncate">فایل: {file.name}</p>
-            <p className="text-xs text-zinc-500">مدت: {formatAudioTime(duration)}</p>
+            <p className="text-xs text-zinc-500">مدت زمان: {formatAudioTime(duration)}</p>
           </div>
 
           <div className="space-y-4">
-            <h3 className="text-sm font-bold text-gold-bright">اقدامات مورد نظر را مشخص کنید:</h3>
+            <h3 className="text-sm font-bold text-gold-bright">تنظیمات زنجیره پردازش صدا:</h3>
 
-            {/* گزینه حذف نویز */}
-            <label className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/50 p-3.5 cursor-pointer hover:border-zinc-700 transition">
-              <div>
-                <span className="block text-sm font-bold text-white">حذف کامل نویز پس‌زمینه</span>
-                <span className="block text-xs text-zinc-400">حذف صدای باد، فن، همهمه کافه و خش‌خش میکروفون</span>
-              </div>
-              <input
-                type="checkbox"
-                checked={options.removeNoise}
-                onChange={(e) => setOptions({ ...options, removeNoise: e.target.checked })}
-                className="h-5 w-5 accent-gold cursor-pointer"
-              />
-            </label>
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 space-y-3">
+              <label className="flex items-center justify-between cursor-pointer">
+                <div>
+                  <span className="block text-sm font-bold text-white">حذف هوشمند و تطبیقی نویز</span>
+                  <span className="block text-xs text-zinc-400">حذف صدای کولر، فن، هیس، و نویزهای فرکانسی بدون قطع کلمات</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={options.removeNoise}
+                  onChange={(e) => setOptions({ ...options, removeNoise: e.target.checked })}
+                  className="h-5 w-5 accent-gold cursor-pointer"
+                />
+              </label>
 
-            {/* گزینه تقویت بلندی */}
-            <label className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/50 p-3.5 cursor-pointer hover:border-zinc-700 transition">
+              {options.removeNoise && (
+                <div className="flex gap-2 pt-2 border-t border-zinc-800/60">
+                  {(['mild', 'balanced', 'aggressive'] as const).map((lvl) => (
+                    <button
+                      key={lvl}
+                      type="button"
+                      onClick={() => setOptions({ ...options, noiseReductionIntensity: lvl })}
+                      className={`flex-1 py-1.5 text-xs rounded-lg border transition ${
+                        options.noiseReductionIntensity === lvl
+                          ? 'border-gold bg-gold/15 text-gold-bright font-bold'
+                          : 'border-zinc-800 text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      {lvl === 'mild' ? 'ملایم' : lvl === 'balanced' ? 'متعادل (پیش‌فرض)' : 'قوی'}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <label className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 cursor-pointer">
               <div>
-                <span className="block text-sm font-bold text-white">تقویت حجم صدا (بدون افت کیفیت)</span>
-                <span className="block text-xs text-zinc-400">افزایش بلندی و یکدست‌سازی هوشمند بدون نویز اضافه</span>
+                <span className="block text-sm font-bold text-white">افزایش حجم هوشمند (Loudness & Limiter)</span>
+                <span className="block text-xs text-zinc-400">بهینه‌سازی داینامیک بدون دیستورشن و بدون افزایش سطح نویز</span>
               </div>
               <input
                 type="checkbox"
@@ -243,15 +255,14 @@ export default function AudioEnhancerStudio() {
               />
             </label>
 
-            {/* گزینه تغییر تن یا جنس صدا */}
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-3.5">
-              <span className="block text-sm font-bold text-white">تنظیم جنس و لحن صدا:</span>
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+              <span className="block text-sm font-bold text-white">رنگ و کاراکتر صدا:</span>
               <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {[
-                  { id: 'original', label: 'طبیعی (پیش‌فرض)', icon: '🎙️' },
-                  { id: 'male', label: 'مردانه / بم', icon: '🧔' },
-                  { id: 'female', label: 'زنانه / شفاف', icon: '👩' },
-                  { id: 'studio', label: 'استودیویی کریستالی', icon: '💎' },
+                  { id: 'original', label: 'طبیعی', icon: '🌿' },
+                  { id: 'studio', label: 'استودیویی (De-Mud)', icon: '💎' },
+                  { id: 'male', label: 'بم پادکستی (SOLA)', icon: '🎙️' },
+                  { id: 'female', label: 'زیر و شفاف (SOLA)', icon: '🌸' },
                 ].map((item) => (
                   <button
                     key={item.id}
@@ -288,22 +299,20 @@ export default function AudioEnhancerStudio() {
               onClick={handleStartProcessing}
               className="btn-primary px-8 py-3 text-sm font-bold shadow-lg shadow-gold/20"
             >
-              🚀 شروع پردازش صدا
+              🚀 شروع پردازش مهندسی‌شده
             </button>
           </div>
         </div>
       )}
 
-      {/* ۳. نتیجه پردازش و پلیر مقایسه‌ای */}
       {processedBuffer && (
         <div className="space-y-6 rounded-3xl border border-zinc-800 bg-[#120f0c] p-6 shadow-2xl">
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800 pb-4">
             <div>
               <p className="text-sm font-bold text-white truncate max-w-xs">{file?.name}</p>
-              <p className="text-xs text-zinc-500">پردازش با موفقیت به پایان رسید</p>
+              <p className="text-xs text-zinc-500">پردازش با استاندارد استودیویی پایان یافت</p>
             </div>
 
-            {/* سوییچ مقایسه زنده قبل و بعد */}
             <div className="flex items-center gap-2 rounded-xl bg-zinc-900 p-1 border border-zinc-800">
               <button
                 type="button"
@@ -315,7 +324,7 @@ export default function AudioEnhancerStudio() {
                   !playEnhanced ? 'bg-red-500/20 text-red-400 border border-red-500/40' : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                صدای خام اصلی
+                صدای خام اولیه
               </button>
               <button
                 type="button"
@@ -332,7 +341,6 @@ export default function AudioEnhancerStudio() {
             </div>
           </div>
 
-          {/* نوار زمان */}
           <div className="space-y-2">
             <input
               type="range"
@@ -383,7 +391,7 @@ export default function AudioEnhancerStudio() {
               }}
               className="text-xs text-zinc-400 hover:text-white"
             >
-              🔄 تغییر تنظیمات و پردازش مجدد
+              🔄 بازگشت و تغییر پارامترها
             </button>
 
             <button
@@ -392,7 +400,7 @@ export default function AudioEnhancerStudio() {
               className="btn-primary flex items-center gap-2 px-6 py-2.5 text-xs font-bold shadow-lg shadow-gold/20"
             >
               <span>⬇️</span>
-              <span>دانلود خروجی کم‌حجم</span>
+              <span>دانلود فایل بهینه‌شده (WAV استودیویی)</span>
             </button>
           </div>
         </div>
