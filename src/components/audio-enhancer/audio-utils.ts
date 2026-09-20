@@ -5,17 +5,15 @@ export function formatAudioTime(seconds: number): string {
   return `${m}:${s < 10 ? '0' : ''}${s}`
 }
 
-export type VoiceTone = 'original' | 'male' | 'female' | 'studio'
-
 export type ProcessingOptions = {
   removeNoise: boolean
   boostVolume: boolean
-  voiceTone: VoiceTone
+  voiceTone?: 'original' | 'male' | 'female' | 'studio'
   noiseReductionIntensity?: 'mild' | 'balanced' | 'aggressive'
 }
 
 // ----------------------------------------------------------------------------
-// الگوریتم حذف نویز بدون وزوز و بدون ایجاد صدای فلزی (Smooth Adaptive Subtraction)
+// حذف نویز بدون لگ، بدون پرش فاز و کاملاً پیوسته (Zero-Stutter Smooth Filter)
 // ----------------------------------------------------------------------------
 function applySmoothSpectralClean(
   input: Float32Array,
@@ -23,66 +21,58 @@ function applySmoothSpectralClean(
   intensity: 'mild' | 'balanced' | 'aggressive'
 ): Float32Array {
   const output = new Float32Array(input.length)
-  const windowSize = 512
-  const hopSize = 256
-  const numWindows = Math.floor((input.length - windowSize) / hopSize)
+  const frameSize = 512
+  const numFrames = Math.floor(input.length / frameSize)
 
-  // پنجره نرم هن برای محو کردن صدای تق‌تق و ویزویز
-  const window = new Float32Array(windowSize)
-  for (let i = 0; i < windowSize; i++) {
-    window[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (windowSize - 1)))
-  }
-
-  // ارزیابی کف نویز اولیه با نمونه‌برداری از فریم‌های کم‌انرژی
-  const energies = new Float32Array(numWindows)
-  for (let w = 0; w < numWindows; w++) {
+  // ۱. محاسبه انرژی فریم‌ها برای تخمین سطح نویز پایه
+  const energies = new Float32Array(numFrames)
+  for (let f = 0; f < numFrames; f++) {
     let sum = 0
-    const start = w * hopSize
-    for (let i = 0; i < windowSize; i++) {
-      const s = input[start + i] * window[i]
+    const start = f * frameSize
+    for (let i = 0; i < frameSize; i++) {
+      const s = input[start + i]
       sum += s * s
     }
-    energies[w] = Math.sqrt(sum / windowSize)
+    energies[f] = Math.sqrt(sum / frameSize)
   }
 
   const sorted = Float32Array.from(energies).sort()
-  const noiseFloor = Math.max(0.001, sorted[Math.floor(numWindows * 0.15)] * 1.5)
+  const noiseFloor = Math.max(0.001, sorted[Math.floor(numFrames * 0.15)] * 1.6)
 
   const minGain = intensity === 'aggressive' ? 0.05 : intensity === 'mild' ? 0.25 : 0.12
-  const power = intensity === 'aggressive' ? 2.2 : 1.6
+  const power = intensity === 'aggressive' ? 2.0 : 1.5
 
-  let smoothedGain = 1.0
+  // ۲. فیلتر هموارسازی سمپل‌به‌سمپل جهت رفع کامل لگ و تق‌تق
+  let currentGain = 1.0
 
-  for (let w = 0; w < numWindows; w++) {
-    const start = w * hopSize
-    const currentEnergy = energies[w]
+  for (let f = 0; f < numFrames; f++) {
+    const start = f * frameSize
+    const energy = energies[f]
 
-    // محاسبه گین نرم بدون پرش فاز
     let targetGain = 1.0
-    if (currentEnergy < noiseFloor) {
+    if (energy < noiseFloor) {
       targetGain = minGain
     } else {
-      const snr = (currentEnergy - noiseFloor) / (currentEnergy + 1e-6)
+      const snr = (energy - noiseFloor) / (energy + 1e-6)
       targetGain = Math.max(minGain, Math.min(1.0, Math.pow(snr, power)))
     }
 
-    // فیلتر هموارساز زمانی (Lowpass Gain) جهت رفع صددرصدی ویزویز فرکانسی
-    for (let i = 0; i < windowSize; i++) {
-      smoothedGain = smoothedGain * 0.96 + targetGain * 0.04
-      output[start + i] += input[start + i] * window[i] * smoothedGain
+    for (let i = 0; i < frameSize; i++) {
+      // ضریب تطبیقی پیوسته برای حذف کامل لگ و لکنت صوتی
+      currentGain = currentGain * 0.992 + targetGain * 0.008
+      output[start + i] = input[start + i] * currentGain
     }
   }
 
-  // کپی بخش باقیمانده
-  for (let i = numWindows * hopSize; i < input.length; i++) {
-    output[i] = input[i] * smoothedGain
+  for (let i = numFrames * frameSize; i < input.length; i++) {
+    output[i] = input[i] * currentGain
   }
 
   return output
 }
 
 // ----------------------------------------------------------------------------
-// زنجیره پردازش صدا در OfflineAudioContext
+// زنجیره پردازش و مسترینگ استودیویی کلام
 // ----------------------------------------------------------------------------
 export async function processAudioBuffer(
   inputBuffer: AudioBuffer,
@@ -99,51 +89,43 @@ export async function processAudioBuffer(
   let currentNode: AudioNode = source
 
   if (options.removeNoise) {
-    // فیلتر شیب ملایم بالاگذر برای مهار هوم و باد بدون نازک شدن صدا
+    // فیلتر حذف صدای باد، هوم و لرزش بم
     const hp = offlineCtx.createBiquadFilter()
     hp.type = 'highpass'
-    hp.frequency.value = 100
-    hp.Q.value = 0.6
+    hp.frequency.value = 95
+    hp.Q.value = 0.55
     currentNode.connect(hp)
     currentNode = hp
 
-    // فیلتر ملایم برای مهار فرکانس‌های هیس زننده بالای ۸۵۰۰ هرتز
+    // فیلتر مهار فرکانس‌های هیس زننده بالا
     const lp = offlineCtx.createBiquadFilter()
     lp.type = 'lowpass'
-    lp.frequency.value = 9000
-    lp.Q.value = 0.6
+    lp.frequency.value = 9200
+    lp.Q.value = 0.55
     currentNode.connect(lp)
     currentNode = lp
   }
 
-  // پریست‌ها
-  if (options.voiceTone === 'male') {
-    const bass = offlineCtx.createBiquadFilter()
-    bass.type = 'lowshelf'
-    bass.frequency.value = 220
-    bass.gain.value = 4
-    currentNode.connect(bass)
-    currentNode = bass
-  } else if (options.voiceTone === 'female') {
-    const presence = offlineCtx.createBiquadFilter()
-    presence.type = 'peaking'
-    presence.frequency.value = 2800
-    presence.gain.value = 3.5
-    currentNode.connect(presence)
-    currentNode = presence
-  } else if (options.voiceTone === 'studio') {
-    const clarity = offlineCtx.createBiquadFilter()
-    clarity.type = 'highshelf'
-    clarity.frequency.value = 4500
-    clarity.gain.value = 4
-    currentNode.connect(clarity)
-    currentNode = clarity
-  }
+  // تنظیم دائمی کیفیت استودیویی (شفافیت کلام و حذف کدری Boxy Sound)
+  const deMud = offlineCtx.createBiquadFilter()
+  deMud.type = 'peaking'
+  deMud.frequency.value = 450
+  deMud.gain.value = -2.0
+  deMud.Q.value = 1.0
+  currentNode.connect(deMud)
+  currentNode = deMud
 
-  // تقویت حجم کلام با کنترل ملایم پیک
+  const presence = offlineCtx.createBiquadFilter()
+  presence.type = 'highshelf'
+  presence.frequency.value = 4200
+  presence.gain.value = 3.8
+  currentNode.connect(presence)
+  currentNode = presence
+
+  // افزایش حجم هوشمند با کمپرسور ملایم استودیویی
   if (options.boostVolume) {
     const comp = offlineCtx.createDynamicsCompressor()
-    comp.threshold.value = -18
+    comp.threshold.value = -16
     comp.knee.value = 15
     comp.ratio.value = 2.5
     comp.attack.value = 0.01
@@ -152,7 +134,7 @@ export async function processAudioBuffer(
     currentNode = comp
 
     const gain = offlineCtx.createGain()
-    gain.gain.value = 1.3
+    gain.gain.value = 1.28
     currentNode.connect(gain)
     currentNode = gain
   }
@@ -163,7 +145,7 @@ export async function processAudioBuffer(
   const rendered = await offlineCtx.startRendering()
   let finalData = rendered.getChannelData(0)
 
-  // اعمال حذف نویز فیلتر نرم
+  // اعمال حذف نویز پیوسته
   if (options.removeNoise) {
     finalData = applySmoothSpectralClean(
       finalData,
@@ -178,7 +160,7 @@ export async function processAudioBuffer(
 }
 
 // ----------------------------------------------------------------------------
-// انکودر هوشمند: یکسان‌سازی فرمت و پسوند خروجی با فایل ورودی
+// ذخیره با فرمت واقعی و فشرده
 // ----------------------------------------------------------------------------
 export async function bufferToStandardAudio(
   buffer: AudioBuffer,
@@ -188,7 +170,6 @@ export async function bufferToStandardAudio(
   const originalExt = extMatch ? extMatch[1].toLowerCase() : 'wav'
   const baseName = originalFileName.replace(/\.[^/.]+$/, '')
 
-  // اگر فایل ورودی فشرده باشد (MP3 / M4A / AAC / WebM) آن را به صورت فشرده کم‌حجم تحویل می‌دهیم
   if (['mp3', 'm4a', 'aac', 'webm'].includes(originalExt) && typeof MediaRecorder !== 'undefined') {
     try {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
@@ -206,7 +187,7 @@ export async function bufferToStandardAudio(
 
       const recorder = new MediaRecorder(dest.stream, {
         mimeType,
-        audioBitsPerSecond: 128000, // کیفیت بالا و حجم بسیار کم (زیر ۱ مگابایت)
+        audioBitsPerSecond: 128000,
       })
 
       const chunks: BlobPart[] = []
@@ -220,7 +201,6 @@ export async function bufferToStandardAudio(
       recorder.start()
       source.start(0)
 
-      // ضبط سریع کل بافر
       await new Promise((r) => {
         source.onended = () => {
           recorder.stop()
@@ -233,12 +213,9 @@ export async function bufferToStandardAudio(
         blob: compressedBlob,
         fileName: `enhanced_${baseName}.${originalExt}`,
       }
-    } catch {
-      // در صورت بروز هرگونه مشکل به ساخت WAV سبک می‌رود
-    }
+    } catch {}
   }
 
-  // حالت استاندارد WAV کم‌حجم (مونو و ۳۲ کیلوهرتز)
   const samples = buffer.getChannelData(0)
   const sampleRate = buffer.sampleRate
   const arrayBuffer = new ArrayBuffer(44 + samples.length * 2)
