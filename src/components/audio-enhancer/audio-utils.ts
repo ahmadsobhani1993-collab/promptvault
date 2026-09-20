@@ -12,51 +12,41 @@ export type ProcessingOptions = {
 }
 
 export const SAMPLE_RATE = 48000
-let dfStateInstance: any = null
+let corePromise: Promise<any> | null = null
 
 /**
- * راه‌اندازی و کش کردن موتور و مدل هوش مصنوعی DeepFilterNet3
+ * مقداردهی رسمی کلاس DeepFilterNet3Core از پکیج npm
  */
-export async function initDeepFilter(): Promise<any> {
-  if (dfStateInstance) return dfStateInstance
+export async function getInitializedCore(attenuationLevel: number, onLog?: (msg: string) => void) {
+  if (!corePromise) {
+    corePromise = (async () => {
+      onLog?.('در حال ایمپورت رسمی ماژول deepfilternet3-noise-filter...')
+      console.log('[DFN3] Importing deepfilternet3-noise-filter module...')
 
-  // ۱. بارگذاری اسکریپت ران‌تایم WASM در صورت عدم وجود
-  if (!(window as any).DfState) {
-    await new Promise<void>((resolve, reject) => {
-      const script = document.createElement('script')
-      script.src = '/lib/deepfilternet3.js'
-      script.onload = () => resolve()
-      script.onerror = () =>
-        reject(new Error('فایل public/lib/deepfilternet3.js در دسترس نیست یا لود نشد.'))
-      document.head.appendChild(script)
-    })
+      // ایمپورت رسمی ماژول کامپایل‌شده
+      const { DeepFilterNet3Core } = await import('deepfilternet3-noise-filter')
+
+      onLog?.('در حال مقداردهی هسته DeepFilterNet3...')
+      console.log('[DFN3] Initializing DeepFilterNet3Core...')
+
+      const core = new DeepFilterNet3Core({
+        sampleRate: SAMPLE_RATE,
+        noiseReductionLevel: attenuationLevel,
+      })
+
+      await core.initialize()
+      console.log('[DFN3] DeepFilterNet3Core successfully initialized.')
+      return core
+    })()
   }
 
-  const { DfInit, DfState } = window as any
-  if (!DfInit || !DfState) {
-    throw new Error('کلاس DfState یا تابع DfInit در اسکریپت تعریف نشده است.')
-  }
-
-  // ۲. اینیشیالایز کردن ماژول WebAssembly با تزریق ایمپورت‌های wbg
-  await DfInit('/model/v3/pkg/df_bg.wasm')
-
-  // ۳. واکشی فایل مدل فشرده ONNX
-  const modelResp = await fetch('/model/v3/models/DeepFilterNet3_onnx.tar.gz')
-  if (!modelResp.ok) {
-    throw new Error(`دانلود مدل ONNX با خطای ${modelResp.status} مواجه شد. لطفاً مسیر فایل را بررسی کنید.`)
-  }
-
-  const modelBuffer = await modelResp.arrayBuffer()
-  const modelBytes = new Uint8Array(modelBuffer)
-
-  // ۴. نمونه‌سازی از وضعیت استنتاج شبکه عصبی
-  dfStateInstance = new DfState(modelBytes)
-  return dfStateInstance
+  const core = await corePromise
+  core.setSuppressionLevel(attenuationLevel)
+  return core
 }
 
 /**
- * پردازش صوتی با عبور دادن فریم‌های صدا از داخل مدل هوش مصنوعی
- * @param maxDurationSeconds در صورت ارسال عدد، تنها همان بازه (مثلاً ۶۰ ثانیه) پردازش می‌شود.
+ * پردازش آفلاین استاندارد با AudioWorklet رسمی پکیج (دقیقاً مشابه boredland/noise)
  */
 export async function processAudioBuffer(
   inputBuffer: AudioBuffer,
@@ -64,11 +54,12 @@ export async function processAudioBuffer(
   maxDurationSeconds: number | null,
   onProgress?: (pct: number, status: string) => void
 ): Promise<AudioBuffer> {
-  onProgress?.(10, 'در حال راه‌اندازی موتور و مدل عصبی DeepFilterNet3...')
-  const dfState = await initDeepFilter()
+  const log = (msg: string, pct = 0) => {
+    console.log(`[DFN3 Step] ${msg}`)
+    onProgress?.(pct, msg)
+  }
 
-  // اعمال درصد فیلتر نویز روی استیت مدل
-  dfState.set_atten_lim(options.attenuationLevel)
+  log('در حال آماده‌سازی خط لوله صوتی...', 10)
 
   const targetDuration = maxDurationSeconds
     ? Math.min(inputBuffer.duration, maxDurationSeconds)
@@ -76,94 +67,85 @@ export async function processAudioBuffer(
 
   const totalSamples = Math.ceil(targetDuration * SAMPLE_RATE)
 
-  // ۱. رندر اولیه به کانال مونو با نرخ نمونه‌برداری استاندارد مدل (48kHz)
+  // مقداردهی هسته رسمی
+  log('در حال بارگذاری مدل هوش مصنوعی DeepFilterNet3...', 25)
+  const core = await getInitializedCore(options.attenuationLevel, (m) => log(m, 30))
+
+  log('آماده‌سازی OfflineAudioContext و AudioWorkletNode...', 45)
   const offlineCtx = new OfflineAudioContext(1, totalSamples, SAMPLE_RATE)
-  const src = offlineCtx.createBufferSource()
-  src.buffer = inputBuffer
 
-  let currentNode: AudioNode = src
+  const source = offlineCtx.createBufferSource()
+  // استخراج کانال مونو
+  const monoBuffer = offlineCtx.createBuffer(1, totalSamples, SAMPLE_RATE)
+  monoBuffer.getChannelData(0).set(inputBuffer.getChannelData(0).subarray(0, totalSamples))
+  source.buffer = monoBuffer
 
-  // فیلتر شیب‌دار بم برای حذف لرزش‌ها و هوای اضافه زیر کلام
+  let currentNode: AudioNode = source
+
+  // اتصال به نود فیلتر رسمی DeepFilterNet3
+  const filterNode = await core.createAudioWorkletNode(offlineCtx)
+  currentNode.connect(filterNode)
+  currentNode = filterNode
+
+  // اعمال Voice EQ
   if (options.voiceEq) {
-    const hp = offlineCtx.createBiquadFilter()
-    hp.type = 'highpass'
-    hp.frequency.value = 80
-    hp.Q.value = 0.7
-    currentNode.connect(hp)
-    currentNode = hp
+    log('اعمال تنظیمات اکولایزر کلام...', 55)
+    const highpass = offlineCtx.createBiquadFilter()
+    highpass.type = 'highpass'
+    highpass.frequency.value = 80
+    highpass.Q.value = 0.7
+    currentNode.connect(highpass)
+    currentNode = highpass
 
     const presence = offlineCtx.createBiquadFilter()
     presence.type = 'peaking'
-    presence.frequency.value = 3200
-    presence.gain.value = 2.5
+    presence.frequency.value = 3000
+    presence.gain.value = 3.0
     presence.Q.value = 1.0
     currentNode.connect(presence)
     currentNode = presence
   }
 
-  currentNode.connect(offlineCtx.destination)
-  src.start(0)
-
-  onProgress?.(30, 'در حال آماده‌سازی فریم‌های صوتی...')
-  const preProcessed = await offlineCtx.startRendering()
-  const rawSamples = preProcessed.getChannelData(0)
-
-  // ۲. پردازش استنتاج فریم‌به‌فریم با شبکه عصبی (اندازه فریم استاندارد: 480 سمپل = 10 میلی‌ثانیه)
-  const FRAME_SIZE = 480
-  const processedSamples = new Float32Array(rawSamples.length)
-  const totalFrames = Math.floor(rawSamples.length / FRAME_SIZE)
-
-  onProgress?.(45, 'در حال تفکیک کلام و حذف نویز با هوش مصنوعی...')
-
-  for (let f = 0; f < totalFrames; f++) {
-    const offset = f * FRAME_SIZE
-    const frame = rawSamples.subarray(offset, offset + FRAME_SIZE)
-
-    // پاس دادن مستقیم فریم به متد استنتاج باینری WASM
-    const cleanedFrame = dfState.process(frame)
-    processedSamples.set(cleanedFrame, offset)
-
-    // به‌روزرسانی نوار پیشرفت و جلوگیری از فریز شدن UI مرورگر
-    if (f % 60 === 0) {
-      const pct = Math.round(45 + (f / totalFrames) * 45)
-      onProgress?.(pct, `در حال پاک‌سازی امواج (${pct}%)...`)
-      await new Promise((r) => setTimeout(r, 0))
-    }
-  }
-
-  // کپی بخش باقیمانده انتهای صوت
-  const remainingSamples = rawSamples.length % FRAME_SIZE
-  if (remainingSamples > 0) {
-    const offset = totalFrames * FRAME_SIZE
-    processedSamples.set(rawSamples.subarray(offset), offset)
-  }
-
-  // ۳. نرمال‌سازی دامنه و حجم صدا در صورت انتخاب کاربر (Peak Normalization ملایم)
+  // اعمال نرمال‌سازی بلندی صدا (کمپرسور ملایم)
   if (options.loudnessNormalization) {
+    const comp = offlineCtx.createDynamicsCompressor()
+    comp.threshold.value = -16
+    comp.knee.value = 12
+    comp.ratio.value = 2.5
+    comp.attack.value = 0.005
+    comp.release.value = 0.15
+    currentNode.connect(comp)
+    currentNode = comp
+  }
+
+  currentNode.connect(offlineCtx.destination)
+  source.start(0)
+
+  log('در حال رندر و حذف نویز آفلاین با شتاب‌دهنده...', 65)
+  const renderedBuffer = await offlineCtx.startRendering()
+
+  // کنترل پیک صدا
+  if (options.loudnessNormalization) {
+    const data = renderedBuffer.getChannelData(0)
     let peak = 0
-    for (let i = 0; i < processedSamples.length; i++) {
-      const abs = Math.abs(processedSamples[i])
-      if (abs > peak) peak = abs
+    for (let i = 0; i < data.length; i++) {
+      const a = Math.abs(data[i])
+      if (a > peak) peak = a
     }
     if (peak > 0.01) {
-      const mult = 0.85 / peak
-      for (let i = 0; i < processedSamples.length; i++) {
-        processedSamples[i] *= mult
+      const gain = 0.85 / peak
+      for (let i = 0; i < data.length; i++) {
+        data[i] *= gain
       }
     }
   }
 
-  // ۴. ساخت AudioBuffer تمیز نهایی
-  const outCtx = new OfflineAudioContext(1, totalSamples, SAMPLE_RATE)
-  const outBuf = outCtx.createBuffer(1, processedSamples.length, SAMPLE_RATE)
-  outBuf.getChannelData(0).set(processedSamples)
-
-  onProgress?.(100, 'پردازش استودیویی با موفقیت انجام شد!')
-  return outBuf
+  log('پردازش با موفقیت پایان یافت!', 100)
+  return renderedBuffer
 }
 
 /**
- * خروجی گرفتن به صورت فایل کم‌حجم و استاندارد (MP3, M4A, WAV)
+ * فشرده‌سازی و دانلود خروجی در فرمت‌های MP3, M4A, WAV
  */
 export async function bufferToStandardAudio(
   buffer: AudioBuffer,
@@ -177,23 +159,17 @@ export async function bufferToStandardAudio(
   ).toLowerCase()
   const baseName = originalFileName.replace(/\.[^/.]+$/, '')
 
-  // ۱. تولید خروجی فشرده با اینکودر داخلی سیستم (حجم فایل بسیار کم و زیر ۲ مگابایت می‌ماند)
   if (['mp3', 'm4a', 'aac', 'webm'].includes(targetExt) && typeof MediaRecorder !== 'undefined') {
     try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({
-        sampleRate: SAMPLE_RATE,
-      })
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: SAMPLE_RATE })
       const dest = audioCtx.createMediaStreamDestination()
       const source = audioCtx.createBufferSource()
       source.buffer = buffer
       source.connect(dest)
 
       let mimeType = 'audio/webm;codecs=opus'
-      if (MediaRecorder.isTypeSupported('audio/mp4')) {
-        mimeType = 'audio/mp4'
-      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-        mimeType = 'audio/webm'
-      }
+      if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4'
+      else if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm'
 
       const recorder = new MediaRecorder(dest.stream, {
         mimeType,
@@ -223,12 +199,10 @@ export async function bufferToStandardAudio(
         blob: compressedBlob,
         fileName: `${baseName}_enhanced.${targetExt === 'm4a' ? 'm4a' : 'mp3'}`,
       }
-    } catch {
-      // در صورت بروز هرگونه مشکل، به انکودر WAV fallback می‌شود
-    }
+    } catch {}
   }
 
-  // ۲. خروجی استاندارد WAV (مونو، ۱۶ بیت، ۴۸ کیلوهرتز)
+  // خروجی WAV استاندارد
   const samples = buffer.getChannelData(0)
   const sampleRate = buffer.sampleRate
   const arrayBuffer = new ArrayBuffer(44 + samples.length * 2)
@@ -243,8 +217,8 @@ export async function bufferToStandardAudio(
   writeStr(8, 'WAVE')
   writeStr(12, 'fmt ')
   view.setUint32(16, 16, true)
-  view.setUint16(20, 1, true) // PCM Linear
-  view.setUint16(22, 1, true) // Mono
+  view.setUint16(20, 1, true)
+  view.setUint16(22, 1, true)
   view.setUint32(24, sampleRate, true)
   view.setUint32(28, sampleRate * 2, true)
   view.setUint16(32, 2, true)
@@ -255,7 +229,7 @@ export async function bufferToStandardAudio(
   let offset = 44
   for (let i = 0; i < samples.length; i++) {
     const s = Math.max(-1, Math.min(1, samples[i]))
-    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true)
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true)
     offset += 2
   }
 
