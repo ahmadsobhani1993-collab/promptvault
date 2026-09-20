@@ -16,7 +16,7 @@ export default function AudioEnhancerStudio() {
   const [options, setOptions] = useState<ProcessingOptions>({
     removeNoise: true,
     boostVolume: true,
-    voiceTone: 'original',
+    voiceTone: 'studio', // پیش‌فرض استودیویی شفاف
     noiseReductionIntensity: 'balanced',
   })
 
@@ -34,7 +34,6 @@ export default function AudioEnhancerStudio() {
   const pauseOffsetRef = useRef<number>(0)
   const animFrameRef = useRef<number | null>(null)
 
-  // بارگذاری فایل و تبدیل به AudioBuffer
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0]
     if (!selected) return
@@ -63,12 +62,11 @@ export default function AudioEnhancerStudio() {
     }
   }
 
-  // اجرای پردازش فیلتر و بازسازی صوت
   const handleStartProcessing = async () => {
     if (!originalBuffer) return
     stopAudio()
     setLoading(true)
-    setLoadingText('در حال اجرای مدل حذف نویز تطبیقی و بهینه‌سازی کلام...')
+    setLoadingText('در حال حذف نویز و بهینه‌سازی استودیویی کلام...')
 
     await new Promise((r) => setTimeout(r, 60))
 
@@ -86,7 +84,6 @@ export default function AudioEnhancerStudio() {
     }
   }
 
-  // کنترل پخش زنده صوت
   const playAudio = (useEnhanced = playEnhanced) => {
     const targetBuffer = useEnhanced ? (processedBuffer || originalBuffer) : originalBuffer
     if (!targetBuffer) return
@@ -145,7 +142,6 @@ export default function AudioEnhancerStudio() {
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
   }
 
-  // دانلود خروجی نهایی با فرمت واقعی
   const handleExport = async () => {
     const targetBuffer = processedBuffer || originalBuffer
     if (!targetBuffer || !file) return
@@ -178,7 +174,6 @@ export default function AudioEnhancerStudio() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
-      {/* هدر */}
       <div className="text-center">
         <h1 className="font-display text-3xl font-extrabold tracking-tight text-white md:text-4xl">
           استودیو تقویت و <span className="text-gold-bright">شفاف‌ساز صدا</span>
@@ -188,7 +183,6 @@ export default function AudioEnhancerStudio() {
         </p>
       </div>
 
-      {/* بخش انتخاب فایل */}
       {!file && (
         <div className="rounded-2xl border-2 border-dashed border-zinc-800 bg-zinc-950/60 p-10 text-center transition hover:border-gold/50">
           <input
@@ -213,14 +207,12 @@ export default function AudioEnhancerStudio() {
         </div>
       )}
 
-      {/* وضعیت لودینگ */}
       {loading && (
         <div className="rounded-2xl border border-gold/30 bg-gold/5 p-6 text-center text-sm text-gold-bright animate-pulse">
           ⚡ {loadingText}
         </div>
       )}
 
-      {/* گزینه‌های تنظیم پیش از پردازش */}
       {file && !processedBuffer && !loading && (
         <div className="space-y-6 rounded-3xl border border-zinc-800 bg-[#120f0c] p-6 shadow-2xl">
           <div className="border-b border-zinc-800 pb-3">
@@ -231,7 +223,7 @@ export default function AudioEnhancerStudio() {
           <div className="space-y-4">
             <h3 className="text-sm font-bold text-gold-bright">تنظیمات زنجیره پردازش صدا:</h3>
 
-            {/* تنظیم نویز */}
+            {/* گزینه اول: حذف نویز */}
             <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 space-y-3">
               <label className="flex items-center justify-between cursor-pointer">
                 <div>
@@ -266,7 +258,7 @@ export default function AudioEnhancerStudio() {
               )}
             </div>
 
-            {/* تنظیم بلندی صدا */}
+            {/* گزینه دوم: افزایش حجم هوشمند */}
             <label className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 cursor-pointer">
               <div>
                 <span className="block text-sm font-bold text-white">افزایش حجم هوشمند (Loudness & Limiter)</span>
@@ -279,33 +271,6 @@ export default function AudioEnhancerStudio() {
                 className="h-5 w-5 accent-gold cursor-pointer"
               />
             </label>
-
-            {/* تنظیم جنس صدا */}
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
-              <span className="block text-sm font-bold text-white">رنگ و کاراکتر صدا:</span>
-              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {[
-                  { id: 'original', label: 'طبیعی', icon: '🌿' },
-                  { id: 'studio', label: 'استودیویی (شفاف)', icon: '💎' },
-                  { id: 'male', label: 'بم پادکستی', icon: '🎙️' },
-                  { id: 'female', label: 'زیر و باز', icon: '🌸' },
-                ].map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setOptions({ ...options, voiceTone: item.id as any })}
-                    className={`flex flex-col items-center justify-center rounded-lg border p-2.5 text-xs font-semibold transition ${
-                      options.voiceTone === item.id
-                        ? 'border-gold bg-gold/10 text-gold-bright'
-                        : 'border-zinc-800 text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    <span className="text-base">{item.icon}</span>
-                    <span className="mt-1">{item.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
 
           <div className="flex items-center justify-between border-t border-zinc-800 pt-4">
@@ -331,13 +296,13 @@ export default function AudioEnhancerStudio() {
         </div>
       )}
 
-      {/* پلیر مقایسه‌ای و دانلود */}
+      {/* پلیر مقایسه و دانلود */}
       {processedBuffer && (
         <div className="space-y-6 rounded-3xl border border-zinc-800 bg-[#120f0c] p-6 shadow-2xl">
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800 pb-4">
             <div>
               <p className="text-sm font-bold text-white truncate max-w-xs">{file?.name}</p>
-              <p className="text-xs text-zinc-500">پردازش با موفقیت پایان یافت</p>
+              <p className="text-xs text-zinc-500">پردازش با کیفیت استودیویی پایان یافت</p>
             </div>
 
             <div className="flex items-center gap-2 rounded-xl bg-zinc-900 p-1 border border-zinc-800">
