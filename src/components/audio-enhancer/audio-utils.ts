@@ -11,29 +11,31 @@ export type ProcessingOptions = {
   noiseReductionIntensity?: 'mild' | 'balanced' | 'aggressive'
 }
 
-const SAMPLE_RATE = 48000
+export const SAMPLE_RATE = 48000
 
 let coreInstance: any = null
 
-async function getDeepFilterCore() {
+export async function getDeepFilterCore() {
   if (coreInstance) return coreInstance
 
-  // لود داینامیک اسکریپت کامپایل‌شده از دامنه خودتان
-  if (!(window as any).DeepFilterNet3Core) {
-    await new Promise<void>((resolve, reject) => {
-      const script = document.createElement('script')
-      script.src = '/lib/deepfilternet3.js'
-      script.onload = () => resolve()
-      script.onerror = () => reject(new Error('بارگذاری کتابخانه deepfilternet3.js با خطا مواجه شد.'))
-      document.head.appendChild(script)
-    })
+  let DeepFilterNet3Core: any = null
+
+  try {
+    const mod = await import(/* webpackIgnore: true */ '/lib/deepfilternet3.js')
+    DeepFilterNet3Core = mod.DeepFilterNet3Core || mod.default?.DeepFilterNet3Core || mod.default
+  } catch (err) {
+    console.warn('تلاش برای لود از طریق window:', err)
   }
 
-  const DeepFilterNet3Core =
-    (window as any).DeepFilterNet3Core || (window as any).deepfilternet3?.DeepFilterNet3Core
+  if (!DeepFilterNet3Core) {
+    DeepFilterNet3Core =
+      (window as any).DeepFilterNet3Core ||
+      (window as any).deepfilternet3?.DeepFilterNet3Core ||
+      (window as any).mezonNoiseSuppression?.DeepFilterNet3Core
+  }
 
   if (!DeepFilterNet3Core) {
-    throw new Error('کلاس DeepFilterNet3Core در اسکریپت یافت نشد.')
+    throw new Error('کلاس DeepFilterNet3Core یافت نشد. لطفاً بررسی کنید فایل public/lib/deepfilternet3.js وجود داشته باشد.')
   }
 
   const modelBaseUrl = new URL('/model', window.location.href).toString()
@@ -49,22 +51,31 @@ async function getDeepFilterCore() {
   return coreInstance
 }
 
+// ----------------------------------------------------------------------------
+// پردازش بافر صوتی (پشتیبانی از کل فایل یا ۶۰ ثانیه اول)
+// ----------------------------------------------------------------------------
 export async function processAudioBuffer(
   inputBuffer: AudioBuffer,
   options: ProcessingOptions,
+  maxDurationSeconds: number | null,
   onProgress?: (pct: number, status: string) => void
 ): Promise<AudioBuffer> {
-  onProgress?.(10, 'آماده‌سازی موتور هوش مصنوعی DeepFilterNet3...')
+  const targetDuration = maxDurationSeconds
+    ? Math.min(inputBuffer.duration, maxDurationSeconds)
+    : inputBuffer.duration
 
-  // دیکود و ترکیب مونو با نرخ ۴۸ کیلوهرتز
-  const offlineCtx = new OfflineAudioContext(1, Math.ceil(inputBuffer.duration * SAMPLE_RATE), SAMPLE_RATE)
+  const targetLength = Math.ceil(targetDuration * SAMPLE_RATE)
+
+  onProgress?.(10, 'آماده‌سازی بافر و محیط پردازش...')
+  const offlineCtx = new OfflineAudioContext(1, targetLength, SAMPLE_RATE)
+
   const sourceNode = offlineCtx.createBufferSource()
   sourceNode.buffer = inputBuffer
 
   let currentNode: AudioNode = sourceNode
 
   if (options.removeNoise) {
-    onProgress?.(25, 'راه‌اندازی شبکه عصبی و مدل ONNX...')
+    onProgress?.(30, 'بارگذاری مدل هوش مصنوعی DeepFilterNet3...')
     const core = await getDeepFilterCore()
 
     const attenuation =
@@ -73,14 +84,14 @@ export async function processAudioBuffer(
 
     core.setSuppressionLevel(attenuation)
 
-    onProgress?.(45, 'ایجاد گره پردازش در AudioWorklet...')
+    onProgress?.(50, 'ایجاد فیلتر پردازش در AudioWorklet...')
     const filterNode = await core.createAudioWorkletNode(offlineCtx)
 
     currentNode.connect(filterNode)
     currentNode = filterNode
   }
 
-  // اکولایزر ملایم استودیویی برای شفافیت کلام
+  // تنظیم ملایم شفافیت استودیویی
   const highpass = offlineCtx.createBiquadFilter()
   highpass.type = 'highpass'
   highpass.frequency.value = 80
@@ -90,7 +101,7 @@ export async function processAudioBuffer(
 
   const presence = offlineCtx.createBiquadFilter()
   presence.type = 'peaking'
-  presence.frequency.value = 3000
+  presence.frequency.value = 3200
   presence.gain.value = 2.5
   presence.Q.value = 1.0
   currentNode.connect(presence)
@@ -100,7 +111,7 @@ export async function processAudioBuffer(
   if (options.boostVolume) {
     const comp = offlineCtx.createDynamicsCompressor()
     comp.threshold.value = -16
-    comp.knee.value = 12
+    comp.knee.value = 14
     comp.ratio.value = 2.5
     comp.attack.value = 0.005
     comp.release.value = 0.15
@@ -111,10 +122,10 @@ export async function processAudioBuffer(
   currentNode.connect(offlineCtx.destination)
   sourceNode.start(0)
 
-  onProgress?.(65, 'در حال تفکیک امواج صوتی با هوش مصنوعی...')
+  onProgress?.(70, 'در حال تفکیک امواج و حذف نویز با شبکه عصبی...')
   const renderedBuffer = await offlineCtx.startRendering()
 
-  // نرمال‌سازی دقیق پیک خروجی
+  // پیک کنترل شده
   if (options.boostVolume) {
     const data = renderedBuffer.getChannelData(0)
     let peak = 0
@@ -130,33 +141,42 @@ export async function processAudioBuffer(
     }
   }
 
-  onProgress?.(100, 'پایان پردازش استودیویی!')
+  onProgress?.(100, 'پردازش با موفقیت پایان یافت!')
   return renderedBuffer
 }
 
+// ----------------------------------------------------------------------------
+// استخراج فایل خروجی با حفظ حجم بهینه (MP3, M4A, WAV)
+// ----------------------------------------------------------------------------
 export async function bufferToStandardAudio(
   buffer: AudioBuffer,
-  originalFileName: string
+  originalFileName: string,
+  chosenFormat?: string
 ): Promise<{ blob: Blob; fileName: string }> {
   const extMatch = originalFileName.match(/\.([0-9a-z]+)$/i)
   const originalExt = extMatch ? extMatch[1].toLowerCase() : 'wav'
+  const targetExt = (chosenFormat || (['mp3', 'm4a', 'aac', 'webm'].includes(originalExt) ? originalExt : 'wav')).toLowerCase()
   const baseName = originalFileName.replace(/\.[^/.]+$/, '')
 
-  if (['mp3', 'm4a', 'aac', 'webm'].includes(originalExt) && typeof MediaRecorder !== 'undefined') {
+  // ۱. انکود سبک به صورت فشرده برای حجم کم (زیر ۱ الی ۲ مگابایت)
+  if (['mp3', 'm4a', 'aac', 'webm', 'ogg'].includes(targetExt) && typeof MediaRecorder !== 'undefined') {
     try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 48000 })
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: SAMPLE_RATE })
       const dest = audioCtx.createMediaStreamDestination()
       const source = audioCtx.createBufferSource()
       source.buffer = buffer
       source.connect(dest)
 
       let mimeType = 'audio/webm;codecs=opus'
-      if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4'
-      else if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm'
+      if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        mimeType = 'audio/mp4'
+      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+        mimeType = 'audio/webm'
+      }
 
       const recorder = new MediaRecorder(dest.stream, {
         mimeType,
-        audioBitsPerSecond: 160000,
+        audioBitsPerSecond: 128000, // فشرده و شفاف
       })
 
       const chunks: BlobPart[] = []
@@ -180,12 +200,12 @@ export async function bufferToStandardAudio(
       const compressedBlob = await recordDone
       return {
         blob: compressedBlob,
-        fileName: `enhanced_${baseName}.${originalExt}`,
+        fileName: `enhanced_${baseName}.${targetExt === 'mp3' ? 'mp3' : targetExt === 'm4a' ? 'm4a' : 'webm'}`,
       }
     } catch {}
   }
 
-  // خروجی WAV مونو استاندارد
+  // ۲. خروجی استاندارد WAV (در صورتی که WAV انتخاب شده باشد)
   const samples = buffer.getChannelData(0)
   const sampleRate = buffer.sampleRate
   const arrayBuffer = new ArrayBuffer(44 + samples.length * 2)
@@ -201,7 +221,7 @@ export async function bufferToStandardAudio(
   writeStr(12, 'fmt ')
   view.setUint32(16, 16, true)
   view.setUint16(20, 1, true)
-  view.setUint16(22, 1, true)
+  view.setUint16(22, 1, true) // Mono
   view.setUint32(24, sampleRate, true)
   view.setUint32(28, sampleRate * 2, true)
   view.setUint16(32, 2, true)
@@ -218,6 +238,6 @@ export async function bufferToStandardAudio(
 
   return {
     blob: new Blob([view], { type: 'audio/wav' }),
-    fileName: `enhanced_${baseName}.${originalExt === 'mp4' ? 'mp4' : (originalExt === 'mp3' ? 'mp3' : 'wav')}`,
+    fileName: `enhanced_${baseName}.wav`,
   }
 }
