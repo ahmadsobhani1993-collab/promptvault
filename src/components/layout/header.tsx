@@ -22,6 +22,7 @@ export default async function Header({ locale: propLocale }: { locale?: Locale }
     { href: '/submit', label: L(locale, 'ارسال پرامپت', 'Submit') },
     { href: '/transcribe', label: L(locale, '🎙 تبدیل صوت به متن', '🎙 Transcribe') },
     { href: '/subtitle', label: L(locale, '🎬 استودیو زیرنویس', '🎬 Subtitle Studio') },
+    { href: '/audio-enhancer', label: L(locale, '🔊 تقویت و شفاف‌ساز صدا', '🔊 Audio Enhancer') },
   ]
 
   if (session?.user) {
