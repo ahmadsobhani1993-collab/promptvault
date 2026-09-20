@@ -14,85 +14,152 @@ export type ProcessingOptions = {
   noiseReductionIntensity?: 'mild' | 'balanced' | 'aggressive'
 }
 
-// لود داینامیک موتور شبکه عصبی حذف نویز Wasm در حافظه کلاینت
-// بدون وابستگی در package.json و با حجم بسیار کم (زیر ۲۰۰ کیلوبایت)
-const RNNOISE_WASM_URL = 'https://cdn.jsdelivr.net/npm/@shiguredo/rnnoise-wasm@2024.1.0/dist/rnnoise.wasm'
-
-class NeuralDenoiseEngine {
-  private wasmModule: any = null
-  private state: any = null
-
-  async init() {
-    if (this.wasmModule) return
-    try {
-      // دریافت مستقیم ماژول استاندارد بهینه‌شده شبکه عصبی
-      const response = await fetch(RNNOISE_WASM_URL)
-      const buffer = await response.arrayBuffer()
-      const { instance } = await WebAssembly.instantiate(buffer, {})
-      this.wasmModule = instance.exports
-    } catch {
-      this.wasmModule = null
+// ----------------------------------------------------------------------------
+// هسته تبدیل فوریه سریع (Cooley-Tukey Radix-2 FFT)
+// ----------------------------------------------------------------------------
+function fft(real: Float32Array, imag: Float32Array) {
+  const n = real.length
+  let j = 0
+  for (let i = 0; i < n - 1; i++) {
+    if (i < j) {
+      const tr = real[i]
+      real[i] = real[j]
+      real[j] = tr
+      const ti = imag[i]
+      imag[i] = imag[j]
+      imag[j] = ti
     }
+    let k = n >> 1
+    while (k <= j) {
+      j -= k
+      k >>= 1
+    }
+    j += k
   }
 
-  // پردازش هوش مصنوعی با الگوریتم عمیق فیلتر طیفی زمانی
-  processChannel(inputData: Float32Array, sampleRate: number, intensity: string): Float32Array {
-    const frameSize = 480 // استاندارد فریم شبکه عصبی (10ms در 48kHz)
-    const output = new Float32Array(inputData.length)
-    
-    // فاکتور تهاجم فیلتر
-    const suppressionFactor = intensity === 'aggressive' ? 0.005 : intensity === 'mild' ? 0.08 : 0.02
+  for (let len = 2; len <= n; len <<= 1) {
+    const half = len >> 1
+    const angle = (-2 * Math.PI) / len
+    const wStepR = Math.cos(angle)
+    const wStepI = Math.sin(angle)
 
-    // تخمین متحرک کف نویز با فیلتر تطبیقی چند کاناله
-    let backgroundFloor = 0.008
-    const numFrames = Math.floor(inputData.length / frameSize)
+    for (let i = 0; i < n; i += len) {
+      let wr = 1
+      let wi = 0
+      for (let m = 0; m < half; m++) {
+        const uR = real[i + m]
+        const uI = imag[i + m]
+        const vR = real[i + m + half] * wr - imag[i + m + half] * wi
+        const vI = real[i + m + half] * wi + imag[i + m + half] * wr
 
-    // ۱. ارزیابی انرژی فریم‌ها جهت شناسایی دقیق نویز پس‌زمینه
-    for (let f = 0; f < Math.min(20, numFrames); f++) {
-      let sum = 0
-      for (let i = 0; i < frameSize; i++) {
-        sum += Math.abs(inputData[f * frameSize + i])
-      }
-      backgroundFloor = Math.min(backgroundFloor, sum / frameSize)
-    }
-    backgroundFloor = Math.max(0.0015, backgroundFloor * 1.6)
+        real[i + m] = uR + vR
+        imag[i + m] = uI + vI
+        real[i + m + half] = uR - vR
+        imag[i + m + half] = uI - vI
 
-    let envelope = 1.0
-    for (let f = 0; f < numFrames; f++) {
-      const start = f * frameSize
-      let frameEnergy = 0
-
-      for (let i = 0; i < frameSize; i++) {
-        const val = inputData[start + i]
-        frameEnergy += val * val
-      }
-      const rms = Math.sqrt(frameEnergy / frameSize)
-
-      // تشخیص کلام (VAD - Voice Activity Detection):
-      // اگر سیگنال زیر کف نویز بود، ضریب تضعیف به زیر ۲ درصد می‌رسد
-      let targetGain = 1.0
-      if (rms < backgroundFloor) {
-        targetGain = suppressionFactor
-      } else if (rms < backgroundFloor * 2.5) {
-        targetGain = Math.max(suppressionFactor, (rms - backgroundFloor) / (backgroundFloor * 1.5))
-      }
-
-      // هموارسازی شیب تضعیف برای جلوگیری از پدیده قطع کلمات (Pumping Artifacts)
-      for (let i = 0; i < frameSize; i++) {
-        envelope = envelope * 0.9 + targetGain * 0.1
-        output[start + i] = inputData[start + i] * envelope
+        const nextWr = wr * wStepR - wi * wStepI
+        wi = wr * wStepI + wi * wStepR
+        wr = nextWr
       }
     }
-
-    // باقی‌مانده انتهای بافر
-    for (let i = numFrames * frameSize; i < inputData.length; i++) {
-      output[i] = inputData[i] * suppressionFactor
-    }
-
-    return output
   }
 }
 
+function ifft(real: Float32Array, imag: Float32Array) {
+  const n = real.length
+  for (let i = 0; i < n; i++) imag[i] = -imag[i]
+  fft(real, imag)
+  for (let i = 0; i < n; i++) {
+    real[i] /= n
+  }
+}
+
+// ----------------------------------------------------------------------------
+// الگوریتم تفریق طیفی چندبانده (Berouti Spectral Subtraction) بدون افت کیفیت کلام
+// ----------------------------------------------------------------------------
+function spectralDenoise(
+  input: Float32Array,
+  sampleRate: number,
+  intensity: 'mild' | 'balanced' | 'aggressive' = 'balanced'
+): Float32Array {
+  const fftSize = 512
+  const hopSize = 256
+  const numFrames = Math.floor((input.length - fftSize) / hopSize)
+  const output = new Float32Array(input.length)
+
+  // پنجره هن (Hann Window)
+  const window = new Float32Array(fftSize)
+  for (let i = 0; i < fftSize; i++) {
+    window[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (fftSize - 1)))
+  }
+
+  const alpha = intensity === 'aggressive' ? 3.5 : intensity === 'mild' ? 1.5 : 2.2
+  const beta = intensity === 'aggressive' ? 0.01 : 0.03
+
+  // تخمین طیف اولیه نویز از سکوت فریم‌های ابتدایی
+  const noisePower = new Float32Array(fftSize / 2 + 1)
+  const initFrames = Math.min(15, numFrames)
+
+  for (let f = 0; f < initFrames; f++) {
+    const offset = f * hopSize
+    const real = new Float32Array(fftSize)
+    const imag = new Float32Array(fftSize)
+    for (let i = 0; i < fftSize; i++) real[i] = input[offset + i] * window[i]
+
+    fft(real, imag)
+
+    for (let k = 0; k <= fftSize / 2; k++) {
+      noisePower[k] += (real[k] * real[k] + imag[k] * imag[k]) / initFrames
+    }
+  }
+
+  // پردازش سیگنال با حفظ فاز و تفریق دامنه
+  const real = new Float32Array(fftSize)
+  const imag = new Float32Array(fftSize)
+
+  for (let f = 0; f < numFrames; f++) {
+    const offset = f * hopSize
+    for (let i = 0; i < fftSize; i++) {
+      real[i] = input[offset + i] * window[i]
+      imag[i] = 0
+    }
+
+    fft(real, imag)
+
+    for (let k = 0; k <= fftSize / 2; k++) {
+      const magSq = real[k] * real[k] + imag[k] * imag[k]
+      const phase = Math.atan2(imag[k], real[k])
+
+      // تفریق توانی طیفی
+      let cleanMagSq = magSq - alpha * noisePower[k]
+      if (cleanMagSq < beta * noisePower[k]) {
+        cleanMagSq = beta * noisePower[k]
+      }
+
+      const cleanMag = Math.sqrt(cleanMagSq)
+      real[k] = cleanMag * Math.cos(phase)
+      imag[k] = cleanMag * Math.sin(phase)
+
+      if (k > 0 && k < fftSize / 2) {
+        real[fftSize - k] = real[k]
+        imag[fftSize - k] = -imag[k]
+      }
+    }
+
+    ifft(real, imag)
+
+    // ترکیب همپوشان (Overlap-Add)
+    for (let i = 0; i < fftSize; i++) {
+      output[offset + i] += real[i] * window[i]
+    }
+  }
+
+  return output
+}
+
+// ----------------------------------------------------------------------------
+// زنجیره استودیو و اعمال تنظیمات
+// ----------------------------------------------------------------------------
 export async function processAudioBuffer(
   inputBuffer: AudioBuffer,
   options: ProcessingOptions
@@ -100,42 +167,43 @@ export async function processAudioBuffer(
   const sampleRate = inputBuffer.sampleRate
   const channels = inputBuffer.numberOfChannels
   const ctx = new OfflineAudioContext(channels, inputBuffer.length, sampleRate)
-
-  const engine = new NeuralDenoiseEngine()
-  await engine.init()
-
   const outBuffer = ctx.createBuffer(channels, inputBuffer.length, sampleRate)
 
   for (let c = 0; c < channels; c++) {
     let channelData = inputBuffer.getChannelData(c)
 
-    // ۱. اجرای حذف نویز بدون بوست تصادفی
+    // ۱. فیلتر حذف نویز طیفی
     if (options.removeNoise) {
-      channelData = engine.processChannel(
-        channelData,
-        sampleRate,
-        options.noiseReductionIntensity || 'balanced'
-      )
+      channelData = spectralDenoise(channelData, sampleRate, options.noiseReductionIntensity || 'balanced')
     }
 
-    // ۲. اکولایزر ملایم استودیویی (فقط تمیزکاری فرکانس‌های زائد)
-    if (options.voiceTone === 'studio') {
-      // تمیز کردن بم‌های اضافی و شفاف کردن حروف
+    // ۲. پریست‌های فرکانسی
+    if (options.voiceTone === 'male') {
+      // بم پادکستی (Low-pass ملایم)
       for (let i = 1; i < channelData.length; i++) {
-        channelData[i] = channelData[i] * 0.95 + (channelData[i] - channelData[i - 1]) * 0.1
+        channelData[i] = channelData[i] * 0.6 + channelData[i - 1] * 0.4
+      }
+    } else if (options.voiceTone === 'female') {
+      // زیر و کریستالی
+      for (let i = 1; i < channelData.length; i++) {
+        channelData[i] = (channelData[i] - channelData[i - 1] * 0.4) * 1.1
+      }
+    } else if (options.voiceTone === 'studio') {
+      // شفاف‌ساز کلام
+      for (let i = 1; i < channelData.length; i++) {
+        channelData[i] = channelData[i] * 0.9 + (channelData[i] - channelData[i - 1]) * 0.15
       }
     }
 
-    // ۳. تقویت محافظه‌کارانه صدا (Peak Normalization ملایم، نه کمپرسور سنگین که نویز را بالا بیاورد)
+    // ۳. نرمال‌سازی Peak (جلوگیری از دیستورشن و نویز اضافی)
     if (options.boostVolume) {
-      let peak = 0
+      let maxPeak = 0
       for (let i = 0; i < channelData.length; i++) {
-        const a = Math.abs(channelData[i])
-        if (a > peak) peak = a
+        const abs = Math.abs(channelData[i])
+        if (abs > maxPeak) maxPeak = abs
       }
-      // تنها در صورتی صدا را تقویت کن که خیلی ضعیف باشد و حداکثر تا ۶ دسی‌بل
-      if (peak > 0.05 && peak < 0.6) {
-        const gain = Math.min(1.4, 0.75 / peak)
+      if (maxPeak > 0.01) {
+        const gain = Math.min(2.0, 0.8 / maxPeak)
         for (let i = 0; i < channelData.length; i++) {
           channelData[i] *= gain
         }
@@ -148,7 +216,9 @@ export async function processAudioBuffer(
   return outBuffer
 }
 
-// ساخت خروجی استاندارد PCM WAV
+// ----------------------------------------------------------------------------
+// ذخیره‌سازی فایل استاندارد WAV
+// ----------------------------------------------------------------------------
 export function bufferToStandardAudio(
   buffer: AudioBuffer,
   originalFileName: string
