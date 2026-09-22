@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -21,6 +21,10 @@ type Props = {
 const STYLE_STORAGE_KEY = 'promptvault.subtitle.style'
 const FPS = 30
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
+
+// مقدار پیش‌فرض استاندارد رنگ (SDR/Rec.709) — فقط وقتی که مرورگر (بیشتر دیده‌شده در Safari/iOS)
+// این فیلد را در متادیتای خروجی VideoEncoder پر نمی‌کند، به‌جایش جایگزین می‌شود
+const FALLBACK_COLOR_SPACE = { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', fullRange: false } as const
 
 let cachedFFmpeg: any = null
 
@@ -212,7 +216,20 @@ export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segm
       }
 
       const encoder = new (window as any).VideoEncoder({
-        output: (chunk: any, meta: any) => muxer.addVideoChunk(chunk, meta),
+        // ─── تنها تغییر نسبت به نسخه‌ی قبلی ───
+        // در برخی مرورگرها (به‌خصوص Safari/iOS) متادیتای خروجی VideoEncoder گاهی
+        // decoderConfig یا decoderConfig.colorSpace را کامل پر نمی‌کند. mp4-muxer
+        // همین فیلد را مستقیماً برای ساخت باکس رنگ mp4 می‌خواند و بدون آن کرش می‌کند
+        // (ارور «null is not an object (evaluating 't.info.decoderConfig.colorSpace')»).
+        // این‌جا فقط یک مقدار پیش‌فرض امن جایگزین می‌کنیم، بدون تغییر منطق اصلی.
+        output: (chunk: any, meta: any) => {
+          if (meta && !meta.decoderConfig) {
+            meta = { ...meta, decoderConfig: { codec: 'avc1.4d002a', codedWidth: W, codedHeight: H, colorSpace: FALLBACK_COLOR_SPACE } }
+          } else if (meta?.decoderConfig && !meta.decoderConfig.colorSpace) {
+            meta = { ...meta, decoderConfig: { ...meta.decoderConfig, colorSpace: FALLBACK_COLOR_SPACE } }
+          }
+          muxer.addVideoChunk(chunk, meta)
+        },
         error: (e: any) => console.error('[VideoEncoder error]', e),
       })
 

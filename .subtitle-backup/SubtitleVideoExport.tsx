@@ -1,284 +1,510 @@
 'use client'
 
-import { useRef, useState } from 'react'
-import { FFmpeg } from '@ffmpeg/ffmpeg'
-import { wrapText, easeOutBack, loadFont, type Seg, type Style } from '@/lib/subtitle-studio'
+import { useEffect, useRef, useState } from 'react'
+import {
+  DEFAULT_STYLE,
+  getAnimationState,
+  loadFont,
+  resolveAlign,
+  resolveDirection,
+  type Seg,
+  type Style,
+} from '@/lib/subtitle-studio'
 
 type Props = {
   videoUrl: string
-  baseName: string
+  baseName?: string
   segments: Seg[]
   style?: Style
 }
 
-const DEFAULT_STYLE: Style = {
-  size: 5,
-  color: '#ffffff',
-  bgOpacity: 0.6,
-  outline: true,
-  fontId: 'Vazirmatn',
-  x: 50,
-  y: 90,
-  hlColor: '#f59e0b',
-  karaoke: false
-} as any
+const STYLE_STORAGE_KEY = 'promptvault.subtitle.style'
+const FPS = 30
+const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
 
-// ✅ عرض مرجع برای محاسبه سایز فونت (همان عرض تقریبی container در ادیتور)
-const REFERENCE_WIDTH = 640
+// مقدار پیش‌فرض استاندارد رنگ (SDR/Rec.709) — فقط وقتی که مرورگر (بیشتر دیده‌شده در Safari/iOS)
+// این فیلد را در متادیتای خروجی VideoEncoder پر نمی‌کند، به‌جایش جایگزین می‌شود
+const FALLBACK_COLOR_SPACE = { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', fullRange: false } as const
 
-export default function SubtitleVideoExport({ videoUrl, baseName, segments, style }: Props) {
+let cachedFFmpeg: any = null
+
+async function getOrInitFFmpeg(): Promise<any> {
+  if (cachedFFmpeg && cachedFFmpeg.loaded) return cachedFFmpeg
+
+  const { FFmpeg } = await import('@ffmpeg/ffmpeg')
+  const { toBlobURL } = await import('@ffmpeg/util')
+
+  const ffmpeg = new FFmpeg()
+  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
+
+  const coreURL = await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript')
+  const wasmURL = await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm')
+
+  await ffmpeg.load({ coreURL, wasmURL })
+
+  cachedFFmpeg = ffmpeg
+  return ffmpeg
+}
+
+function readStoredStyle(): Partial<Style> | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(STYLE_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function wrapTextSafe(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const words = text.trim().split(/\s+/).filter(Boolean)
+  if (!words.length) return ['']
+  const lines: string[] = []
+  let currentLine = ''
+
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word
+    if (ctx.measureText(testLine).width > maxWidth && currentLine) {
+      lines.push(currentLine)
+      currentLine = word
+    } else {
+      currentLine = testLine
+    }
+  }
+  if (currentLine) lines.push(currentLine)
+  return lines.length ? lines : ['']
+}
+
+function fitSubtitle(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  desiredFontSize: number,
+  maxWidth: number,
+  maxHeight: number,
+  fontFamily: string,
+) {
+  let fontSize = Math.max(12, desiredFontSize)
+  for (let i = 0; i < 20; i++) {
+    ctx.font = `800 ${fontSize}px "${fontFamily}", -apple-system, sans-serif`
+    const lines = wrapTextSafe(ctx, text, maxWidth)
+    const lineHeight = fontSize * 1.3
+    const totalHeight = lines.length * lineHeight
+    const maxLineWidth = Math.max(...lines.map((l) => ctx.measureText(l).width), 0)
+
+    if (maxLineWidth <= maxWidth && totalHeight <= maxHeight) {
+      return { fontSize, lines, lineHeight, totalHeight, maxLineWidth }
+    }
+    fontSize *= 0.94
+  }
+  ctx.font = `800 ${fontSize}px "${fontFamily}", -apple-system, sans-serif`
+  const lines = wrapTextSafe(ctx, text, maxWidth)
+  return {
+    fontSize,
+    lines,
+    lineHeight: fontSize * 1.3,
+    totalHeight: lines.length * (fontSize * 1.3),
+    maxLineWidth: Math.max(...lines.map((l) => ctx.measureText(l).width), 0),
+  }
+}
+
+export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segments, style }: Props) {
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState('')
-  
+  const [eta, setEta] = useState<string>('')
+
+  const abortRef = useRef(false)
   const currentStyle = style || DEFAULT_STYLE
   const styleRef = useRef(currentStyle)
   styleRef.current = currentStyle
-  
   const segRef = useRef(segments)
   segRef.current = segments
 
+  useEffect(() => {
+    loadFont(currentStyle.fontId || 'Vazirmatn').catch(() => {})
+    getOrInitFFmpeg().catch(() => {})
+  }, [currentStyle.fontId])
+
+  const cancelExport = () => {
+    abortRef.current = true
+    setStatus('در حال لغو عملیات...')
+  }
+
   const exportVideo = async () => {
+    const safeBaseName = String(baseName || 'video')
+    const matchExt = safeBaseName.match(/\.(mp4|mov|webm|mkv)$/i)
+    const ext = matchExt ? matchExt[1].toLowerCase() : 'mp4'
+    const cleanBaseName = safeBaseName.replace(/\.[^/.]+$/, '') || 'video'
+    const mimeType = ext === 'webm' ? 'video/webm' : ext === 'mov' ? 'video/quicktime' : 'video/mp4'
+
     if (exporting || !videoUrl) return
     setExporting(true)
     setProgress(0)
-    setStatus('آماده‌سازی...')
+    setEta('')
+    abortRef.current = false
+    setStatus('در حال آماده‌سازی...')
+
+    let video: HTMLVideoElement | null = null
 
     try {
-      const video = document.createElement('video')
+      if (typeof (window as any).VideoEncoder === 'undefined') {
+        throw new Error('مرورگر شما از WebCodecs پشتیبانی نمی‌کند. لطفاً از آخرین نسخه Chrome یا Edge استفاده کنید.')
+      }
+
+      const storedStyle = readStoredStyle()
+      const exportStyle: Style = { ...DEFAULT_STYLE, ...(storedStyle || {}), ...(style || {}) }
+      styleRef.current = exportStyle
+
+      await loadFont(exportStyle.fontId || 'Vazirmatn')
+      try { await document.fonts.ready } catch {}
+
+      video = document.createElement('video')
       video.src = videoUrl
       video.playsInline = true
-      video.muted = true
+      video.preload = 'auto'
       video.crossOrigin = 'anonymous'
-      video.style.position = 'absolute'
-      video.style.left = '-9999px'
-      video.style.top = '-9999px'
+      video.muted = true
+      video.style.position = 'fixed'
+      video.style.left = '-10000px'
+      video.style.top = '-10000px'
+      video.style.width = '1px'
+      video.style.height = '1px'
       document.body.appendChild(video)
 
-      await new Promise((res, rej) => {
-        video.onloadedmetadata = () => res(null)
-        video.onerror = () => rej(new Error('لود ویدیو شکست خورد'))
-        setTimeout(() => rej(new Error('تایم‌اوت')), 15000)
+      await new Promise<void>((resolve, reject) => {
+        let settled = false
+        const finish = (fn: () => void) => { if (settled) return; settled = true; fn() }
+        video!.onloadedmetadata = () => finish(resolve)
+        video!.onerror = () => finish(() => reject(new Error('بارگذاری اطلاعات اولیه ویدیو ناموفق بود')))
+        window.setTimeout(() => finish(() => reject(new Error('پاسخی از سورس ویدیو دریافت نشد'))), 25_000)
+        video!.load()
       })
 
-      const W = video.videoWidth || 1920
-      const H = video.videoHeight || 1080
-      const duration = video.duration || 60
-      
+      const W = video.videoWidth % 2 === 0 ? video.videoWidth : video.videoWidth - 1
+      const H = video.videoHeight % 2 === 0 ? video.videoHeight : video.videoHeight - 1
+      const duration = Number.isFinite(video.duration) ? video.duration : 0
+      if (!W || !H || !duration) throw new Error('ابعاد یا طول ویدیو نامعتبر است')
+
       const canvas = document.createElement('canvas')
       canvas.width = W
       canvas.height = H
-      const ctx = canvas.getContext('2d')!
+      const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true })
+      if (!ctx) throw new Error('خطا در دسترسی به بستر Canvas')
+      ctx.lineJoin = 'round'
+      ctx.lineCap = 'round'
 
-      setStatus('لود فونت...')
-      await loadFont(styleRef.current?.fontId || 'Vazirmatn')
-
-      setStatus('رندر ویدیو...')
-      const stream = canvas.captureStream(30)
-      
-      try {
-        const audioCtx = new AudioContext()
-        const src = audioCtx.createMediaElementSource(video)
-        const dest = audioCtx.createMediaStreamDestination()
-        src.connect(dest)
-        dest.stream.getAudioTracks().forEach(t => stream.addTrack(t))
-      } catch (e) {
-        console.warn('No audio:', e)
+      const mp4Mod: any = await import(/* webpackIgnore: true */ 'https://esm.sh/mp4-muxer@5.1.4')
+      const MuxerClass = mp4Mod.Muxer || mp4Mod.default?.Muxer
+      const TargetClass = mp4Mod.ArrayBufferTarget || mp4Mod.default?.ArrayBufferTarget
+      if (typeof MuxerClass !== 'function' || typeof TargetClass !== 'function') {
+        throw new Error('عدم امکان بارگذاری کامپوننت سازنده MP4')
       }
 
-      const recorder = new MediaRecorder(stream, { 
-        mimeType: 'video/webm;codecs=vp8',
-        videoBitsPerSecond: 8_000_000
+      const target = new TargetClass()
+      const muxer = new MuxerClass({
+        target,
+        video: { codec: 'avc', width: W, height: H },
+        fastStart: 'in-memory',
       })
-      
-      const chunks: Blob[] = []
-      recorder.ondataavailable = (e) => {
-        if (e.data?.size > 0) chunks.push(e.data)
+
+      const calculatedBitrate = Math.round(clamp((W * H * 2.2), 1_500_000, 4_500_000))
+      const VideoFrameClass = typeof VideoFrame !== 'undefined' ? VideoFrame : (window as any).VideoFrame
+      if (typeof VideoFrameClass !== 'function') {
+        throw new Error('WebCodecs VideoFrame در مرورگر پشتیبانی نمی‌شود.')
       }
 
-      let frameCount = 0
-      const renderFrame = () => {
-        const t = video.currentTime
-        const seg = segRef.current.find(s => t >= s.start && t <= s.end)
-
-        ctx.fillStyle = '#000'
-        ctx.fillRect(0, 0, W, H)
-        ctx.drawImage(video, 0, 0, W, H)
-
-        if (seg) {
-          const s2 = styleRef.current || DEFAULT_STYLE
-          const prog = Math.min(1, (t - seg.start) / Math.max(0.1, seg.end - seg.start))
-          
-          let scale = 1
-          if (seg.fx === 'pop') scale = easeOutBack(prog)
-          if (seg.fx === 'zoomIn') scale = 0.8 + 0.35 * prog
-          if (seg.fx === 'zoomOut') scale = 1.15 - 0.35 * prog
-
-          // ✅ فرمول درست: محاسبه بر اساس نسبت به عرض مرجع
-          // در ادیتور: size cqi = (size/100) × REFERENCE_WIDTH
-          // در رندر: همان مقدار را بر اساس عرض واقعی ویدیو scale می‌کنیم
-          const baseFontSize = (s2.size / 100) * REFERENCE_WIDTH
-          const fontSize = Math.max(16, Math.round(baseFontSize * (W / REFERENCE_WIDTH) * scale))
-          
-          ctx.font = `700 ${fontSize}px "${s2.fontId || 'Vazirmatn'}"`
-          ctx.textAlign = 'center'
-          ctx.textBaseline = 'middle'
-
-          const lines = wrapText(ctx, seg.text, W * 0.85)
-          const lh = fontSize * 1.4
-          const totalH = lines.length * lh
-
-          const anchorX = s2.x != null ? (s2.x / 100) * W : W / 2
-          const anchorY = s2.y != null ? (s2.y / 100) * H : H - H * 0.1
-
-          const maxLineWidth = Math.max(...lines.map(l => ctx.measureText(l).width))
-          const padding = fontSize * 0.3
-          
-          // ✅ clamping برای جلوگیری از خروج
-          const minX = maxLineWidth / 2 + padding
-          const maxX = W - maxLineWidth / 2 - padding
-          const finalX = Math.max(minX, Math.min(maxX, anchorX))
-
-          const minY = totalH / 2 + padding
-          const maxY = H - totalH / 2 - padding
-          const finalY = Math.max(minY, Math.min(maxY, anchorY))
-
-          if (s2.bgOpacity > 0) {
-            ctx.fillStyle = `rgba(0,0,0,${s2.bgOpacity})`
-            ctx.fillRect(finalX - maxLineWidth / 2 - padding / 2, finalY - totalH / 2 - padding / 2, maxLineWidth + padding, totalH + padding)
+      const encoder = new (window as any).VideoEncoder({
+        // ─── تنها تغییر نسبت به نسخه‌ی قبلی ───
+        // در برخی مرورگرها (به‌خصوص Safari/iOS) متادیتای خروجی VideoEncoder گاهی
+        // decoderConfig یا decoderConfig.colorSpace را کامل پر نمی‌کند. mp4-muxer
+        // همین فیلد را مستقیماً برای ساخت باکس رنگ mp4 می‌خواند و بدون آن کرش می‌کند
+        // (ارور «null is not an object (evaluating 't.info.decoderConfig.colorSpace')»).
+        // این‌جا فقط یک مقدار پیش‌فرض امن جایگزین می‌کنیم، بدون تغییر منطق اصلی.
+        output: (chunk: any, meta: any) => {
+          if (meta && !meta.decoderConfig) {
+            meta = { ...meta, decoderConfig: { codec: 'avc1.4d002a', codedWidth: W, codedHeight: H, colorSpace: FALLBACK_COLOR_SPACE } }
+          } else if (meta?.decoderConfig && !meta.decoderConfig.colorSpace) {
+            meta = { ...meta, decoderConfig: { ...meta.decoderConfig, colorSpace: FALLBACK_COLOR_SPACE } }
           }
+          muxer.addVideoChunk(chunk, meta)
+        },
+        error: (e: any) => console.error('[VideoEncoder error]', e),
+      })
 
-          lines.forEach((line, i) => {
-            const y = finalY + (i - (lines.length - 1) / 2) * lh
-            if (s2.outline) {
-              ctx.strokeStyle = '#000'
-              ctx.lineWidth = Math.max(2, fontSize * 0.08)
-              ctx.strokeText(line, finalX, y)
-            }
-            ctx.fillStyle = s2.color
-            ctx.fillText(line, finalX, y)
+      encoder.configure({
+        codec: 'avc1.4d002a',
+        width: W,
+        height: H,
+        bitrate: calculatedBitrate,
+        framerate: FPS,
+      })
+
+      const renderSubtitleLayer = (mediaTime: number) => {
+        const t = clamp(mediaTime, 0, duration)
+        const seg = segRef.current.find((item) => t >= item.start && t <= item.end)
+
+        ctx.drawImage(video!, 0, 0, W, H)
+        if (!seg) return
+
+        const s = styleRef.current || DEFAULT_STYLE
+        const direction = resolveDirection(s.direction, seg.text) || 'rtl'
+        const align = resolveAlign(s.align, direction)
+        const elapsed = Math.max(0, t - seg.start)
+        const anim = getAnimationState(seg.fx, elapsed, seg.end - seg.start, W)
+
+        const maxSubtitleWidth = W * 0.88
+        const maxSubtitleHeight = H * 0.35
+        const anchorX = s.x != null ? (Number(s.x) / 100) * W : W / 2
+        const anchorY = s.y != null ? (Number(s.y) / 100) * H : H * 0.78
+        const fontFamily = s.fontId || 'Vazirmatn'
+        const baseFontSize = s.size ? (Number(s.size) / 100) * W : W * 0.052
+
+        const fitted = fitSubtitle(ctx, seg.text, baseFontSize, maxSubtitleWidth, maxSubtitleHeight, fontFamily)
+        const finalFontSize = fitted.fontSize
+        const lines = fitted.lines
+        const lineHeight = fitted.lineHeight
+
+        ctx.save()
+        ctx.direction = direction
+        ctx.globalAlpha = anim.opacity
+        ctx.translate(anchorX + anim.translateX, anchorY + anim.translateY)
+        ctx.scale(anim.scale, anim.scale)
+        ctx.translate(-anchorX, -anchorY)
+
+        ctx.font = `800 ${finalFontSize}px "${fontFamily}", -apple-system, sans-serif`
+        ctx.textBaseline = 'middle'
+        ctx.textAlign = align
+
+        const strokeWidth = Math.max(4, finalFontSize * 0.16)
+
+        if (!s.karaoke || !seg.words || !seg.words.length) {
+          lines.forEach((line, index) => {
+            const y = anchorY + (index - (lines.length - 1) / 2) * lineHeight
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.85)'
+            ctx.shadowBlur = Math.max(6, finalFontSize * 0.2)
+            ctx.strokeStyle = '#000000'
+            ctx.lineWidth = strokeWidth
+            ctx.strokeText(line, anchorX, y)
+
+            ctx.shadowColor = 'transparent'
+            ctx.shadowBlur = 0
+            ctx.fillStyle = s.color || '#FFFFFF'
+            ctx.fillText(line, anchorX, y)
+          })
+        } else {
+          const activeWordIndex = seg.words.findIndex((w) => t >= w.start && t <= w.end)
+          const spaceWidth = ctx.measureText(' ').width
+          let currentWordIndex = 0
+
+          lines.forEach((line, index) => {
+            const y = anchorY + (index - (lines.length - 1) / 2) * lineHeight
+            const lineWords = line.split(/\s+/).filter(Boolean)
+            const lineWidth = ctx.measureText(line).width
+            let cursorOffset = 0
+
+            lineWords.forEach((word) => {
+              const wordWidth = ctx.measureText(word).width
+              const isWordActive = currentWordIndex === activeWordIndex
+
+              let wordX = anchorX
+              if (direction === 'rtl') {
+                wordX = (anchorX + lineWidth / 2) - cursorOffset - (wordWidth / 2)
+              } else {
+                wordX = (anchorX - lineWidth / 2) + cursorOffset + (wordWidth / 2)
+              }
+
+              const prevAlign = ctx.textAlign
+              ctx.textAlign = 'center'
+              ctx.shadowColor = 'rgba(0, 0, 0, 0.85)'
+              ctx.shadowBlur = Math.max(6, finalFontSize * 0.2)
+              ctx.strokeStyle = '#000000'
+              ctx.lineWidth = strokeWidth
+              ctx.strokeText(word, wordX, y)
+
+              ctx.shadowColor = 'transparent'
+              ctx.shadowBlur = 0
+              ctx.fillStyle = isWordActive ? (s.hlColor || '#FFD600') : (s.color || '#FFFFFF')
+              ctx.fillText(word, wordX, y)
+              ctx.textAlign = prevAlign
+
+              cursorOffset += wordWidth + spaceWidth
+              currentWordIndex++
+            })
           })
         }
 
-        frameCount++
-        setProgress((t / duration) * 100)
+        ctx.restore()
       }
 
-      console.log('[Export] Starting...')
-      await video.play()
-      
-      recorder.start(1000)
-      console.log('[Export] Recording...')
+      setStatus('در حال پردازش فریم‌ها...')
+      const totalFrames = Math.ceil(duration * FPS)
+      const frameDurationMicroseconds = 1_000_000 / FPS
+      const startTime = performance.now()
 
-      const renderInterval = setInterval(() => {
-        try {
-          renderFrame()
-        } catch (err) {
-          console.error('[Export] Frame error:', err)
+      for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
+        if (abortRef.current) {
+          throw new Error('عملیات رندر توسط کاربر لغو شد.')
         }
-        
-        if (video.ended) {
-          console.log('[Export] Ended, frames:', frameCount)
-          clearInterval(renderInterval)
-        }
-      }, 1000 / 30)
 
-      await new Promise((res) => {
-        video.onended = () => res(null)
-        const timeout = setInterval(() => {
-          if (video.currentTime >= duration + 1) {
-            clearInterval(timeout)
-            res(null)
+        const currentTime = frameIndex / FPS
+        video.currentTime = currentTime
+
+        await new Promise<void>((resolve) => {
+          const onSeeked = () => {
+            video!.removeEventListener('seeked', onSeeked)
+            resolve()
           }
-        }, 500)
-      })
+          video!.addEventListener('seeked', onSeeked, { once: true })
+        })
 
-      clearInterval(renderInterval)
-      await new Promise(r => setTimeout(r, 300))
-      recorder.stop()
-      console.log('[Export] Stopped, chunks:', chunks.length)
-      
-      if (chunks.length === 0) {
-        throw new Error('هیچ داده‌ای ضبط نشد')
+        renderSubtitleLayer(currentTime)
+
+        const frame = new VideoFrameClass(canvas, {
+          timestamp: Math.round(frameIndex * frameDurationMicroseconds),
+        })
+
+        const isKeyFrame = frameIndex % FPS === 0
+        encoder.encode(frame, { keyFrame: isKeyFrame })
+        frame.close()
+
+        if (encoder.encodeQueueSize > 5) {
+          await encoder.flush()
+        }
+
+        const elapsedSec = (performance.now() - startTime) / 1000
+        const framesDone = frameIndex + 1
+        const remainingFrames = totalFrames - framesDone
+        const fpsReal = framesDone / Math.max(elapsedSec, 0.1)
+        const remainingSeconds = Math.round(remainingFrames / fpsReal)
+
+        if (framesDone > 10 && remainingSeconds > 0) {
+          setEta(`حدود ${remainingSeconds} ثانیه باقی‌مانده`)
+        }
+
+        const framePercent = Math.round((framesDone / totalFrames) * 85)
+        setProgress(framePercent)
       }
-      
-      setProgress(100)
-      setStatus('تبدیل به MP4...')
 
-      // تبدیل با FFmpeg
-      const ffmpeg = new FFmpeg()
-      
-      ffmpeg.on('progress', ({ progress: p }) => {
-        setProgress(60 + Math.round(p * 40))
-      })
+      await encoder.flush()
+      muxer.finalize()
 
-      const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
-      const coreBlob = await (await fetch(`${baseURL}/ffmpeg-core.js`)).blob()
-      const wasmBlob = await (await fetch(`${baseURL}/ffmpeg-core.wasm`)).blob()
-      
-      await ffmpeg.load({
-        coreURL: URL.createObjectURL(coreBlob),
-        wasmURL: URL.createObjectURL(wasmBlob),
-      })
+      if (abortRef.current) throw new Error('عملیات رندر توسط کاربر لغو شد.')
 
-      const webmBlob = new Blob(chunks, { type: 'video/webm' })
-      await ffmpeg.writeFile('input.webm', new Uint8Array(await webmBlob.arrayBuffer()))
+      setProgress(86)
+      setEta('')
+      setStatus('در حال ادغام صدای اصلی...')
 
+      const ffmpeg = await getOrInitFFmpeg()
+      const videoArrayBuffer = target.buffer
+      await ffmpeg.writeFile('sub_video.mp4', new Uint8Array(videoArrayBuffer))
+
+      const sourceResponse = await fetch(videoUrl)
+      const sourceBlob = await sourceResponse.blob()
+      const sourceInName = ext === 'mov' ? 'source_input.mov' : 'source_input.mp4'
+      await ffmpeg.writeFile(sourceInName, new Uint8Array(await sourceBlob.arrayBuffer()))
+
+      setProgress(92)
+      const outFileName = 'final_output.mp4'
       await ffmpeg.exec([
-        '-i', 'input.webm',
-        '-c:v', 'libx264',
-        '-preset', 'ultrafast',
-        '-crf', '23',
-        '-pix_fmt', 'yuv420p',
-        '-c:a', 'aac',
-        '-b:a', '128k',
-        'output.mp4'
+        '-i', 'sub_video.mp4',
+        '-i', sourceInName,
+        '-map', '0:v:0',
+        '-map', '1:a:0?',
+        '-c:v', 'copy',
+        '-c:a', 'copy',
+        '-movflags', '+faststart',
+        outFileName,
       ])
 
-      const mp4Data = await ffmpeg.readFile('output.mp4') as Uint8Array
-      const mp4Blob = new Blob([mp4Data], { type: 'video/mp4' })
+      const finalData = (await ffmpeg.readFile(outFileName)) as Uint8Array
+      const finalBlob = new Blob([finalData], { type: mimeType })
 
-      setStatus('دانلود...')
-      const url = URL.createObjectURL(mp4Blob)
+      setProgress(100)
+      setStatus('✅ ذخیره‌سازی ویدیو...')
+
+      const url = URL.createObjectURL(finalBlob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${baseName}.subtitled.mp4`
+      a.download = `${cleanBaseName}.subtitled.${ext}`
+      document.body.appendChild(a)
       a.click()
+      a.remove()
 
-      setTimeout(() => {
+      window.setTimeout(() => {
         URL.revokeObjectURL(url)
-        ffmpeg.deleteFile('input.webm').catch(() => {})
-        ffmpeg.deleteFile('output.mp4').catch(() => {})
+        ffmpeg.deleteFile('sub_video.mp4').catch(() => {})
+        ffmpeg.deleteFile(sourceInName).catch(() => {})
+        ffmpeg.deleteFile(outFileName).catch(() => {})
       }, 5000)
 
-      document.body.removeChild(video)
-      setStatus('✅ کامل شد!')
-      
-    } catch (e: any) {
-      console.error('[Export Error]', e)
-      alert('❌ خطا: ' + (e?.message || 'Unknown'))
+    } catch (error: any) {
+      if (abortRef.current) {
+        setStatus('عملیات لغو شد')
+      } else {
+        console.error('[WebCodecs Render Error]', error)
+        setStatus('❌ خطا در رندر')
+        alert('خطا: ' + (error?.message || 'مشکلی در عملیات رندر پیش آمد'))
+      }
     } finally {
+      if (video?.parentNode) video.parentNode.removeChild(video)
       setExporting(false)
+      setEta('')
     }
   }
 
+  const safeProgress = clamp(Math.round(Number(progress) || 0), 0, 100)
+
   return (
-    <div className="fixed bottom-0 left-0 right-0 p-4 bg-black/90 z-50">
-      <button
-        onClick={exportVideo}
-        disabled={exporting}
-        className="w-full py-4 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-600 text-white font-bold rounded-xl transition-all"
-      >
-        {exporting ? (
-          <div className="flex flex-col gap-2">
-            <span className="text-sm">{status}</span>
-            <div className="w-full bg-gray-700 rounded-full h-3 overflow-hidden">
-              <div className="bg-white h-full rounded-full transition-all" style={{ width: `${progress}%` }} />
+    <div className="fixed bottom-0 left-0 right-0 z-50 bg-black/90 p-4">
+      {exporting ? (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-medium text-white">{status}</span>
+            <div className="flex items-center gap-2">
+              {eta && <span className="text-amber-400 font-mono">{eta}</span>}
+              <button
+                onClick={cancelExport}
+                className="rounded-lg border border-red-500/40 bg-red-500/20 px-2.5 py-1 text-red-300 transition hover:bg-red-500/30"
+              >
+                ✕ لغو رندر
+              </button>
             </div>
-            <span className="text-xs">{Math.round(progress)}%</span>
           </div>
-        ) : '📹 خروجی MP4 با زیرنویس'}
-      </button>
+          <div className="h-3 w-full overflow-hidden rounded-full bg-gray-800">
+            <div
+              className="h-full rounded-full bg-amber-500 transition-[width] duration-150"
+              style={{ width: `${safeProgress}%` }}
+            />
+          </div>
+          <span className="text-xs font-mono text-gray-300 text-left">{safeProgress}%</span>
+        </div>
+      ) : (
+        (() => {
+          const isReady = Boolean(videoUrl && segments && segments.length > 0)
+          return (
+            <button
+              onClick={exportVideo}
+              disabled={exporting || !isReady}
+              className={`w-full rounded-xl py-4 font-bold transition-all duration-300 flex items-center justify-center gap-2 ${
+                !isReady
+                  ? 'bg-zinc-900 border border-zinc-800 text-zinc-600 cursor-not-allowed opacity-50 shadow-none'
+                  : 'bg-gradient-to-r from-amber-500 to-orange-500 text-black shadow-lg shadow-amber-500/20 hover:from-amber-400 hover:to-orange-400 cursor-pointer active:scale-[0.99]'
+              }`}
+            >
+              <span>📹</span>
+              <span>
+                {!videoUrl
+                  ? 'ابتدا ویدیو را بارگذاری کنید'
+                  : !segments || segments.length === 0
+                  ? 'در انتظار پردازش و تکمیل زیرنویس...'
+                  : 'خروجی MP4 با زیرنویس'}
+              </span>
+            </button>
+          )
+        })()
+      )}
     </div>
   )
 }
