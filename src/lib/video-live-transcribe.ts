@@ -5,6 +5,7 @@ export interface VideoTranscriptSegment {
   text: string
   start: number
   end: number
+  isFinal: boolean // جدید: آیا این متن قطعی/کامیت‌شده است یا فقط پیش‌نمایش interim
 }
 
 export class VideoLiveTranscriber {
@@ -67,16 +68,18 @@ export class VideoLiveTranscriber {
             isFinal = true
           } else if (res.serverContent?.interimInputTranscription?.text) {
             incoming = res.serverContent.interimInputTranscription.text
+            isFinal = false
           } else if (res.serverContent?.modelTurn?.parts) {
             for (const p of res.serverContent.modelTurn.parts) {
               if (p.text) incoming += p.text
             }
+            isFinal = false
           }
 
           if (incoming) {
             this.currentTurnText = incoming.trim()
 
-            const fullCombined = this.committedText 
+            const fullCombined = this.committedText
               ? `${this.committedText} ${this.currentTurnText}`.trim()
               : this.currentTurnText
 
@@ -85,16 +88,26 @@ export class VideoLiveTranscriber {
               text: fullCombined,
               start: this.segStart,
               end: segEnd,
+              isFinal,
             }
             this.onSegment?.(seg)
           }
 
           if (res.serverContent?.turnComplete || isFinal) {
             if (this.currentTurnText) {
-              this.committedText = this.committedText 
-                ? `${this.committedText} ${this.currentTurnText}`.trim() 
+              this.committedText = this.committedText
+                ? `${this.committedText} ${this.currentTurnText}`.trim()
                 : this.currentTurnText
               this.currentTurnText = ''
+
+              // اعلام صریح نهایی‌شدن این بخش از متن با زمان real-time فعلی
+              const seg: VideoTranscriptSegment = {
+                text: this.committedText,
+                start: this.segStart,
+                end: Math.max(this.segStart + 0.5, this.secondsSent),
+                isFinal: true,
+              }
+              this.onSegment?.(seg)
             }
           }
         } catch {}
