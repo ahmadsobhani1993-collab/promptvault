@@ -18,7 +18,6 @@ export default function ToolsMenu({ locale = 'fa' }: Props) {
     }
   }
 
-  // ۵۰۰ms تأخیر قبل از بستن — فرصت کافی برای رسیدن به منو
   const scheduleClose = () => {
     cancelClose()
     closeTimer.current = setTimeout(() => setOpen(false), 500)
@@ -101,8 +100,6 @@ export default function ToolsMenu({ locale = 'fa' }: Props) {
             </div>
           </Link>
 
-          <div className="my-1 border-t border-white/10" />
-
           <Link
             href="/tools/bg-remover"
             onClick={() => setOpen(false)}
@@ -111,10 +108,10 @@ export default function ToolsMenu({ locale = 'fa' }: Props) {
             <span className="text-base">🪄</span>
             <div>
               <span className="block font-medium">
-                {isEn ? 'Remove Background' : 'حذف پس‌زمینه و سوژه'}
+                {isEn ? 'Remove Background' : 'حذف پس‌زمینه'}
               </span>
               <span className="block text-[10px] text-white/40">
-                {isEn ? '100% Client-side AI Cutout' : 'حذف هوشمند بک‌گراند یا سوژه'}
+                {isEn ? 'Smart transparent background' : 'حذف خودکار پس‌زمینه تصویر'}
               </span>
             </div>
           </Link>
