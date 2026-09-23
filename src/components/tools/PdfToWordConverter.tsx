@@ -22,20 +22,47 @@ export default function PdfToWordConverter() {
     }
   };
 
+  const loadPdfEngine = async (): Promise<any> => {
+    if (typeof window === "undefined") return null;
+    if ((window as any).pdfjsLib) return (window as any).pdfjsLib;
+
+    return new Promise((resolve, reject) => {
+      const existing = document.getElementById("pdfjs-cdn-script");
+      if (existing) {
+        existing.addEventListener("load", () => resolve((window as any).pdfjsLib));
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.id = "pdfjs-cdn-script";
+      script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+      script.crossOrigin = "anonymous";
+      script.onload = () => {
+        const lib = (window as any).pdfjsLib;
+        if (lib) {
+          lib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+          resolve(lib);
+        } else {
+          reject(new Error("موتور بارگذاری نشد"));
+        }
+      };
+      script.onerror = () => reject(new Error("خطا در دانلود اسکریپت PDF"));
+      document.head.appendChild(script);
+    });
+  };
+
   const convertToWord = async () => {
     if (!file) return;
     setLoading(true);
     setProgress(5);
-    setStatusText("در حال بارگذاری موتور پردازش اسناد...");
+    setStatusText("در حال آماده‌سازی موتور اسناد...");
 
     try {
-      // استفاده از موتور رسمی موزیلا بدون ارور لود وب‌پک
-      const pdfjs = await import("pdfjs-dist/legacy/build/pdf");
-      pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
+      const pdfjs = await loadPdfEngine();
+      if (!pdfjs) throw new Error("موتور در دسترس نیست");
 
       const arrayBuffer = await file.arrayBuffer();
-      const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
-      const pdfDoc = await loadingTask.promise;
+      const pdfDoc = await pdfjs.getDocument({ data: arrayBuffer }).promise;
       const numPages = pdfDoc.numPages;
 
       const docSections: Paragraph[] = [];
@@ -52,12 +79,12 @@ export default function PdfToWordConverter() {
           })
         );
 
-        let pageText = (textContent.items as any[])
-          .map((item) => item.str || "")
+        const pageText = (textContent.items || [])
+          .map((item: any) => item.str || "")
           .join(" ")
           .trim();
 
-        if (pageText.length > 5) {
+        if (pageText.length > 0) {
           docSections.push(
             new Paragraph({
               children: [new TextRun({ text: pageText, size: 24 })],
@@ -69,7 +96,7 @@ export default function PdfToWordConverter() {
 
         const percent = Math.round((i / numPages) * 100);
         setProgress(percent);
-        setStatusText(`در حال استخراج صفحه ${i} از ${numPages} (${percent}%)...`);
+        setStatusText(`در حال استخراج متون (${percent}%)...`);
         page.cleanup();
       }
 
@@ -80,11 +107,11 @@ export default function PdfToWordConverter() {
 
       const blob = await Packer.toBlob(doc);
       saveAs(blob, file.name.replace(/\.pdf$/i, "") + ".docx");
-      setStatusText("انجام شد!");
+      setStatusText("تکمیل شد!");
     } catch (err: any) {
-      console.error("PDF to Word Error:", err);
+      console.error(err);
       alert("خطا در پردازش فایل: " + (err?.message || "مشکلی رخ داد"));
-      setStatusText("خطا در تبدیل فایل.");
+      setStatusText("خطا در پردازش");
     } finally {
       setLoading(false);
     }
@@ -92,27 +119,17 @@ export default function PdfToWordConverter() {
 
   return (
     <div className="mx-auto max-w-2xl rounded-2xl border border-white/10 bg-zinc-950 p-6 text-white shadow-xl">
-      <h2 className="mb-2 text-2xl font-black text-amber-400">
-        تبدیل PDF به ورد هوشمند
-      </h2>
-      <p className="mb-6 text-sm text-zinc-400">
-        پردازش مستقیم درون سیستم شما و تبدیل اسناد به فایل قابل ویرایش Word (.docx)
-      </p>
+      <h2 className="mb-2 text-2xl font-black text-amber-400">تبدیل PDF به ورد هوشمند</h2>
+      <p className="mb-6 text-sm text-zinc-400">استخراج محتوای متنی PDF و تبدیل به فایل قابل ویرایش Docx</p>
 
       <div className="mb-6">
-        <input
-          type="file"
-          accept=".pdf,application/pdf"
-          ref={fileInputRef}
-          onChange={handleFileChange}
-          className="hidden"
-        />
+        <input type="file" accept=".pdf,application/pdf" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
           className="w-full rounded-xl border border-dashed border-zinc-700 bg-zinc-900/60 px-6 py-6 text-center font-medium transition hover:border-amber-500 hover:text-amber-400"
         >
-          {file ? `📄 ${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB)` : "📁 انتخاب فایل PDF از سیستم"}
+          {file ? `📄 ${file.name}` : "📁 انتخاب فایل PDF"}
         </button>
       </div>
 
@@ -123,10 +140,7 @@ export default function PdfToWordConverter() {
             <span>{progress}%</span>
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-800">
-            <div
-              className="h-full bg-amber-500 transition-all duration-150"
-              style={{ width: `${progress}%` }}
-            />
+            <div className="h-full bg-amber-500 transition-all duration-150" style={{ width: `${progress}%` }} />
           </div>
         </div>
       )}
@@ -136,7 +150,7 @@ export default function PdfToWordConverter() {
         onClick={convertToWord}
         className="w-full rounded-xl bg-amber-500 py-3 font-bold text-black transition hover:bg-amber-400 disabled:opacity-50"
       >
-        {loading ? "در حال پردازش سند..." : "شروع تبدیل و دانلود فایل DOCX"}
+        {loading ? "در حال پردازش..." : "شروع تبدیل و دانلود فایل DOCX"}
       </button>
     </div>
   );
