@@ -16,6 +16,7 @@
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@gradio/client": "^2.7.0",
+    "@huggingface/inference": "^4.13.30",
     "@imgly/background-removal": "^1.7.0",
     "@prisma/client": "^6.19.3",
     "@tiptap/extension-highlight": "^3.30.5",

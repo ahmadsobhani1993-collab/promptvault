@@ -1,7 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { Client } from "@gradio/client";
 
-export const maxDuration = 60; // افزایش تایم‌اوت ورسل برای سنتز صدا
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,12 +13,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "متن الزامی است" }, { status: 400 });
     }
 
-    // اتصال به Space هاگینگ فیس OmniVoice
     const app = await Client.connect("k2-fsa/OmniVoice");
 
-    // ارسال به اندپوینت پیش‌بینی (متن + فایل صوتی مرجع)
+    // پارامترهای منطبق با ورودی‌های Gradio اسپیس OmniVoice:
+    // آرگومان ۱: متن ورودی
+    // آرگومان ۲: زبان (پیش‌فرض Auto)
+    // آرگومان ۳: فایل نمونه صوتی
     const result = await app.predict(0, [
       text,
+      "Auto",
       audioFile || null,
     ]);
 

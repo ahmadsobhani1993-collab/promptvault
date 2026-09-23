@@ -133,7 +133,7 @@ export default function ToolsMenu({ locale = 'fa' }: Props) {
           </Link>
 
           <Link
-            href="/tools/pdf-to-word"
+            href="/pdf-to-word"
             onClick={() => setOpen(false)}
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-white/80 transition hover:bg-amber-500/10 hover:text-amber-300"
           >
@@ -152,3 +152,4 @@ export default function ToolsMenu({ locale = 'fa' }: Props) {
     </div>
   )
 }
+
