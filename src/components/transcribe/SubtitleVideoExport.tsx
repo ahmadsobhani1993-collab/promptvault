@@ -378,6 +378,9 @@ export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segm
 
         const frame = new VideoFrameClass(canvas, {
           timestamp: Math.round(frameIndex * frameDurationMicroseconds),
+          // بدون این، duration چانک خروجی null می‌شود و همین باعث کرش addVideoChunkRaw می‌شد —
+          // نه ربطی به decoderConfig/colorSpace داشت که قبلاً حدس زده بودم
+          duration: Math.round(frameDurationMicroseconds),
         })
 
         const isKeyFrame = frameIndex % FPS === 0
