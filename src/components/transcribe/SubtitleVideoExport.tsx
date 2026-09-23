@@ -147,6 +147,9 @@ export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segm
     setStatus('در حال آماده‌سازی...')
 
     let video: HTMLVideoElement | null = null
+    // برای دیباگ: شکل واقعی متادیتای اولین چانک را نگه می‌داریم تا اگر باز هم کرش کرد،
+    // خودِ پیام خطا نشانش بدهد و مجبور نباشیم حدس بزنیم
+    let firstChunkMetaDebug = 'ثبت‌نشده (هنوز به output نرسیده)'
 
     try {
       if (typeof (window as any).VideoEncoder === 'undefined') {
@@ -223,6 +226,9 @@ export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segm
         // (ارور «null is not an object (evaluating 't.info.decoderConfig.colorSpace')»).
         // این‌جا فقط یک مقدار پیش‌فرض امن جایگزین می‌کنیم، بدون تغییر منطق اصلی.
         output: (chunk: any, meta: any) => {
+          if (firstChunkMetaDebug.startsWith('ثبت‌نشده')) {
+            try { firstChunkMetaDebug = JSON.stringify(meta) } catch { firstChunkMetaDebug = String(meta) }
+          }
           if (!meta) {
             // اگر خودِ meta کلاً undefined باشد (که ظاهراً همین‌جا اتفاق افتاده)، شرط قبلی
             // (meta && !meta.decoderConfig) کلاً رد می‌شد و هیچ‌وقت جایگزین نمی‌شد
@@ -449,7 +455,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segm
       } else {
         console.error('[WebCodecs Render Error]', error)
         setStatus('❌ خطا در رندر')
-        alert('خطا: ' + (error?.message || 'مشکلی در عملیات رندر پیش آمد'))
+        alert('خطا: ' + (error?.message || 'مشکلی در عملیات رندر پیش آمد') + '\n\n[دیباگ meta چانک اول]: ' + firstChunkMetaDebug)
       }
     } finally {
       if (video?.parentNode) video.parentNode.removeChild(video)
