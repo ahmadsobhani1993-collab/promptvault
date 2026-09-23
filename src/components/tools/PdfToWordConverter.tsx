@@ -3,7 +3,6 @@
 import { useState, useRef, ChangeEvent } from "react";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from "docx";
 import { saveAs } from "file-saver";
-import { createWorker } from "tesseract.js";
 
 export default function PdfToWordConverter() {
   const [file, setFile] = useState<File | null>(null);
@@ -19,35 +18,32 @@ export default function PdfToWordConverter() {
       setProgress(0);
       setStatusText("");
     } else if (selected) {
-      alert("لطفاً یک فایل با پسوند PDF انتخاب کنید.");
+      alert("لطفاً یک فایل معتبر PDF انتخاب کنید.");
     }
   };
 
   const convertToWord = async () => {
     if (!file) return;
     setLoading(true);
-    setProgress(0);
-    setStatusText("در حال راه‌اندازی موتورهای پردازش PDF و OCR...");
-
-    let ocrWorker: any = null;
+    setProgress(5);
+    setStatusText("در حال بارگذاری موتور پردازش اسناد...");
 
     try {
-      // بارگذاری داینامیک موتور PDF
-      const pdfjsLib = await import("pdfjs-dist");
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+      // استفاده از موتور رسمی موزیلا بدون ارور لود وب‌پک
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf");
+      pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
 
       const arrayBuffer = await file.arrayBuffer();
-      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-      const pdf = await loadingTask.promise;
-      const numPages = pdf.numPages;
+      const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
+      const pdfDoc = await loadingTask.promise;
+      const numPages = pdfDoc.numPages;
 
       const docSections: Paragraph[] = [];
 
       for (let i = 1; i <= numPages; i++) {
-        const page = await pdf.getPage(i);
+        const page = await pdfDoc.getPage(i);
         const textContent = await page.getTextContent();
 
-        // شماره صفحه در فایل ورد
         docSections.push(
           new Paragraph({
             text: `--- صفحه ${i} ---`,
@@ -56,96 +52,51 @@ export default function PdfToWordConverter() {
           })
         );
 
-        // بررسی اینکه آیا صفحه متن قابل انتخاب دارد یا اسکن تصویری است
-        const directText = (textContent.items as any[])
+        let pageText = (textContent.items as any[])
           .map((item) => item.str || "")
           .join(" ")
           .trim();
 
-        if (directText.length > 20) {
-          // صفحه دارای متن استاندارد است
+        if (pageText.length > 5) {
           docSections.push(
             new Paragraph({
-              children: [new TextRun({ text: directText, size: 24 })],
+              children: [new TextRun({ text: pageText, size: 24 })],
               bidirectional: true,
               spacing: { after: 120 },
             })
           );
-        } else {
-          // صفحه تصویری/اسکن است -> اجرای OCR با پشتیبانی فارسی و انگلیسی
-          setStatusText(`صفحه ${i} اسکن تصویری است؛ در حال خواندن متن با OCR...`);
-
-          if (!ocrWorker) {
-            ocrWorker = await createWorker(["fas", "eng"]);
-          }
-
-          // رندر صفحه PDF روی یک بوم گرافیکی (Canvas)
-          const viewport = page.getViewport({ scale: 1.5 });
-          const canvas = document.createElement("canvas");
-          const ctx = canvas.getContext("2d");
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-
-          if (ctx) {
-            await page.render({ canvasContext: ctx, viewport }).promise;
-            const imgDataUrl = canvas.toDataURL("image/png");
-
-            // تشخیص کاراکترهای اسکن‌شده
-            const ret = await ocrWorker.recognize(imgDataUrl);
-            const recognizedText = ret.data.text.trim();
-
-            docSections.push(
-              new Paragraph({
-                children: [
-                  new TextRun({
-                    text: recognizedText || "[متنی در این تصویر یافت نشد]",
-                    size: 24,
-                  }),
-                ],
-                bidirectional: true,
-                spacing: { after: 120 },
-              })
-            );
-          }
         }
 
         const percent = Math.round((i / numPages) * 100);
         setProgress(percent);
-        setStatusText(`پردازش صفحه ${i} از ${numPages} (${percent}%)...`);
-
+        setStatusText(`در حال استخراج صفحه ${i} از ${numPages} (${percent}%)...`);
         page.cleanup();
       }
 
-      setStatusText("در حال خروجی گرفتن فایل Word (.docx)...");
-
+      setStatusText("در حال ساخت فایل نهایی Word...");
       const doc = new Document({
         sections: [{ properties: {}, children: docSections }],
       });
 
       const blob = await Packer.toBlob(doc);
-      const outputFileName = file.name.replace(/\.pdf$/i, "") + ".docx";
-      saveAs(blob, outputFileName);
-
-      setStatusText("فایل ورد با موفقیت دانلود شد!");
+      saveAs(blob, file.name.replace(/\.pdf$/i, "") + ".docx");
+      setStatusText("انجام شد!");
     } catch (err: any) {
-      console.error("OCR PDF to Word Error:", err);
-      alert("خطا در پردازش فایل: " + (err?.message || "مشکلی پیش آمد"));
+      console.error("PDF to Word Error:", err);
+      alert("خطا در پردازش فایل: " + (err?.message || "مشکلی رخ داد"));
       setStatusText("خطا در تبدیل فایل.");
     } finally {
-      if (ocrWorker) {
-        await ocrWorker.terminate();
-      }
       setLoading(false);
     }
   };
 
   return (
-    <div className="mx-auto max-w-2xl rounded-2xl border border-zinc-800 bg-zinc-950 p-6 text-white shadow-xl">
+    <div className="mx-auto max-w-2xl rounded-2xl border border-white/10 bg-zinc-950 p-6 text-white shadow-xl">
       <h2 className="mb-2 text-2xl font-black text-amber-400">
-        تبدیل PDF به ورد هوشمند (پشتیبانی از اسکن و تصویر)
+        تبدیل PDF به ورد هوشمند
       </h2>
       <p className="mb-6 text-sm text-zinc-400">
-        مجهز به موتور بینایی هوش مصنوعی (OCR) برای صفحات تصویری و اسکن‌شده بدون لایه متنی. ۱۰۰٪ پردازش روی مرورگر شما.
+        پردازش مستقیم درون سیستم شما و تبدیل اسناد به فایل قابل ویرایش Word (.docx)
       </p>
 
       <div className="mb-6">
@@ -180,18 +131,12 @@ export default function PdfToWordConverter() {
         </div>
       )}
 
-      {!loading && statusText && (
-        <div className="mb-6 rounded-lg bg-zinc-900 p-3 text-xs text-amber-400">
-          {statusText}
-        </div>
-      )}
-
       <button
         disabled={!file || loading}
         onClick={convertToWord}
         className="w-full rounded-xl bg-amber-500 py-3 font-bold text-black transition hover:bg-amber-400 disabled:opacity-50"
       >
-        {loading ? "در حال استخراج متون اسکن‌شده..." : "شروع تبدیل و دانلود فایل DOCX"}
+        {loading ? "در حال پردازش سند..." : "شروع تبدیل و دانلود فایل DOCX"}
       </button>
     </div>
   );

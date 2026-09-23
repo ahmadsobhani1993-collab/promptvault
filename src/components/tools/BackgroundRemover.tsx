@@ -1,43 +1,45 @@
 ﻿'use client'
 
 import { useState, useRef, ChangeEvent } from 'react'
+import { removeBackground } from '@imgly/background-removal'
 
 export default function BackgroundRemover() {
-  const [imageFile, setImageFile] = useState<File | null>(null)
   const [imageSrc, setImageSrc] = useState<string | null>(null)
   const [resultSrc, setResultSrc] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [progress, setProgress] = useState(0)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    setImageFile(file)
     setImageSrc(URL.createObjectURL(file))
     setResultSrc(null)
+    setProgress(0)
   }
 
   const processImage = async () => {
-    if (!imageFile) return
+    if (!imageSrc) return
     setLoading(true)
+    setProgress(10)
 
     try {
-      const fd = new FormData()
-      fd.append('image', imageFile)
-
-      const res = await fetch('/api/bg-remover', {
-        method: 'POST',
-        body: fd,
+      const blob = await removeBackground(imageSrc, {
+        progress: (_key: string, current: number, total: number) => {
+          if (total > 0) {
+            setProgress(Math.round((current / total) * 100))
+          }
+        },
+        output: {
+          format: 'image/png',
+          quality: 0.95,
+        },
       })
 
-      if (!res.ok) {
-        throw new Error('خطا در دریافت نتیجه از هوش مصنوعی')
-      }
-
-      const blob = await res.blob()
       setResultSrc(URL.createObjectURL(blob))
     } catch (err: any) {
-      alert(err?.message || 'مشکلی رخ داد')
+      console.error(err)
+      alert('خطا در تفکیک تصویر. لطفاً تصویر دیگری را امتحان کنید.')
     } finally {
       setLoading(false)
     }
@@ -89,9 +91,21 @@ export default function BackgroundRemover() {
         </div>
       )}
 
+      {loading && (
+        <div className="mb-6">
+          <div className="mb-1.5 flex justify-between text-xs text-white/70">
+            <span>در حال جداسازی پس‌زمینه...</span>
+            <span>{progress}%</span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-800">
+            <div className="h-full bg-amber-500 transition-all duration-150" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap justify-center gap-4">
         <button
-          disabled={!imageFile || loading}
+          disabled={!imageSrc || loading}
           onClick={processImage}
           className="rounded-xl bg-amber-500 px-6 py-2.5 text-sm font-bold text-black transition hover:bg-amber-400 disabled:opacity-40"
         >
