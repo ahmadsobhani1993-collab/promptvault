@@ -34,6 +34,10 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
   const [translating, setTranslating] = useState(false)
   const [showTransMenu, setShowTransMenu] = useState(false)
   const [manualEnd, setManualEnd] = useState('')
+  // ورودی خام (رشته‌ای) شروع/پایان هر کپشن، تا بشود کامل پاکش کرد بدون این‌که فوراً به ۰ اسنپ شود
+  const [timeDrafts, setTimeDrafts] = useState<Record<string, string>>({})
+  // ایندکس کپشنی که الان زمانش نامعتبر است (شروع >= پایان)، برای نمایش پیام خطا
+  const [timeError, setTimeError] = useState<number | null>(null)
 
   const transMenuRef = useRef<HTMLDivElement>(null)
 
@@ -233,6 +237,44 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     if (Number.isNaN(val)) return
     updateSeg(idx, { end: Math.max(segments[idx].start + 0.1, val) })
     setManualEnd('')
+  }
+
+  // مقداری که باید در فیلد «از»/«تا» نمایش داده شود: اگر کاربر همین الان در حال تایپ/پاک‌کردن است
+  // همان متن خام را نشان بده، وگرنه عدد واقعی ذخیره‌شده را
+  const getTimeDraft = (i: number, field: 'start' | 'end') => {
+    const key = `${i}-${field}`
+    return key in timeDrafts ? timeDrafts[key] : String(Number(segments[i][field].toFixed(1)))
+  }
+
+  // تایپ آزاد: فیلد را می‌شود کامل پاک کرد و هر عددی نوشت — فقط وقتی مقدار معتبر و
+  // شروع < پایان باشد واقعاً روی کپشن اعمال می‌شود، وگرنه فقط پیام خطا نشان داده می‌شود
+  const handleTimeInput = (i: number, field: 'start' | 'end', raw: string) => {
+    const key = `${i}-${field}`
+    setTimeDrafts((d) => ({ ...d, [key]: raw }))
+
+    if (raw.trim() === '') { setTimeError(i); return }
+    const val = Number(raw)
+    if (Number.isNaN(val) || val < 0) { setTimeError(i); return }
+
+    const seg = segments[i]
+    const nextStart = field === 'start' ? val : seg.start
+    const nextEnd = field === 'end' ? val : seg.end
+
+    if (nextStart >= nextEnd) { setTimeError(i); return }
+
+    setTimeError((cur) => (cur === i ? null : cur))
+    updateSeg(i, { [field]: val } as Partial<Seg>)
+  }
+
+  // وقتی از فیلد خارج می‌شود، اگر چیزی ناقص/نامعتبر مانده بود، به آخرین مقدار معتبر برمی‌گردد
+  const handleTimeBlur = (i: number, field: 'start' | 'end') => {
+    const key = `${i}-${field}`
+    setTimeDrafts((d) => {
+      if (!(key in d)) return d
+      const { [key]: _drop, ...rest } = d
+      return rest
+    })
+    setTimeError((cur) => (cur === i ? null : cur))
   }
 
   useEffect(() => {
@@ -594,19 +636,30 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                   <div className="flex flex-wrap items-center gap-1.5 text-[11px]" onClick={(e) => e.stopPropagation()}>
                     <span className="text-white/40">از</span>
                     <input
-                      type="number" step="0.1" min="0"
-                      value={Number(s.start.toFixed(1))}
-                      onChange={(e) => updateSeg(i, { start: Math.max(0, Number(e.target.value)) })}
-                      className="w-16 rounded-md border border-white/10 bg-black/40 px-1.5 py-0.5 font-mono text-white/90 focus:border-amber-500/50 focus:outline-none"
+                      type="number" step="0.1"
+                      value={getTimeDraft(i, 'start')}
+                      onChange={(e) => handleTimeInput(i, 'start', e.target.value)}
+                      onBlur={() => handleTimeBlur(i, 'start')}
+                      className={`w-16 rounded-md border bg-black/40 px-1.5 py-0.5 font-mono text-white/90 focus:outline-none ${
+                        timeError === i ? 'border-red-500/70 focus:border-red-500' : 'border-white/10 focus:border-amber-500/50'
+                      }`}
                     />
                     <span className="text-white/40">تا</span>
                     <input
-                      type="number" step="0.1" min="0"
-                      value={Number(s.end.toFixed(1))}
-                      onChange={(e) => updateSeg(i, { end: Math.max(s.start + 0.1, Number(e.target.value)) })}
-                      className="w-16 rounded-md border border-white/10 bg-black/40 px-1.5 py-0.5 font-mono text-white/90 focus:border-amber-500/50 focus:outline-none"
+                      type="number" step="0.1"
+                      value={getTimeDraft(i, 'end')}
+                      onChange={(e) => handleTimeInput(i, 'end', e.target.value)}
+                      onBlur={() => handleTimeBlur(i, 'end')}
+                      className={`w-16 rounded-md border bg-black/40 px-1.5 py-0.5 font-mono text-white/90 focus:outline-none ${
+                        timeError === i ? 'border-red-500/70 focus:border-red-500' : 'border-white/10 focus:border-amber-500/50'
+                      }`}
                     />
                     <span className="text-white/40">ثانیه</span>
+                    {timeError === i && (
+                      <span className="w-full basis-full text-[10px] text-red-400">
+                        ⚠ زمان شروع نمی‌تواند بیشتر یا برابر زمان پایان باشد
+                      </span>
+                    )}
 
                     <div className="flex items-center gap-0.5">
                       {[-0.5, -0.1, 0.1, 0.5].map((d) => (
