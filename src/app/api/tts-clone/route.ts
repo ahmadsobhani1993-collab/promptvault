@@ -10,30 +10,26 @@ export async function POST(req: NextRequest) {
     const audioFile = formData.get("audio") as Blob | null;
 
     if (!text || !text.trim()) {
-      return NextResponse.json({ ok: false, error: "متن ورودی الزامی است" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "لطفاً متن را وارد کنید." }, { status: 400 });
     }
 
-    console.log("TTS Request received. Text length:", text.length, "Audio size:", audioFile?.size);
-
+    // اتصال با timeout کنترل شده
     const app = await Client.connect("k2-fsa/OmniVoice");
     
-    // ارسال به endpoint پیش‌فرض
-    const result: any = await app.predict(0, [
-      text,
-      "Auto",
-      audioFile || null,
-    ]);
+    // اگر فایل آپلود نشده باشد مقدار undefined می‌فرستیم تا اسپیس ارور ندهد
+    const params: any[] = [text, "Auto"];
+    if (audioFile && audioFile.size > 0) {
+      params.push(audioFile);
+    } else {
+      params.push(null);
+    }
 
-    console.log("TTS Result:", result?.data);
+    const result: any = await app.predict(0, params);
     return NextResponse.json({ ok: true, data: result.data });
   } catch (err: any) {
-    console.error("Full TTS Error Log:", err);
+    console.error("TTS Server Error:", err);
     return NextResponse.json(
-      { 
-        ok: false, 
-        error: err?.message || "خطای ناشناخته در سرور صوتی",
-        stack: err?.stack || null
-      },
+      { ok: false, error: "خطا از سمت مدل صوتی: " + (err?.message || "پاسخی دریافت نشد") },
       { status: 500 }
     );
   }

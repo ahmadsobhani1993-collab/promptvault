@@ -7,13 +7,14 @@ export default function OmniVoice() {
   const [audioFile, setAudioFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [resultAudio, setResultAudio] = useState<string | null>(null)
+  const [serverError, setServerError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      if (file.size > 4 * 1024 * 1024) {
-        alert('حجم فایل صوتی بیش از حد مجاز است (حداکثر ۴ مگابایت).')
+      if (file.size > 3 * 1024 * 1024) {
+        alert('حجم فایل صوتی بیش از حد مجاز است (حداکثر ۳ مگابایت).')
         return
       }
       setAudioFile(file)
@@ -28,6 +29,7 @@ export default function OmniVoice() {
 
     setLoading(true)
     setResultAudio(null)
+    setServerError(null)
 
     try {
       const fd = new FormData()
@@ -44,9 +46,9 @@ export default function OmniVoice() {
       const data = await res.json().catch(() => null)
 
       if (!res.ok || !data?.ok) {
-        const errorMsg = data?.error || res.statusText || 'خطای نامشخص'
-        console.error('TTS Server Response Error:', data)
-        alert(`جزئیات خطا از سرور:\n${errorMsg}`)
+        const msg = data?.error || `ارور سرور کد ${res.status}`
+        setServerError(msg)
+        alert(`علت خطا: ${msg}`)
         return
       }
 
@@ -60,12 +62,11 @@ export default function OmniVoice() {
 
       if (audioUrl) {
         setResultAudio(audioUrl)
-      } else {
-        alert('صدا ساخته شد اما آدرس خروجی دریافت نشد.')
       }
     } catch (err: any) {
-      console.error('Fetch Error:', err)
-      alert(`خطای ارتباط با سرور: ${err?.message || 'مشکلی رخ داد'}`)
+      const msg = err?.message || 'عدم دسترسی به سرور'
+      setServerError(msg)
+      alert(`خطا در ارتباط: ${msg}`)
     } finally {
       setLoading(false)
     }
@@ -75,7 +76,7 @@ export default function OmniVoice() {
     <div className="mx-auto max-w-2xl rounded-2xl border border-white/10 bg-zinc-950 p-6 text-white shadow-xl">
       <h2 className="mb-2 text-2xl font-black text-amber-400">تبدیل متن به گفتار و شبیه‌سازی صدا</h2>
       <p className="mb-6 text-xs text-zinc-400">
-        متن را بنویسید و در صورت تمایل فایل نمونه صدای کوتاه (زیر ۳ مگابایت) بارگذاری کنید.
+        متن را بنویسید و در صورت تمایل فایل نمونه صدای کوتاه بارگذاری کنید.
       </p>
 
       <div className="mb-4">
@@ -120,6 +121,12 @@ export default function OmniVoice() {
           )}
         </div>
       </div>
+
+      {serverError && (
+        <div className="mb-4 rounded-xl border border-red-500/30 bg-red-950/40 p-3 text-xs text-red-300">
+          ⚠️ {serverError}
+        </div>
+      )}
 
       <button
         type="button"
