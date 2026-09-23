@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
@@ -47,7 +47,7 @@ export default function ToolsMenu({ locale = 'fa' }: Props) {
 
       {open && (
         <div
-          className={`absolute top-full z-50 mt-2 w-64 overflow-hidden rounded-xl border border-white/10 bg-zinc-900/95 p-1.5 shadow-2xl shadow-black/60 backdrop-blur ${
+          className={`absolute top-full z-50 mt-2 max-h-[85vh] w-72 overflow-y-auto rounded-xl border border-white/10 bg-zinc-900/95 p-1.5 shadow-2xl shadow-black/60 backdrop-blur ${
             isEn ? 'left-0 text-left' : 'right-0 text-right'
           }`}
           onMouseEnter={cancelClose}
@@ -97,6 +97,56 @@ export default function ToolsMenu({ locale = 'fa' }: Props) {
               </span>
               <span className="block text-[10px] text-white/40">
                 {isEn ? 'Noise suppression & voice booster' : 'کاهش نویز و شفاف‌سازی با AI'}
+              </span>
+            </div>
+          </Link>
+
+          <div className="my-1 border-t border-white/10" />
+
+          <Link
+            href="/tools/bg-remover"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-white/80 transition hover:bg-amber-500/10 hover:text-amber-300"
+          >
+            <span className="text-base">🪄</span>
+            <div>
+              <span className="block font-medium">
+                {isEn ? 'Remove Background' : 'حذف پس‌زمینه و سوژه'}
+              </span>
+              <span className="block text-[10px] text-white/40">
+                {isEn ? '100% Client-side AI Cutout' : 'حذف هوشمند بک‌گراند یا سوژه'}
+              </span>
+            </div>
+          </Link>
+
+          <Link
+            href="/tools/omni-voice"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-white/80 transition hover:bg-amber-500/10 hover:text-amber-300"
+          >
+            <span className="text-base">🗣️</span>
+            <div>
+              <span className="block font-medium">
+                {isEn ? 'Text to Speech & Clone' : 'تبدیل متن به گفتار و دوبله'}
+              </span>
+              <span className="block text-[10px] text-white/40">
+                {isEn ? 'Voice clone & synthesis with AI' : 'شبیه‌سازی صدا و تبدیل متن به صوت'}
+              </span>
+            </div>
+          </Link>
+
+          <Link
+            href="/tools/pdf-to-word"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-white/80 transition hover:bg-amber-500/10 hover:text-amber-300"
+          >
+            <span className="text-base">📑</span>
+            <div>
+              <span className="block font-medium">
+                {isEn ? 'PDF to Word Converter' : 'تبدیل PDF به ورد هوشمند'}
+              </span>
+              <span className="block text-[10px] text-white/40">
+                {isEn ? 'Extract scanned PDF with OCR' : 'استخراج متون اسکن و تصویری با OCR'}
               </span>
             </div>
           </Link>
