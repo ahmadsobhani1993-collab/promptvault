@@ -25,81 +25,161 @@ function getGeminiKeys(): string[] {
   return raw.split(',').map((k) => k.trim()).filter((k) => k.length > 10)
 }
 
-export async function generateText(opts: { instruction: string; imgBase64?: string | null; imgMime?: string }): Promise<{ text: string; model: string }> {
+export async function generateText(opts: {
+  instruction: string
+  imgBase64?: string | null
+  imgMime?: string
+  expectJson?: boolean
+}): Promise<{ text: string; model: string }> {
   const parts: any[] = [{ text: opts.instruction }]
-  if (opts.imgBase64) parts.push({ inline_data: { mime_type: opts.imgMime || 'image/jpeg', data: opts.imgBase64 } })
+  if (opts.imgBase64) {
+    parts.push({
+      inlineData: {
+        mimeType: opts.imgMime || 'image/jpeg',
+        data: opts.imgBase64.replace(/^data:[^;]+;base64,/, '').trim(),
+      },
+    })
+  }
 
   const keys = getGeminiKeys()
-  if (keys.length === 0) throw new Error('No Gemini API keys configured')
+  if (keys.length === 0) {
+    console.error('[GEMINI FATAL]: هیچ API Key برای جمینای تنظیم نشده است (فایل .env را بررسی کنید)')
+    throw new Error('GEMINI_FAILED: No API keys configured in environment')
+  }
+
+  const errorLogHistory: string[] = []
 
   for (const model of MODEL_CHAIN) {
     for (let i = 0; i < keys.length; i++) {
-      try {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${keys[i]}`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts }] }), signal: AbortSignal.timeout(10000)
-        })
-        const body = await res.text()
-        if (res.status === 429) continue
-        if (res.status === 400 || res.status === 404 || res.status === 401) break
-        if (!res.ok) continue
+      const key = keys[i]
+      const keyMasked = `${key.slice(0, 6)}...${key.slice(-4)}`
 
-        const json = JSON.parse(body)
+      try {
+        const payload: any = { contents: [{ parts }] }
+        if (opts.expectJson) {
+          payload.generationConfig = { responseMimeType: 'application/json' }
+        }
+
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(25000),
+          }
+        )
+
+        const bodyText = await res.text()
+
+        if (!res.ok) {
+          let reason = ''
+          if (res.status === 403) {
+            reason = '403 Forbidden (مسدود بودن آی‌پی ایران یا نامعتبر بودن دسترسی گوگل)'
+          } else if (res.status === 429) {
+            reason = '429 Rate Limit (پایان سقف مجاز درخواست در دقیقه یا در روز)'
+          } else if (res.status === 400) {
+            reason = '400 Bad Request (اشکال در ساختار پیام ارسالی یا پرامپت)'
+          } else if (res.status === 404) {
+            reason = `404 Not Found (مدل ${model} وجود ندارد یا کلید به آن دسترسی ندارد)`
+          } else {
+            reason = `HTTP ${res.status}: ${bodyText.slice(0, 180)}`
+          }
+
+          const fullErr = `[Model: ${model} | Key: ${keyMasked}] -> ${reason}`
+          console.error(`[GEMINI FAIL]: ${fullErr}`)
+          errorLogHistory.push(fullErr)
+          continue
+        }
+
+        const json = JSON.parse(bodyText)
         const raw: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
-        if (!raw) continue
+
+        if (!raw) {
+          const finishReason = json?.candidates?.[0]?.finishReason || 'UNKNOWN'
+          const emptyErr = `[Model: ${model}] پاسخ خالی برگشت داد (finishReason: ${finishReason})`
+          console.warn(`[GEMINI WARN]: ${emptyErr}`)
+          errorLogHistory.push(emptyErr)
+          continue
+        }
+
         return { text: raw, model }
-      } catch { continue }
+      } catch (err: any) {
+        let errDesc = err?.message || String(err)
+        if (err?.name === 'TimeoutError' || errDesc.includes('timeout')) {
+          errDesc = 'Timeout (درخواست بیش از ۲۵ ثانیه طول کشید و لغو شد)'
+        }
+        const netErr = `[Model: ${model} | Key: ${keyMasked}] Network/Fetch Exception: ${errDesc}`
+        console.error(`[GEMINI NETWORK ERROR]: ${netErr}`)
+        errorLogHistory.push(netErr)
+        continue
+      }
     }
   }
-  throw new Error('GEMINI_FAILED')
+
+  // پرتاب خطای نهایی با ذکر خلاصه تمام تلاش‌های ناموفق
+  const finalSummary = errorLogHistory.join(' | ')
+  throw new Error(`GEMINI_FAILED: ${finalSummary}`)
 }
 
 export async function normalizePrompt(raw: string): Promise<string> {
   if (!raw || !raw.trim()) return raw
   try {
-    const { text } = await generateText({ instruction: 'Clean this prompt. Remove Telegram IDs, URLs, follow us text. Return ONLY the cleaned prompt:\n\n' + raw })
+    const { text } = await generateText({
+      instruction: 'Clean this prompt. Remove Telegram IDs, URLs, follow us text. Return ONLY the cleaned prompt:\n\n' + raw,
+    })
     return text.trim() || raw.replace(/https?:\/\/\S+|@[\w_]+|(t\.me|telegram\.me)\S*/gi, '').trim()
-  } catch { return raw.replace(/https?:\/\/\S+|@[\w_]+|(t\.me|telegram\.me)\S*/gi, '').trim() }
+  } catch (err: any) {
+    console.error('[NORMALIZE_PROMPT_FAIL]:', err?.message)
+    return raw.replace(/https?:\/\/\S+|@[\w_]+|(t\.me|telegram\.me)\S*/gi, '').trim()
+  }
 }
 
 type Cat = { slug: string; fa: string; en: string; subs: { slug: string; fa: string; en: string }[] }
 
 export async function analyzeWithGemini(opts: {
   text: string
-  imgBase64: string | null
+  imgBase64?: string | null
   imgMime?: string
   categories: Cat[]
-  mode?: 'auto-import' | 'user-submit' // حالت جدید
+  mode?: 'auto-import' | 'user-submit'
 }): Promise<GeminiResult> {
   const isUserSubmit = opts.mode === 'user-submit'
-  const catSlugs = opts.categories.map(c => c.slug).join(', ')
-  const vocabFa = TAG_VOCAB.map(t => t.fa).join('، ')
+  const catSlugs = opts.categories.map((c) => c.slug).join(', ')
+  const vocabFa = TAG_VOCAB.map((t) => t.fa).join('، ')
 
-  let instruction = ''
-  if (isUserSubmit) {
-    instruction = `You are a tagging assistant. Analyze this prompt and return JSON.
+  const instruction = isUserSubmit
+    ? `You are a tagging assistant. Analyze this prompt and return JSON.
 CRITICAL RULES:
-1. DO NOT CHANGE the user's original text. Return 'titleFa', 'titleEn', 'descFa', 'descEn', 'usageFa', 'usageEn', and 'promptEn' EXACTLY as provided in the input.
-2. ONLY generate 'tagsFa' (2-4 items strictly from: ${vocabFa}) and 'tagsEn' (English equivalents).
+1. Return JSON containing: titleFa, titleEn, descFa, descEn, usageFa, usageEn, promptEn.
+2. ONLY generate 'tagsFa' (2-4 items strictly from: ${vocabFa}) and 'tagsEn'.
 3. Choose the best 'categorySlug' (from: ${catSlugs}) and 'subSlug' (or null).
-Input: ${opts.text.slice(0, 1500)}`
-  } else {
-    instruction = `You are an AI prompt curator. Analyze this prompt and return JSON.
+Input: ${opts.text.slice(0, 2000)}`
+    : `You are an AI prompt curator. Analyze this prompt and return JSON.
 CRITICAL RULES:
-1. 'titleFa' MUST start with the word "پرامپت " (e.g., "پرامپت پرتره سیاه و سفید").
+1. 'titleFa' MUST start with the word "پرامپت ".
 2. Generate catchy 'titleFa'/'titleEn', short 'descFa'/'descEn', and 'usageFa'/'usageEn'.
 3. 'promptEn' is the full prompt translated to English.
 4. 'tagsFa' (2-4 items from: ${vocabFa}) and 'tagsEn'.
 5. Choose 'categorySlug' (from: ${catSlugs}) and 'subSlug' (or null).
-Input: ${opts.text.slice(0, 1500)}`
+Input: ${opts.text.slice(0, 2000)}`
+
+  const { text: raw } = await generateText({
+    instruction,
+    imgBase64: opts.imgBase64,
+    imgMime: opts.imgMime,
+    expectJson: true,
+  })
+
+  let parsed: any = {}
+  try {
+    const cleanedJson = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/i, '').trim()
+    const m = cleanedJson.match(/\{[\s\S]*\}/)
+    parsed = m ? JSON.parse(m[0]) : JSON.parse(cleanedJson)
+  } catch {
+    parsed = {}
   }
 
-  const { text: raw } = await generateText({ instruction, imgBase64: opts.imgBase64, imgMime: opts.imgMime })
-  const m = raw.match(/\{[\s\S]*\}/)
-  let parsed: any = {}
-  try { parsed = m ? JSON.parse(m[0]) : {} } catch { parsed = {} }
-
-  // اعمال اجباری کلمه "پرامپت" برای حالت ایمپورت خودکار
   if (!isUserSubmit) {
     const baseTitle = String(parsed.titleFa || 'هوش مصنوعی').trim()
     parsed.titleFa = baseTitle.startsWith('پرامپت') ? baseTitle : `پرامپت ${baseTitle}`
