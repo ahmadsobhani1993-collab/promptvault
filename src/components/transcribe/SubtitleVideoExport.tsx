@@ -22,8 +22,6 @@ const STYLE_STORAGE_KEY = 'promptvault.subtitle.style'
 const FPS = 30
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
 
-// مقدار پیش‌فرض استاندارد رنگ (SDR/Rec.709) — فقط وقتی که مرورگر (بیشتر دیده‌شده در Safari/iOS)
-// این فیلد را در متادیتای خروجی VideoEncoder پر نمی‌کند، به‌جایش جایگزین می‌شود
 const FALLBACK_COLOR_SPACE = { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', fullRange: false } as const
 
 let cachedFFmpeg: any = null
@@ -116,16 +114,14 @@ export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segm
   const [eta, setEta] = useState<string>('')
 
   const abortRef = useRef(false)
-  const currentStyle = style || DEFAULT_STYLE
-  const styleRef = useRef(currentStyle)
-  styleRef.current = currentStyle
   const segRef = useRef(segments)
   segRef.current = segments
 
   useEffect(() => {
-    loadFont(currentStyle.fontId || 'Vazirmatn').catch(() => {})
+    const s = style || readStoredStyle() || DEFAULT_STYLE
+    loadFont(s.fontId || 'Vazirmatn').catch(() => {})
     getOrInitFFmpeg().catch(() => {})
-  }, [currentStyle.fontId])
+  }, [style])
 
   const cancelExport = () => {
     abortRef.current = true
@@ -153,11 +149,11 @@ export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segm
         throw new Error('مرورگر شما از WebCodecs پشتیبانی نمی‌کند. لطفاً از آخرین نسخه Chrome یا Edge استفاده کنید.')
       }
 
+      // خواندن قطعی استایل ذخیره‌شده یا پروپ
       const storedStyle = readStoredStyle()
-      const exportStyle: Style = { ...DEFAULT_STYLE, ...(storedStyle || {}), ...(style || {}) }
-      styleRef.current = exportStyle
+      const activeStyle: Style = { ...DEFAULT_STYLE, ...(storedStyle || {}), ...(style || {}) }
 
-      await loadFont(exportStyle.fontId || 'Vazirmatn')
+      await loadFont(activeStyle.fontId || 'Vazirmatn')
       try { await document.fonts.ready } catch {}
 
       video = document.createElement('video')
@@ -215,8 +211,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segm
         throw new Error('WebCodecs VideoFrame در مرورگر پشتیبانی نمی‌شود.')
       }
 
-      // برای دیباگ دقیق‌تر: به‌جای فقط چانک اول، آخرین چانکی که قبل از کرش دیده شده را نگه می‌داریم،
-      // و addVideoChunk / finalize را جدا در try/catch می‌گذاریم تا پیام خطا دقیقاً بگوید کجا کرش کرده
       let chunkIndexDebug = 0
       let lastChunkMetaDebug = 'ثبت‌نشده'
       let encoderFatalError: Error | null = null
@@ -256,6 +250,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segm
         framerate: FPS,
       })
 
+      // ترسیم لایه زیرنویس با استفاده مستقیم از activeStyle (کاملاً مصون از Re-render شدن کامپوننت)
       const renderSubtitleLayer = (mediaTime: number) => {
         const t = clamp(mediaTime, 0, duration)
         const seg = segRef.current.find((item) => t >= item.start && t <= item.end)
@@ -263,7 +258,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segm
         ctx.drawImage(video!, 0, 0, W, H)
         if (!seg) return
 
-        const s = styleRef.current || DEFAULT_STYLE
+        const s = activeStyle
         const direction = resolveDirection(s.direction, seg.text) || 'rtl'
         const align = resolveAlign(s.align, direction)
         const elapsed = Math.max(0, t - seg.start)
@@ -378,8 +373,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segm
 
         const frame = new VideoFrameClass(canvas, {
           timestamp: Math.round(frameIndex * frameDurationMicroseconds),
-          // بدون این، duration چانک خروجی null می‌شود و همین باعث کرش addVideoChunkRaw می‌شد —
-          // نه ربطی به decoderConfig/colorSpace داشت که قبلاً حدس زده بودم
           duration: Math.round(frameDurationMicroseconds),
         })
 
