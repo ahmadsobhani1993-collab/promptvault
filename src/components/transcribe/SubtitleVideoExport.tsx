@@ -223,9 +223,13 @@ export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segm
         // (ارور «null is not an object (evaluating 't.info.decoderConfig.colorSpace')»).
         // این‌جا فقط یک مقدار پیش‌فرض امن جایگزین می‌کنیم، بدون تغییر منطق اصلی.
         output: (chunk: any, meta: any) => {
-          if (meta && !meta.decoderConfig) {
+          if (!meta) {
+            // اگر خودِ meta کلاً undefined باشد (که ظاهراً همین‌جا اتفاق افتاده)، شرط قبلی
+            // (meta && !meta.decoderConfig) کلاً رد می‌شد و هیچ‌وقت جایگزین نمی‌شد
+            meta = { decoderConfig: { codec: 'avc1.4d002a', codedWidth: W, codedHeight: H, colorSpace: FALLBACK_COLOR_SPACE } }
+          } else if (!meta.decoderConfig) {
             meta = { ...meta, decoderConfig: { codec: 'avc1.4d002a', codedWidth: W, codedHeight: H, colorSpace: FALLBACK_COLOR_SPACE } }
-          } else if (meta?.decoderConfig && !meta.decoderConfig.colorSpace) {
+          } else if (!meta.decoderConfig.colorSpace) {
             meta = { ...meta, decoderConfig: { ...meta.decoderConfig, colorSpace: FALLBACK_COLOR_SPACE } }
           }
           muxer.addVideoChunk(chunk, meta)
