@@ -10,26 +10,30 @@ export async function POST(req: NextRequest) {
     const audioFile = formData.get("audio") as Blob | null;
 
     if (!text || !text.trim()) {
-      return NextResponse.json({ ok: false, error: "متن الزامی است" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "متن ورودی الزامی است" }, { status: 400 });
     }
 
-    const app = await Client.connect("k2-fsa/OmniVoice");
+    console.log("TTS Request received. Text length:", text.length, "Audio size:", audioFile?.size);
 
-    // پارامترهای منطبق با ورودی‌های Gradio اسپیس OmniVoice:
-    // آرگومان ۱: متن ورودی
-    // آرگومان ۲: زبان (پیش‌فرض Auto)
-    // آرگومان ۳: فایل نمونه صوتی
-    const result = await app.predict(0, [
+    const app = await Client.connect("k2-fsa/OmniVoice");
+    
+    // ارسال به endpoint پیش‌فرض
+    const result: any = await app.predict(0, [
       text,
       "Auto",
       audioFile || null,
     ]);
 
+    console.log("TTS Result:", result?.data);
     return NextResponse.json({ ok: true, data: result.data });
   } catch (err: any) {
-    console.error("OmniVoice Error:", err);
+    console.error("Full TTS Error Log:", err);
     return NextResponse.json(
-      { ok: false, error: err?.message || "خطا در برقراری ارتباط با مدل صوتی" },
+      { 
+        ok: false, 
+        error: err?.message || "خطای ناشناخته در سرور صوتی",
+        stack: err?.stack || null
+      },
       { status: 500 }
     );
   }

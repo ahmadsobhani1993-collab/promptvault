@@ -32,19 +32,13 @@ export default function PdfToWordConverter() {
         existing.addEventListener("load", () => resolve((window as any).pdfjsLib));
         return;
       }
-
       const script = document.createElement("script");
       script.id = "pdfjs-cdn-script";
       script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-      script.crossOrigin = "anonymous";
       script.onload = () => {
         const lib = (window as any).pdfjsLib;
-        if (lib) {
-          lib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-          resolve(lib);
-        } else {
-          reject(new Error("موتور بارگذاری نشد"));
-        }
+        lib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+        resolve(lib);
       };
       script.onerror = () => reject(new Error("خطا در دانلود اسکریپت PDF"));
       document.head.appendChild(script);
@@ -55,12 +49,10 @@ export default function PdfToWordConverter() {
     if (!file) return;
     setLoading(true);
     setProgress(5);
-    setStatusText("در حال آماده‌سازی موتور اسناد...");
+    setStatusText("آماده‌سازی موتور پردازش اسناد...");
 
     try {
       const pdfjs = await loadPdfEngine();
-      if (!pdfjs) throw new Error("موتور در دسترس نیست");
-
       const arrayBuffer = await file.arrayBuffer();
       const pdfDoc = await pdfjs.getDocument({ data: arrayBuffer }).promise;
       const numPages = pdfDoc.numPages;
@@ -68,8 +60,34 @@ export default function PdfToWordConverter() {
       const docSections: Paragraph[] = [];
 
       for (let i = 1; i <= numPages; i++) {
+        setStatusText(`در حال استخراج صفحه ${i} از ${numPages} با هوش مصنوعی...`);
         const page = await pdfDoc.getPage(i);
+
+        let pageText = "";
         const textContent = await page.getTextContent();
+        pageText = (textContent.items || []).map((item: any) => item.str || "").join(" ").trim();
+
+        // اگر صفحه لایه متنی نداشت (اسکن/تصویر بود)، با Gemini OCR خوانده می‌شود
+        if (pageText.length < 10) {
+          const viewport = page.getViewport({ scale: 1.5 });
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d");
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+
+          if (ctx) {
+            await page.render({ canvasContext: ctx, viewport }).promise;
+            const base64 = canvas.toDataURL("image/jpeg", 0.85);
+
+            const fd = new FormData();
+            fd.append("imageBase64", base64);
+            const res = await fetch("/api/ocr-gemini", { method: "POST", body: fd });
+            const data = await res.json();
+            if (data.ok && data.text) {
+              pageText = data.text;
+            }
+          }
+        }
 
         docSections.push(
           new Paragraph({
@@ -78,11 +96,6 @@ export default function PdfToWordConverter() {
             spacing: { before: 200, after: 100 },
           })
         );
-
-        const pageText = (textContent.items || [])
-          .map((item: any) => item.str || "")
-          .join(" ")
-          .trim();
 
         if (pageText.length > 0) {
           docSections.push(
@@ -96,22 +109,20 @@ export default function PdfToWordConverter() {
 
         const percent = Math.round((i / numPages) * 100);
         setProgress(percent);
-        setStatusText(`در حال استخراج متون (${percent}%)...`);
         page.cleanup();
       }
 
-      setStatusText("در حال ساخت فایل نهایی Word...");
+      setStatusText("در حال تولید فایل Word...");
       const doc = new Document({
         sections: [{ properties: {}, children: docSections }],
       });
 
       const blob = await Packer.toBlob(doc);
       saveAs(blob, file.name.replace(/\.pdf$/i, "") + ".docx");
-      setStatusText("تکمیل شد!");
+      setStatusText("انجام شد!");
     } catch (err: any) {
       console.error(err);
-      alert("خطا در پردازش فایل: " + (err?.message || "مشکلی رخ داد"));
-      setStatusText("خطا در پردازش");
+      alert("خطا: " + (err?.message || "مشکلی رخ داد"));
     } finally {
       setLoading(false);
     }
@@ -119,8 +130,8 @@ export default function PdfToWordConverter() {
 
   return (
     <div className="mx-auto max-w-2xl rounded-2xl border border-white/10 bg-zinc-950 p-6 text-white shadow-xl">
-      <h2 className="mb-2 text-2xl font-black text-amber-400">تبدیل PDF به ورد هوشمند</h2>
-      <p className="mb-6 text-sm text-zinc-400">استخراج محتوای متنی PDF و تبدیل به فایل قابل ویرایش Docx</p>
+      <h2 className="mb-2 text-2xl font-black text-amber-400">تبدیل هوشمند PDF به ورد با Gemini OCR</h2>
+      <p className="mb-6 text-sm text-zinc-400">پشتیبانی کامل از صفحات اسکن‌شده و دست‌نویس فارسی</p>
 
       <div className="mb-6">
         <input type="file" accept=".pdf,application/pdf" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
@@ -150,7 +161,7 @@ export default function PdfToWordConverter() {
         onClick={convertToWord}
         className="w-full rounded-xl bg-amber-500 py-3 font-bold text-black transition hover:bg-amber-400 disabled:opacity-50"
       >
-        {loading ? "در حال پردازش..." : "شروع تبدیل و دانلود فایل DOCX"}
+        {loading ? "در حال پردازش..." : "شروع تبدیل و دانلود DOCX"}
       </button>
     </div>
   );
