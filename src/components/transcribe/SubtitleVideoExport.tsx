@@ -147,9 +147,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segm
     setStatus('در حال آماده‌سازی...')
 
     let video: HTMLVideoElement | null = null
-    // برای دیباگ: شکل واقعی متادیتای اولین چانک را نگه می‌داریم تا اگر باز هم کرش کرد،
-    // خودِ پیام خطا نشانش بدهد و مجبور نباشیم حدس بزنیم
-    let firstChunkMetaDebug = 'ثبت‌نشده (هنوز به output نرسیده)'
 
     try {
       if (typeof (window as any).VideoEncoder === 'undefined') {
@@ -218,29 +215,37 @@ export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segm
         throw new Error('WebCodecs VideoFrame در مرورگر پشتیبانی نمی‌شود.')
       }
 
+      // برای دیباگ دقیق‌تر: به‌جای فقط چانک اول، آخرین چانکی که قبل از کرش دیده شده را نگه می‌داریم،
+      // و addVideoChunk / finalize را جدا در try/catch می‌گذاریم تا پیام خطا دقیقاً بگوید کجا کرش کرده
+      let chunkIndexDebug = 0
+      let lastChunkMetaDebug = 'ثبت‌نشده'
+      let encoderFatalError: Error | null = null
+
       const encoder = new (window as any).VideoEncoder({
-        // ─── تنها تغییر نسبت به نسخه‌ی قبلی ───
-        // در برخی مرورگرها (به‌خصوص Safari/iOS) متادیتای خروجی VideoEncoder گاهی
-        // decoderConfig یا decoderConfig.colorSpace را کامل پر نمی‌کند. mp4-muxer
-        // همین فیلد را مستقیماً برای ساخت باکس رنگ mp4 می‌خواند و بدون آن کرش می‌کند
-        // (ارور «null is not an object (evaluating 't.info.decoderConfig.colorSpace')»).
-        // این‌جا فقط یک مقدار پیش‌فرض امن جایگزین می‌کنیم، بدون تغییر منطق اصلی.
         output: (chunk: any, meta: any) => {
-          if (firstChunkMetaDebug.startsWith('ثبت‌نشده')) {
-            try { firstChunkMetaDebug = JSON.stringify(meta) } catch { firstChunkMetaDebug = String(meta) }
-          }
+          chunkIndexDebug++
+          try { lastChunkMetaDebug = JSON.stringify(meta) } catch { lastChunkMetaDebug = String(meta) }
+
           if (!meta) {
-            // اگر خودِ meta کلاً undefined باشد (که ظاهراً همین‌جا اتفاق افتاده)، شرط قبلی
-            // (meta && !meta.decoderConfig) کلاً رد می‌شد و هیچ‌وقت جایگزین نمی‌شد
             meta = { decoderConfig: { codec: 'avc1.4d002a', codedWidth: W, codedHeight: H, colorSpace: FALLBACK_COLOR_SPACE } }
           } else if (!meta.decoderConfig) {
             meta = { ...meta, decoderConfig: { codec: 'avc1.4d002a', codedWidth: W, codedHeight: H, colorSpace: FALLBACK_COLOR_SPACE } }
           } else if (!meta.decoderConfig.colorSpace) {
             meta = { ...meta, decoderConfig: { ...meta.decoderConfig, colorSpace: FALLBACK_COLOR_SPACE } }
           }
-          muxer.addVideoChunk(chunk, meta)
+
+          try {
+            muxer.addVideoChunk(chunk, meta)
+          } catch (muxErr: any) {
+            encoderFatalError = new Error(
+              `کرش داخل addVideoChunk، چانک شماره ${chunkIndexDebug}: ${muxErr?.message || muxErr}\nmeta همین چانک: ${lastChunkMetaDebug}`
+            )
+          }
         },
-        error: (e: any) => console.error('[VideoEncoder error]', e),
+        error: (e: any) => {
+          console.error('[VideoEncoder error]', e)
+          if (!encoderFatalError) encoderFatalError = e
+        },
       })
 
       encoder.configure({
@@ -382,6 +387,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segm
         if (encoder.encodeQueueSize > 5) {
           await encoder.flush()
         }
+        if (encoderFatalError) throw encoderFatalError
 
         const elapsedSec = (performance.now() - startTime) / 1000
         const framesDone = frameIndex + 1
@@ -398,7 +404,15 @@ export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segm
       }
 
       await encoder.flush()
-      muxer.finalize()
+      if (encoderFatalError) throw encoderFatalError
+
+      try {
+        muxer.finalize()
+      } catch (finErr: any) {
+        throw new Error(
+          `کرش داخل muxer.finalize(): ${finErr?.message || finErr}\nتعداد کل چانک‌ها: ${chunkIndexDebug}\nآخرین meta دیده‌شده: ${lastChunkMetaDebug}`
+        )
+      }
 
       if (abortRef.current) throw new Error('عملیات رندر توسط کاربر لغو شد.')
 
@@ -455,7 +469,7 @@ export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segm
       } else {
         console.error('[WebCodecs Render Error]', error)
         setStatus('❌ خطا در رندر')
-        alert('خطا: ' + (error?.message || 'مشکلی در عملیات رندر پیش آمد') + '\n\n[دیباگ meta چانک اول]: ' + firstChunkMetaDebug)
+        alert('خطا: ' + (error?.message || 'مشکلی در عملیات رندر پیش آمد'))
       }
     } finally {
       if (video?.parentNode) video.parentNode.removeChild(video)
