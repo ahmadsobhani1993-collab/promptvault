@@ -18,16 +18,12 @@ export type GeminiResult = {
 
 const cleanTitle = (t: string) => t.replace(/^([\u0600-\u06FF\w]+)\s+\1/, '$1')
 
+// حفظ مدل‌های فعال با اولویت سقف روزانه و سرعت بالا
 export const MODEL_CHAIN = [
   'gemini-3.5-flash-lite',
-  'gemini-3.1-flash-lite',
+  'gemini-3.5-flash',
   'gemini-3.8-flash',
   'gemini-3.7-flash',
-  'gemini-3.6-flash',
-  'gemini-3.5-flash',
-  'gemini-3-flash',
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-lite',
 ]
 
 function getGeminiKeys(): string[] {
@@ -53,7 +49,7 @@ export async function generateText(opts: {
 
   const keys = getGeminiKeys()
   if (keys.length === 0) {
-    throw new Error('GEMINI_FAILED: کلید API برای جمینای در محیط سرور تنظیم نشده است')
+    throw new Error('GEMINI_FAILED: کلید API برای جمینای تنظیم نشده است')
   }
 
   const errors: string[] = []
@@ -67,13 +63,14 @@ export async function generateText(opts: {
           payload.generationConfig = { responseMimeType: 'application/json' }
         }
 
+        // مهلت ۳۰ ثانیه برای اطمینان از دریافت کامل ترجمه
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
-            signal: AbortSignal.timeout(12000),
+            signal: AbortSignal.timeout(30000),
           }
         )
 
@@ -95,7 +92,7 @@ export async function generateText(opts: {
         return { text: raw, model }
       } catch (err: any) {
         const isTimeout = err?.name === 'TimeoutError' || String(err).includes('timeout')
-        const msg = isTimeout ? 'Timeout (>12s)' : (err?.message || 'Network error')
+        const msg = isTimeout ? 'Timeout (>30s)' : (err?.message || 'Network error')
         errors.push(`${model}: ${msg}`)
         continue
       }
