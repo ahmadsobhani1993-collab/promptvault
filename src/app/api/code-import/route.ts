@@ -91,7 +91,6 @@ Return ONLY valid JSON with a root array named "items":
 Raw Text:
 ${rawChunk.slice(0, 15000)}`
 
-    // فراخوانی مستقیم از آبشار مدل‌ها و کلیدهای چرخشی در gemini.ts
     const { text: aiRaw, model: usedModel } = await generateText({
       instruction,
       expectJson: true,
@@ -314,4 +313,4 @@ startBtn.onclick = async function() {
 };
 </script>
 </body>
-</html>
+</html>`
