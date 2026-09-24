@@ -1,4 +1,10 @@
-﻿interface GeminiPart {
+﻿export const TAG_VOCAB = [
+  "midjourney", "chatgpt", "dall-e", "stable-diffusion", "claude",
+  "writing", "coding", "marketing", "art", "productivity",
+  "design", "business", "education", "seo", "photography"
+];
+
+interface GeminiPart {
   text?: string;
   inlineData?: {
     mimeType: string;
@@ -16,7 +22,6 @@ const ACTIVE_MODELS = [
   "gemini-3.5-flash-lite",
   "gemini-3.7-flash",
   "gemini-3.8-flash",
-  "gemini-3.1-flash-lite",
 ];
 
 let currentKeyIndex = 0;
@@ -56,6 +61,22 @@ export async function generateWithGeminiCascade(
     throw new Error("هیچ کلید معتبری برای Gemini یافت نشد.");
   }
 
+  // حذف فیلدهای متفرقه و تضمین ساختار استاندارد Google API
+  const sanitizedContents = contents.map((c) => ({
+    role: c.role,
+    parts: c.parts.map((p) => {
+      const cleanPart: any = {};
+      if (p.text !== undefined) cleanPart.text = String(p.text);
+      if (p.inlineData) {
+        cleanPart.inline_data = {
+          mime_type: p.inlineData.mimeType,
+          data: p.inlineData.data,
+        };
+      }
+      return cleanPart;
+    }),
+  }));
+
   let lastError: any = null;
 
   for (const model of ACTIVE_MODELS) {
@@ -63,7 +84,7 @@ export async function generateWithGeminiCascade(
       const activeKey = keys[(currentKeyIndex + i) % keys.length];
 
       try {
-        const bodyPayload: any = { contents };
+        const bodyPayload: any = { contents: sanitizedContents };
         if (systemInstruction) {
           bodyPayload.systemInstruction = {
             parts: [{ text: systemInstruction }],
@@ -100,14 +121,14 @@ export async function generateWithGeminiCascade(
         lastError = new Error(
           `${model} HTTP ${res.status}: ${errorData?.error?.message || "Unavailable"}`
         );
-        await sleep(400);
+        await sleep(300);
       } catch (err: any) {
         lastError = err;
       }
     }
   }
 
-  throw lastError || new Error("همه مدل‌ها و کلیدهای جمینای ناموفق بودند.");
+  throw lastError || new Error("تمامی کلیدها و مدل‌ها ناموفق بودند.");
 }
 
 export async function generateText(prompt: string, systemInstruction?: string): Promise<string> {
@@ -130,18 +151,48 @@ export async function normalizePrompt(rawText: string): Promise<string> {
     );
     return cleaned.trim() || rawText;
   } catch (err) {
-    console.error("normalizePrompt error fallback to raw:", err);
     return rawText;
   }
 }
 
 export async function analyzeWithGemini(
-  content: string | GeminiPart[],
+  content: any,
   systemInstruction?: string,
   jsonMode: boolean = true
 ): Promise<any> {
-  const parts: GeminiPart[] = typeof content === "string" ? [{ text: content }] : content;
-  const rawResponse = await generateWithGeminiCascade([{ parts }], systemInstruction, jsonMode);
+  let promptText = "";
+
+  // استخراج متن تمیز بدون ارسال عکس به جمینای
+  if (typeof content === "string") {
+    promptText = content;
+  } else if (Array.isArray(content)) {
+    promptText = content
+      .map((item) => (typeof item === "string" ? item : item.text || item.prompt || ""))
+      .filter(Boolean)
+      .join("\n\n");
+  } else if (typeof content === "object" && content !== null) {
+    const parts: string[] = [];
+    if (content.prompt) parts.push(`Prompt:\n${content.prompt}`);
+    if (content.text) parts.push(`Text:\n${content.text}`);
+    if (content.categories) {
+      const cats = Array.isArray(content.categories)
+        ? content.categories.join(", ")
+        : JSON.stringify(content.categories);
+      parts.push(`Available Categories:\n${cats}`);
+    }
+    if (parts.length === 0) {
+      // فیلدهای غیرمتنی مانند imgBase64 را دور می‌ریزیم
+      const { imgBase64, mode, ...otherData } = content;
+      parts.push(JSON.stringify(otherData));
+    }
+    promptText = parts.join("\n\n");
+  }
+
+  const rawResponse = await generateWithGeminiCascade(
+    [{ parts: [{ text: promptText }] }],
+    systemInstruction,
+    jsonMode
+  );
 
   if (jsonMode) {
     try {
