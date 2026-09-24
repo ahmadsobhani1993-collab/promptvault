@@ -13,19 +13,19 @@ export async function GET() {
     });
   }
 
-  const modelName = "gemini-2.5-flash"; // یا gemini-3.5-flash-lite
+  // استفاده از مدل فعال و سهمیه‌دار جدول شما
+  const modelName = "gemini-3.5-flash-lite";
 
   try {
     const startTime = Date.now();
 
-    // ارسال مستقیم از طریق REST API با هدر Authorization
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
+          "x-goog-api-key": apiKey,
         },
         body: JSON.stringify({
           contents: [{ parts: [{ text: "ping" }] }],
@@ -37,46 +37,21 @@ export async function GET() {
     const data = await res.json();
 
     if (!res.ok) {
-      // در صورت عدم پذیرش Bearer، بررسی فرمت x-goog-api-key
-      const fallbackRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+      return NextResponse.json(
         {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": apiKey,
-          },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: "ping" }] }],
-          }),
-        }
+          status: "google_error",
+          model: modelName,
+          error: data,
+        },
+        { status: res.status }
       );
-      const fallbackData = await fallbackRes.json();
-      
-      if (!fallbackRes.ok) {
-        return NextResponse.json(
-          {
-            status: "google_error",
-            primaryError: data,
-            fallbackError: fallbackData,
-          },
-          { status: 500 }
-        );
-      }
-
-      return NextResponse.json({
-        status: "success",
-        methodUsed: "x-goog-api-key",
-        elapsedMs: elapsed,
-        text: fallbackData?.candidates?.[0]?.content?.parts?.[0]?.text,
-      });
     }
 
     return NextResponse.json({
       status: "success",
-      methodUsed: "Bearer",
+      model: modelName,
       elapsedMs: elapsed,
-      text: data?.candidates?.[0]?.content?.parts?.[0]?.text,
+      reply: data?.candidates?.[0]?.content?.parts?.[0]?.text || "پاسخ خالی",
     });
   } catch (err: any) {
     return NextResponse.json(
