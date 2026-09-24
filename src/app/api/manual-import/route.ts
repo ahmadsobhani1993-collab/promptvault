@@ -20,7 +20,6 @@ async function readJson(res: Response) {
 export async function GET(req: Request) {
   const url = new URL(req.url)
 
-  // صفحه کنسول گرافیکی
   if (url.searchParams.get('ui') === '1') {
     return new Response(PAGE, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
   }
@@ -30,13 +29,11 @@ export async function GET(req: Request) {
   }
 
   try {
-    // فقط یک آیتم جمع کن
-    const cRes = await collectGET(mkReq('/api/import/collect?count=1'))
+    const cRes = await collectGET(mkReq('/api/import/collect?count=10'))
     const c = await readJson(cRes)
     if (!c.ok) return NextResponse.json({ ok: false, stage: 'collect', detail: c })
     if (!c.collected) return NextResponse.json({ ok: true, done: true, message: 'صف خالی است' })
 
-    // فقط یک آیتم ایمپورت کن
     const iRes = await importOneGET(mkReq('/api/debug/import-one'))
     const im = await readJson(iRes)
     return NextResponse.json({ ok: im.ok === true, done: false, slug: im.slug, detail: im })
@@ -77,9 +74,11 @@ function loop(){
   step().then(function(j){
     if(j.done){log('✅ صف تلگرام خالی شد — مجموع ایمپورت: '+done,'ok');stop();return;}
     if(!j.ok){log('❌ خطا: '+(j.error||JSON.stringify(j)),'err');stop();return;}
-    done++;document.getElementById('count').textContent='ایمپورت شده: '+done;
-    log('✅ ایمپورت شد: '+(j.slug||'-'),'ok');
-    setTimeout(loop,3000);
+    var added = (j.detail && j.detail.count) ? j.detail.count : 1;
+    done += added;
+    document.getElementById('count').textContent='ایمپورت شده: '+done;
+    log('✅ بچ ایمپورت شد ('+added+' عدد): '+(j.slug||'-'),'ok');
+    setTimeout(loop,2000);
   }).catch(function(e){log('❌ '+e.message,'err');stop();});
 }
 document.getElementById('start').onclick=function(){running=true;done=0;this.disabled=true;document.getElementById('stop').disabled=false;log('شروع فرآیند ایمپورت...');loop();};
@@ -87,4 +86,3 @@ document.getElementById('stop').onclick=function(){log('درخواست توقف.
 </script>
 </body>
 </html>`
-
