@@ -10,31 +10,29 @@ export async function POST(req: NextRequest) {
     const audioFile = formData.get("audio") as Blob | null;
 
     if (!text || !text.trim()) {
-      return NextResponse.json({ ok: false, error: "متن ورودی الزامی است." }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "لطفاً متن را وارد کنید." }, { status: 400 });
     }
 
     const app = await Client.connect("k2-fsa/OmniVoice");
 
-    // آماده‌سازی فایل صوتی در صورت وجود
     const refAudio = audioFile && audioFile.size > 0 ? handle_file(audioFile) : null;
 
-    // ارسال ۱۲ آرگومان دقیق و مطابق با سورس کد _clone_fn
+    // ارسال ۱۲ آرگومان دقیق و الزامی اندپوینت /_clone_fn
     const result: any = await app.predict("/_clone_fn", [
       text,          // 1. text
       "Auto",        // 2. lang
       refAudio,      // 3. ref_aud
-      "",            // 4. ref_text (optional)
-      "",            // 5. instruct (style prompt)
-      32,            // 6. ns (Inference steps: 32)
-      3.0,           // 7. gs (Guidance scale: 3.0)
-      0.8,           // 8. dn (Denoise ratio: 0.8)
-      1.0,           // 9. sp (Speed: 1.0)
-      0,             // 10. du (Duration: 0 = auto)
-      true,          // 11. pp (Preprocess prompt)
-      true           // 12. po (Postprocess output)
+      "",            // 4. ref_text
+      "",            // 5. instruct
+      32,            // 6. ns
+      3.0,           // 7. gs
+      0.8,           // 8. dn
+      1.0,           // 9. sp
+      0,             // 10. du
+      true,          // 11. pp
+      true           // 12. po
     ]);
 
-    // داده‌های خروجی: ایندکس ۰ فایل صوت است
     let audioUrl = "";
     if (Array.isArray(result?.data)) {
       const first = result.data[0];
@@ -44,15 +42,14 @@ export async function POST(req: NextRequest) {
     }
 
     if (!audioUrl) {
-      console.error("OmniVoice Output missing:", result?.data);
-      return NextResponse.json({ ok: false, error: "فایل خروجی تولید نشد." }, { status: 500 });
+      return NextResponse.json({ ok: false, error: "مدل موفق به ساخت فایل صوتی نشد." }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true, data: audioUrl });
   } catch (err: any) {
-    console.error("OmniVoice Full Error:", err);
+    console.error("OmniVoice Error:", err);
     return NextResponse.json(
-      { ok: false, error: err?.message || "خطا در پردازش با مدل صوتی" },
+      { ok: false, error: err?.message || "خطا در پردازش با سرور صوتی" },
       { status: 500 }
     );
   }

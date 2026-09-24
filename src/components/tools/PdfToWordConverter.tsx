@@ -4,6 +4,9 @@ import { useState, useRef, ChangeEvent } from "react";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from "docx";
 import { saveAs } from "file-saver";
 
+const CHUNK_SIZE = 5; // پردازش ۵ صفحه در هر درخواست به جمینای
+const MAX_ALLOWED_PAGES = 500; // محدودیت ۵۰۰ صفحه در روز
+
 export default function PdfToWordConverter() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -47,7 +50,7 @@ export default function PdfToWordConverter() {
           reject(new Error("کتابخانه PDF بارگذاری نشد"));
         }
       };
-      script.onerror = () => reject(new Error("عدم موفقیت در لود اسکریپت PDF"));
+      script.onerror = () => reject(new Error("عدم موفقیت در لود موتور PDF"));
       document.head.appendChild(script);
     });
   };
@@ -55,108 +58,108 @@ export default function PdfToWordConverter() {
   const convertToWord = async () => {
     if (!file) return;
     setLoading(true);
-    setProgress(5);
-    setStatusText("آماده‌سازی موتور پردازش اسناد...");
+    setProgress(0);
     setErrorDetails(null);
 
     try {
+      setStatusText("در حال بارگذاری فایل...");
       const pdfjs = await loadPdfEngine();
       const arrayBuffer = await file.arrayBuffer();
       const pdfDoc = await pdfjs.getDocument({ data: arrayBuffer }).promise;
       const numPages = pdfDoc.numPages;
 
-      const docSections: Paragraph[] = [];
-
-      for (let i = 1; i <= numPages; i++) {
-        setStatusText(`در حال بررسی صفحه ${i} از ${numPages}...`);
-        const page = await pdfDoc.getPage(i);
-        const textContent = await page.getTextContent();
-
-        let extractedText = (textContent.items || [])
-          .map((item: any) => item.str || "")
-          .join(" ")
-          .trim();
-
-        if (extractedText.length >= 25) {
-          setStatusText(`در حال بازنویسی و اصلاح نگارشی صفحه ${i} با هوش مصنوعی...`);
-          const fd = new FormData();
-          fd.append("mode", "cleanup");
-          fd.append("rawText", extractedText);
-
-          const res = await fetch("/api/ocr-gemini", { method: "POST", body: fd });
-          const data = await res.json().catch(() => null);
-
-          if (res.ok && data?.ok && data.text) {
-            extractedText = data.text;
-          } else {
-            console.error("Cleanup API Warning:", data?.error);
-            setErrorDetails(`هشدار صفحه ${i}: هوش مصنوعی پاسخ نداد، متن اولیه حفظ شد.`);
-          }
-        } else {
-          setStatusText(`در حال پردازش بینایی (Vision OCR) برای صفحه اسکن‌شده ${i}...`);
-          const viewport = page.getViewport({ scale: 1.2 });
-          const canvas = document.createElement("canvas");
-          const ctx = canvas.getContext("2d");
-          canvas.height = viewport.height;
-          canvas.width = viewport.width;
-
-          if (ctx) {
-            await page.render({ canvasContext: ctx, viewport }).promise;
-            const base64 = canvas.toDataURL("image/jpeg", 0.75);
-
-            const fd = new FormData();
-            fd.append("mode", "ocr");
-            fd.append("imageBase64", base64);
-
-            const res = await fetch("/api/ocr-gemini", { method: "POST", body: fd });
-            const data = await res.json().catch(() => null);
-
-            if (res.ok && data?.ok && data.text) {
-              extractedText = data.text;
-            } else {
-              throw new Error(`خطا در صفحه اسکن‌شده ${i}: ${data?.error || res.statusText}`);
-            }
-          }
-        }
-
-        docSections.push(
-          new Paragraph({
-            text: `--- صفحه ${i} ---`,
-            heading: HeadingLevel.HEADING_3,
-            spacing: { before: 200, after: 100 },
-          })
-        );
-
-        if (extractedText.length > 0) {
-          const paragraphs = extractedText.split("\n").filter((p: string) => p.trim());
-          for (const p of paragraphs) {
-            docSections.push(
-              new Paragraph({
-                children: [new TextRun({ text: p, size: 24 })],
-                bidirectional: true,
-                spacing: { after: 120 },
-              })
-            );
-          }
-        }
-
-        const percent = Math.round((i / numPages) * 100);
-        setProgress(percent);
-        page.cleanup();
+      // بررسی سقف ۵۰۰ صفحه
+      if (numPages > MAX_ALLOWED_PAGES) {
+        throw new Error(`حجم سند بیش از سقف مجاز است. این فایل شامل ${numPages} صفحه است، در حالی که سقف مجاز پردازش ${MAX_ALLOWED_PAGES} صفحه در روز است.`);
       }
 
-      setStatusText("در حال خروجی گرفتن DOCX...");
+      const docSections: Paragraph[] = [];
+
+      // پیمایش دسته‌ای (Chunking)
+      for (let start = 1; start <= numPages; start += CHUNK_SIZE) {
+        const end = Math.min(start + CHUNK_SIZE - 1, numPages);
+        setStatusText(`در حال استخراج و تحلیل صفحات ${start} تا ${end} از ${numPages}...`);
+
+        const textItems: { page: number; text: string }[] = [];
+        const imageItems: { page: number; imageBase64: string }[] = [];
+
+        for (let p = start; p <= end; p++) {
+          const page = await pdfDoc.getPage(p);
+          const textContent = await page.getTextContent();
+          const pageText = (textContent.items || []).map((it: any) => it.str || "").join(" ").trim();
+
+          if (pageText.length >= 25) {
+            textItems.push({ page: p, text: pageText });
+          } else {
+            // اسکن/تصویر: رندر روی بوم با حجم کم
+            const viewport = page.getViewport({ scale: 1.1 });
+            const canvas = document.createElement("canvas");
+            const ctx = canvas.getContext("2d");
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+
+            if (ctx) {
+              await page.render({ canvasContext: ctx, viewport }).promise;
+              imageItems.push({ page: p, imageBase64: canvas.toDataURL("image/jpeg", 0.7) });
+            }
+          }
+          page.cleanup();
+        }
+
+        // ارسال چانک متنی به جمینای در صورت وجود
+        if (textItems.length > 0) {
+          const res = await fetch("/api/ocr-gemini", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mode: "cleanup", items: textItems }),
+          });
+          const data = await res.json().catch(() => null);
+          const rawResult = data?.ok && data.text ? data.text : textItems.map(t => `=== صفحه ${t.page} ===\n${t.text}`).join("\n\n");
+          
+          rawResult.split("\n").forEach((line: string) => {
+            if (line.trim().startsWith("===")) {
+              docSections.push(new Paragraph({ text: line.trim(), heading: HeadingLevel.HEADING_3, spacing: { before: 200, after: 100 } }));
+            } else if (line.trim()) {
+              docSections.push(new Paragraph({ children: [new TextRun({ text: line, size: 24 })], bidirectional: true, spacing: { after: 100 } }));
+            }
+          });
+        }
+
+        // ارسال چانک تصویری اسکن‌شده به جمینای
+        if (imageItems.length > 0) {
+          const res = await fetch("/api/ocr-gemini", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mode: "ocr", items: imageItems }),
+          });
+          const data = await res.json().catch(() => null);
+          if (data?.ok && data.text) {
+            data.text.split("\n").forEach((line: string) => {
+              if (line.trim().startsWith("===")) {
+                docSections.push(new Paragraph({ text: line.trim(), heading: HeadingLevel.HEADING_3, spacing: { before: 200, after: 100 } }));
+              } else if (line.trim()) {
+                docSections.push(new Paragraph({ children: [new TextRun({ text: line, size: 24 })], bidirectional: true, spacing: { after: 100 } }));
+              }
+            });
+          }
+        }
+
+        const percent = Math.round((end / numPages) * 100);
+        setProgress(percent);
+      }
+
+      setStatusText("در حال ساخت فایل نهایی Word...");
       const doc = new Document({
         sections: [{ properties: {}, children: docSections }],
       });
 
       const blob = await Packer.toBlob(doc);
       saveAs(blob, file.name.replace(/\.pdf$/i, "") + ".docx");
-      setStatusText("تبدیل با موفقیت انجام شد!");
+      setStatusText("تبدیل با موفقیت انجام و ذخیره شد!");
     } catch (err: any) {
       console.error(err);
-      setErrorDetails(err?.message || "خطای ناشناخته در تبدیل فایل");
-      setStatusText("فرآیند تبدیل با خطا متوقف شد.");
+      setErrorDetails(err?.message || "خطا در پردازش فایل");
+      setStatusText("فرآیند تبدیل متوقف شد.");
     } finally {
       setLoading(false);
     }
@@ -166,7 +169,7 @@ export default function PdfToWordConverter() {
     <div className="mx-auto max-w-2xl rounded-2xl border border-white/10 bg-zinc-950 p-6 text-white shadow-xl">
       <h2 className="mb-2 text-2xl font-black text-amber-400">تبدیل هوشمند PDF به فایل ورد</h2>
       <p className="mb-6 text-sm text-zinc-400">
-        پشتیبانی از اسناد متنی و صفحات اسکن‌شده همراه با تصحیح هوشمند متون فارسی
+        پردازش فوق سریع اسناد متنی و اسکن‌شده با جمینای (سقف روزانه ۵۰۰ صفحه)
       </p>
 
       <div className="mb-6">
@@ -193,7 +196,7 @@ export default function PdfToWordConverter() {
       )}
 
       {errorDetails && (
-        <div className="mb-4 rounded-xl border border-red-500/30 bg-red-950/40 p-3 text-xs text-red-300">
+        <div className="mb-4 rounded-xl border border-red-500/30 bg-red-950/40 p-3 text-xs text-red-300 leading-relaxed">
           ⚠️ {errorDetails}
         </div>
       )}

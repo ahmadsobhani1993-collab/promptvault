@@ -13,11 +13,14 @@ export default function OmniVoice() {
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      if (file.size > 3 * 1024 * 1024) {
-        alert('حجم فایل صوتی بیش از حد مجاز است (حداکثر ۳ مگابایت).')
+      // سقف حجم ۲ مگابایت برای جلوگیری قطعی از خطای 413 ورسل
+      if (file.size > 2 * 1024 * 1024) {
+        alert(`حجم این فایل ${(file.size / (1024 * 1024)).toFixed(1)} مگابایت است. لطفاً یک نمونه صدای کوتاه زیر ۲ مگابایت (حدود ۵ تا ۱۰ ثانیه) انتخاب کنید.`)
+        if (fileInputRef.current) fileInputRef.current.value = ''
         return
       }
       setAudioFile(file)
+      setServerError(null)
     }
   }
 
@@ -43,30 +46,28 @@ export default function OmniVoice() {
         body: fd,
       })
 
+      if (res.status === 413) {
+        throw new Error('خطای ۴۱۳: حجم فایل صوتی برای ارسال مستقیم زیاد است.')
+      }
+
       const data = await res.json().catch(() => null)
 
       if (!res.ok || !data?.ok) {
-        const msg = data?.error || `ارور سرور کد ${res.status}`
+        const msg = data?.error || `خطای سرور صوتی (${res.status})`
         setServerError(msg)
         alert(`علت خطا: ${msg}`)
         return
       }
 
-      let audioUrl = ''
-      if (Array.isArray(data.data)) {
-        const item = data.data[0]
-        audioUrl = typeof item === 'string' ? item : item?.url || item?.path
-      } else if (data.data?.url) {
-        audioUrl = data.data.url
-      }
-
-      if (audioUrl) {
-        setResultAudio(audioUrl)
+      if (data?.data) {
+        setResultAudio(data.data)
+      } else {
+        setServerError('خروجی صوتی دریافت نشد.')
       }
     } catch (err: any) {
-      const msg = err?.message || 'عدم دسترسی به سرور'
+      const msg = err?.message || 'خطا در برقراری ارتباط'
       setServerError(msg)
-      alert(`خطا در ارتباط: ${msg}`)
+      alert(`خطا: ${msg}`)
     } finally {
       setLoading(false)
     }
@@ -74,9 +75,9 @@ export default function OmniVoice() {
 
   return (
     <div className="mx-auto max-w-2xl rounded-2xl border border-white/10 bg-zinc-950 p-6 text-white shadow-xl">
-      <h2 className="mb-2 text-2xl font-black text-amber-400">تبدیل متن به گفتار و شبیه‌سازی صدا</h2>
+      <h2 className="mb-2 text-2xl font-black text-amber-400">تبدیل متن به گفتار و شبیه‌سازی صدا (OmniVoice)</h2>
       <p className="mb-6 text-xs text-zinc-400">
-        متن را بنویسید و در صورت تمایل فایل نمونه صدای کوتاه بارگذاری کنید.
+        متن خود را وارد کنید؛ برای شبیه‌سازی صدا می‌توانید یک فایل صوتی کوتاه (حداکثر ۲ مگابایت) انتخاب نمایید.
       </p>
 
       <div className="mb-4">
@@ -91,7 +92,7 @@ export default function OmniVoice() {
       </div>
 
       <div className="mb-6">
-        <label className="mb-2 block text-xs text-zinc-300">نمونه صدا برای کلون/شبیه‌سازی (اختیاری):</label>
+        <label className="mb-2 block text-xs text-zinc-300">نمونه صدا برای شبیه‌سازی (اختیاری):</label>
         <div className="flex items-center gap-3">
           <input
             type="file"
@@ -105,7 +106,7 @@ export default function OmniVoice() {
             onClick={() => fileInputRef.current?.click()}
             className="rounded-xl border border-dashed border-zinc-700 bg-zinc-900 px-4 py-2.5 text-xs font-medium text-zinc-300 hover:border-amber-500 hover:text-amber-400"
           >
-            {audioFile ? `🎵 ${audioFile.name}` : '📁 انتخاب فایل صوتی'}
+            {audioFile ? `🎵 ${audioFile.name}` : '📁 انتخاب فایل صوتی کوتاه'}
           </button>
           {audioFile && (
             <button
@@ -116,14 +117,14 @@ export default function OmniVoice() {
               }}
               className="text-xs text-red-400 hover:underline"
             >
-              حذف فایل
+              حذف
             </button>
           )}
         </div>
       </div>
 
       {serverError && (
-        <div className="mb-4 rounded-xl border border-red-500/30 bg-red-950/40 p-3 text-xs text-red-300">
+        <div className="mb-4 rounded-xl border border-red-500/30 bg-red-950/40 p-3 text-xs text-red-300 leading-relaxed">
           ⚠️ {serverError}
         </div>
       )}
@@ -134,13 +135,13 @@ export default function OmniVoice() {
         onClick={handleGenerate}
         className="w-full rounded-xl bg-amber-500 py-3 text-sm font-bold text-black transition hover:bg-amber-400 disabled:opacity-50"
       >
-        {loading ? 'در حال شبیه‌سازی و تولید صدا...' : 'شروع تبدیل به صدا'}
+        {loading ? 'در حال شبیه‌سازی و تولید گفتار...' : 'تولید صدا'}
       </button>
 
       {resultAudio && (
         <div className="mt-6 rounded-xl border border-white/10 bg-zinc-900 p-4">
-          <span className="mb-2 block text-xs text-amber-400">صدای تولید شده:</span>
-          <audio src={resultAudio} controls className="w-full" />
+          <span className="mb-2 block text-xs text-amber-400">نتیجه صوت تولید شده:</span>
+          <audio src={resultAudio} controls autoPlay className="w-full" />
         </div>
       )}
     </div>
