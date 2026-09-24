@@ -16,9 +16,18 @@ export type GeminiResult = {
   tagsFa: string[]; tagsEn: string[]; promptEn: string; promptFa: string;
 }
 
+export type BatchPromptItem = {
+  id: number | string;
+  rawText: string;
+}
+
+export type BatchResultItem = GeminiResult & {
+  id: number | string;
+  cleanPrompt: string;
+}
+
 const cleanTitle = (t: string) => t.replace(/^([\u0600-\u06FF\w]+)\s+\1/, '$1')
 
-// زنجیره کامل مدل‌های متنی دارای سهمیه (به ترتیب سهمیه ۵۰۰ تایی و سپس ۲۰ تایی)
 export const MODEL_CHAIN = [
   'gemini-3.5-flash-lite',
   'gemini-3.1-flash-lite',
@@ -78,7 +87,7 @@ export async function generateText(opts: {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
-            signal: AbortSignal.timeout(30000),
+            signal: AbortSignal.timeout(35000),
           }
         )
 
@@ -101,7 +110,7 @@ export async function generateText(opts: {
         return { text: raw, model }
       } catch (err: any) {
         const isTimeout = err?.name === 'TimeoutError' || String(err).includes('timeout')
-        const msg = isTimeout ? 'Timeout (>30s)' : (err?.message || 'Network error')
+        const msg = isTimeout ? 'Timeout (>35s)' : (err?.message || 'Network error')
         errors.push(`${model}: ${msg}`)
         continue
       }
@@ -203,4 +212,112 @@ Input: ${opts.text.slice(0, 2000)}`
     promptEn: String(parsed.promptEn || opts.text),
     promptFa: String(opts.text || parsed.promptEn || ''),
   }
+}
+
+// تابع اختصاصی و جدید برای Batching: دریافت تا ۱۰ پرامپت و پردازش در ۱ ریکوئست
+export async function analyzeBatchWithGemini(opts: {
+  items: BatchPromptItem[]
+  categories: Cat[]
+}): Promise<BatchResultItem[]> {
+  if (!opts.items || opts.items.length === 0) return []
+
+  const catSlugs = opts.categories.map((c) => c.slug).join(', ')
+  const vocabFa = TAG_VOCAB.map((t) => t.fa).join('، ')
+
+  const promptPayload = opts.items.map((it) => ({
+    id: it.id,
+    rawText: it.rawText.slice(0, 2000),
+  }))
+
+  const instruction = `You are an expert AI prompt curator and cleaner.
+Process each item in the input array. For EACH item, you must:
+1. 'cleanPrompt': Clean rawText by removing all Telegram links (@channel, t.me), URLs, advertisements, and emojis overload. Keep the core prompt completely intact.
+2. 'titleFa': Catchy Persian title, MUST start with the word "پرامپت ".
+3. 'titleEn': Catchy English title.
+4. 'descFa' & 'descEn': Short description (1 sentence).
+5. 'usageFa' & 'usageEn': Brief use-case guide.
+6. 'promptEn': Full prompt translated to English (or preserved if already English).
+7. 'tagsFa': 2-4 items strictly chosen from: [${vocabFa}].
+8. 'tagsEn': English counterparts of tagsFa.
+9. 'categorySlug': Best category from: [${catSlugs}].
+10. 'subSlug': Matching sub-category or null.
+
+Return ONLY a valid JSON ARRAY of objects with the exact key 'items':
+{
+  "items": [
+    {
+      "id": ...,
+      "cleanPrompt": "...",
+      "titleFa": "پرامپت ...",
+      "titleEn": "...",
+      "descFa": "...",
+      "descEn": "...",
+      "usageFa": "...",
+      "usageEn": "...",
+      "promptEn": "...",
+      "tagsFa": ["..."],
+      "tagsEn": ["..."],
+      "categorySlug": "...",
+      "subSlug": null
+    }
+  ]
+}
+
+Input items:
+${JSON.stringify(promptPayload, null, 2)}`
+
+  const { text: raw } = await generateText({
+    instruction,
+    expectJson: true,
+  })
+
+  let parsedItems: any[] = []
+  try {
+    const cleanedJson = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/i, '').trim()
+    const m = cleanedJson.match(/\{[\s\S]*\}|\[[\s\S]*\]/)
+    const jsonParsed = JSON.parse(m ? m[0] : cleanedJson)
+    parsedItems = Array.isArray(jsonParsed) ? jsonParsed : (jsonParsed.items || [])
+  } catch (err) {
+    parsedItems = []
+  }
+
+  return opts.items.map((original) => {
+    const found = parsedItems.find((p) => String(p.id) === String(original.id)) || {}
+    const baseTitle = String(found.titleFa || 'هوش مصنوعی').trim()
+    const titleFa = baseTitle.startsWith('پرامپت') ? baseTitle : `پرامپت ${baseTitle}`
+
+    const catOk = opts.categories.find((c) => c.slug === found.categorySlug)
+    const categorySlug = catOk ? found.categorySlug : opts.categories[0]?.slug ?? 'image'
+    const chosenCat = opts.categories.find((c) => c.slug === categorySlug)
+    let subSlug: string | null = null
+    if (found.subSlug && chosenCat && chosenCat.subs.some((s) => s.slug === found.subSlug)) {
+      subSlug = found.subSlug
+    }
+
+    const rawTags = Array.isArray(found.tagsFa) ? found.tagsFa : String(found.tagsFa ?? '').split(/[،,]/)
+    const tagsFa: string[] = rawTags.map((t: any) => String(t).trim()).filter(Boolean).slice(0, 4)
+    const tagsEn: string[] = tagsFa.map((fa) => {
+      const v = TAG_VOCAB.find((t) => t.fa === fa)
+      return v ? v.en : fa
+    })
+
+    const cleanPrompt = String(found.cleanPrompt || original.rawText.replace(/https?:\/\/\S+|@[\w_]+|(t\.me|telegram\.me)\S*/gi, '').trim())
+
+    return {
+      id: original.id,
+      cleanPrompt,
+      titleFa: cleanTitle(titleFa),
+      titleEn: cleanTitle(String(found.titleEn || 'AI Prompt')),
+      descFa: String(found.descFa || ''),
+      descEn: String(found.descEn || ''),
+      usageFa: String(found.usageFa || ''),
+      usageEn: String(found.usageEn || ''),
+      categorySlug,
+      subSlug,
+      tagsFa,
+      tagsEn,
+      promptEn: String(found.promptEn || cleanPrompt),
+      promptFa: cleanPrompt,
+    }
+  })
 }
