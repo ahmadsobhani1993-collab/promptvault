@@ -3,18 +3,32 @@ import { GoogleGenAI } from "@google/genai";
 
 export const maxDuration = 60;
 
-async function generateWithRetry(ai: any, model: string, contents: any[], retries = 3) {
-  for (let i = 0; i < retries; i++) {
+// مدل‌های معتبر فعال بر اساس جدول سهمیه شما (آبشاری از بالا به پایین)
+const CASCADE_MODELS = [
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
+  "gemini-3.6-flash",
+  "gemini-3.7-flash",
+  "gemini-3.8-flash",
+  "gemini-3-flash",
+];
+
+async function callGeminiCascade(ai: any, contents: any[]) {
+  let lastError = null;
+
+  for (const model of CASCADE_MODELS) {
     try {
-      return await ai.models.generateContent({ model, contents });
-    } catch (err: any) {
-      if ((err?.status === 503 || err?.code === 503) && i < retries - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 2000 * (i + 1)));
-        continue;
+      const res = await ai.models.generateContent({ model, contents });
+      if (res?.text) {
+        return res.text;
       }
-      throw err;
+    } catch (err: any) {
+      console.warn(`Model ${model} failed, switching to next. Error:`, err?.message);
+      lastError = err;
     }
   }
+
+  throw lastError || new Error("هیچ‌کدام از مدل‌های فعال جمینای پاسخ ندادند.");
 }
 
 export async function POST(req: NextRequest) {
@@ -28,44 +42,39 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { mode, items } = body; // items: آرایه‌ای از متون یا تصاویر base64 همراه با شماره صفحه
+    const { mode, items } = body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ ok: false, error: "داده‌ای ارسال نشده است." }, { status: 400 });
     }
 
     const ai = new GoogleGenAI({ apiKey });
-    const targetModel = "gemini-3.5-flash-lite";
 
     if (mode === "cleanup") {
-      // ترکیب چانک متنی برای صرفه‌جویی در درخواست
       const combinedText = items
         .map((it: any) => `=== صفحه ${it.page} ===\n${it.text}`)
         .join("\n\n");
 
-      const response = await generateWithRetry(ai, targetModel, [
+      const text = await callGeminiCascade(ai, [
         {
           role: "user",
           parts: [
             {
-              text: `متن زیر شامل چندین صفحه از یک سند است که حروف و کلمات آن به‌هم‌ریخته است. 
-لطفاً متن هر صفحه را با حفظ عنوان "=== صفحه X ===" مرتب، ویراستاری و پاراگراف‌بندی کن. هیچ توضیح یا مقدمه‌ای ننویس:\n\n${combinedText}`,
+              text: `متن زیر شامل چندین صفحه از یک سند است.
+تمام متون را از نظر املایی، پیوستگی و پاراگراف‌بندی تصحیح کن. حتماً عنوان "=== صفحه X ===" را قبل از متن هر صفحه دست‌نخورده نگه دار. فقط متن تصحیح‌شده را خروجی بده:\n\n${combinedText}`,
             },
           ],
         },
       ]);
 
-      return NextResponse.json({ ok: true, text: response?.text || combinedText });
+      return NextResponse.json({ ok: true, text });
     }
 
     if (mode === "ocr") {
-      // ارسال چانک تصاویر در یک ریکوئست
       const parts: any[] = [];
       for (const it of items) {
         const cleanBase64 = it.imageBase64.replace(/^data:image\/\w+;base64,/, "");
-        parts.push({
-          text: `محتوای صفحه شماره ${it.page}:`,
-        });
+        parts.push({ text: `=== صفحه ${it.page} ===` });
         parts.push({
           inlineData: {
             mimeType: "image/jpeg",
@@ -75,24 +84,18 @@ export async function POST(req: NextRequest) {
       }
 
       parts.push({
-        text: "تمام متون موجود در این صفحات اسکن‌شده را با دقت کامل، ساختار درست و تفکیک هر صفحه استخراج کن. برای هر صفحه عنوان '=== صفحه X ===' را درج کن.",
+        text: "تمام متون موجود در این تصاویر اسکن‌شده را با دقت کامل استخراج کن. بالای متن هر صفحه همان شناسه '=== صفحه X ===' را درج کن.",
       });
 
-      const response = await generateWithRetry(ai, targetModel, [
-        {
-          role: "user",
-          parts: parts,
-        },
-      ]);
-
-      return NextResponse.json({ ok: true, text: response?.text || "" });
+      const text = await callGeminiCascade(ai, [{ role: "user", parts }]);
+      return NextResponse.json({ ok: true, text });
     }
 
     return NextResponse.json({ ok: false, error: "حالت نامعتبر است." }, { status: 400 });
   } catch (err: any) {
-    console.error("Gemini Chunk OCR Error:", err);
+    console.error("Gemini Cascade OCR Error:", err);
     return NextResponse.json(
-      { ok: false, error: err?.message || "خطای ارتباط با جمینای" },
+      { ok: false, error: err?.message || "خطای ارتباط با سرور جمینای" },
       { status: 500 }
     );
   }

@@ -117,22 +117,6 @@ export default function ToolsMenu({ locale = 'fa' }: Props) {
           </Link>
 
           <Link
-            href="/tools/omni-voice"
-            onClick={() => setOpen(false)}
-            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-white/80 transition hover:bg-amber-500/10 hover:text-amber-300"
-          >
-            <span className="text-base">🗣️</span>
-            <div>
-              <span className="block font-medium">
-                {isEn ? 'Text to Speech & Clone' : 'تبدیل متن به گفتار و دوبله'}
-              </span>
-              <span className="block text-[10px] text-white/40">
-                {isEn ? 'Voice clone & synthesis with AI' : 'شبیه‌سازی صدا و تبدیل متن به صوت'}
-              </span>
-            </div>
-          </Link>
-
-          <Link
             href="/pdf-to-word"
             onClick={() => setOpen(false)}
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-white/80 transition hover:bg-amber-500/10 hover:text-amber-300"

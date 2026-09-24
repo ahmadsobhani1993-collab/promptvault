@@ -1,3 +1,4 @@
+import ToolAuthGuard from '@/components/tools/ToolAuthGuard'
 import type { Metadata } from 'next'
 import AudioEnhancerStudio from '@/components/audio-enhancer/AudioEnhancerStudio'
 

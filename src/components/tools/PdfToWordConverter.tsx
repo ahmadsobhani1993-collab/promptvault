@@ -3,11 +3,12 @@
 import { useState, useRef, ChangeEvent } from "react";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from "docx";
 import { saveAs } from "file-saver";
+import ToolAuthGuard from "./ToolAuthGuard";
 
-const CHUNK_SIZE = 5; // پردازش ۵ صفحه در هر درخواست به جمینای
-const MAX_ALLOWED_PAGES = 500; // محدودیت ۵۰۰ صفحه در روز
+const CHUNK_SIZE = 20; // افزایش به دسته‌های ۲۰ صفحه‌ای
+const MAX_ALLOWED_PAGES = 500;
 
-export default function PdfToWordConverter() {
+function PdfConverterCore() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -47,10 +48,10 @@ export default function PdfToWordConverter() {
           lib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
           resolve(lib);
         } else {
-          reject(new Error("کتابخانه PDF بارگذاری نشد"));
+          reject(new Error("موتور PDF بارگذاری نشد"));
         }
       };
-      script.onerror = () => reject(new Error("عدم موفقیت در لود موتور PDF"));
+      script.onerror = () => reject(new Error("خطا در لود کتابخانه PDF"));
       document.head.appendChild(script);
     });
   };
@@ -62,23 +63,21 @@ export default function PdfToWordConverter() {
     setErrorDetails(null);
 
     try {
-      setStatusText("در حال بارگذاری فایل...");
+      setStatusText("در حال بازخوانی سند...");
       const pdfjs = await loadPdfEngine();
       const arrayBuffer = await file.arrayBuffer();
       const pdfDoc = await pdfjs.getDocument({ data: arrayBuffer }).promise;
       const numPages = pdfDoc.numPages;
 
-      // بررسی سقف ۵۰۰ صفحه
       if (numPages > MAX_ALLOWED_PAGES) {
-        throw new Error(`حجم سند بیش از سقف مجاز است. این فایل شامل ${numPages} صفحه است، در حالی که سقف مجاز پردازش ${MAX_ALLOWED_PAGES} صفحه در روز است.`);
+        throw new Error(`سند شامل ${numPages} صفحه است. سقف مجاز پردازش ${MAX_ALLOWED_PAGES} صفحه در روز است.`);
       }
 
       const docSections: Paragraph[] = [];
 
-      // پیمایش دسته‌ای (Chunking)
       for (let start = 1; start <= numPages; start += CHUNK_SIZE) {
         const end = Math.min(start + CHUNK_SIZE - 1, numPages);
-        setStatusText(`در حال استخراج و تحلیل صفحات ${start} تا ${end} از ${numPages}...`);
+        setStatusText(`پردازش دسته صفحات ${start} تا ${end} از ${numPages}...`);
 
         const textItems: { page: number; text: string }[] = [];
         const imageItems: { page: number; imageBase64: string }[] = [];
@@ -91,8 +90,7 @@ export default function PdfToWordConverter() {
           if (pageText.length >= 25) {
             textItems.push({ page: p, text: pageText });
           } else {
-            // اسکن/تصویر: رندر روی بوم با حجم کم
-            const viewport = page.getViewport({ scale: 1.1 });
+            const viewport = page.getViewport({ scale: 1.0 });
             const canvas = document.createElement("canvas");
             const ctx = canvas.getContext("2d");
             canvas.height = viewport.height;
@@ -100,13 +98,12 @@ export default function PdfToWordConverter() {
 
             if (ctx) {
               await page.render({ canvasContext: ctx, viewport }).promise;
-              imageItems.push({ page: p, imageBase64: canvas.toDataURL("image/jpeg", 0.7) });
+              imageItems.push({ page: p, imageBase64: canvas.toDataURL("image/jpeg", 0.65) });
             }
           }
           page.cleanup();
         }
 
-        // ارسال چانک متنی به جمینای در صورت وجود
         if (textItems.length > 0) {
           const res = await fetch("/api/ocr-gemini", {
             method: "POST",
@@ -125,7 +122,6 @@ export default function PdfToWordConverter() {
           });
         }
 
-        // ارسال چانک تصویری اسکن‌شده به جمینای
         if (imageItems.length > 0) {
           const res = await fetch("/api/ocr-gemini", {
             method: "POST",
@@ -148,18 +144,18 @@ export default function PdfToWordConverter() {
         setProgress(percent);
       }
 
-      setStatusText("در حال ساخت فایل نهایی Word...");
+      setStatusText("در حال ایجاد فایل DOCX...");
       const doc = new Document({
         sections: [{ properties: {}, children: docSections }],
       });
 
       const blob = await Packer.toBlob(doc);
       saveAs(blob, file.name.replace(/\.pdf$/i, "") + ".docx");
-      setStatusText("تبدیل با موفقیت انجام و ذخیره شد!");
+      setStatusText("تبدیل با موفقیت پایان یافت!");
     } catch (err: any) {
       console.error(err);
       setErrorDetails(err?.message || "خطا در پردازش فایل");
-      setStatusText("فرآیند تبدیل متوقف شد.");
+      setStatusText("فرآیند متوقف شد.");
     } finally {
       setLoading(false);
     }
@@ -169,7 +165,7 @@ export default function PdfToWordConverter() {
     <div className="mx-auto max-w-2xl rounded-2xl border border-white/10 bg-zinc-950 p-6 text-white shadow-xl">
       <h2 className="mb-2 text-2xl font-black text-amber-400">تبدیل هوشمند PDF به فایل ورد</h2>
       <p className="mb-6 text-sm text-zinc-400">
-        پردازش فوق سریع اسناد متنی و اسکن‌شده با جمینای (سقف روزانه ۵۰۰ صفحه)
+        پردازش دسته‌ای سریع با مدل‌های آبشاری هوش مصنوعی (سقف مجاز روزانه ۵۰۰ صفحه)
       </p>
 
       <div className="mb-6">
@@ -196,7 +192,7 @@ export default function PdfToWordConverter() {
       )}
 
       {errorDetails && (
-        <div className="mb-4 rounded-xl border border-red-500/30 bg-red-950/40 p-3 text-xs text-red-300 leading-relaxed">
+        <div className="mb-4 rounded-xl border border-red-500/30 bg-red-950/40 p-3 text-xs text-red-300">
           ⚠️ {errorDetails}
         </div>
       )}
@@ -207,8 +203,16 @@ export default function PdfToWordConverter() {
         onClick={convertToWord}
         className="w-full rounded-xl bg-amber-500 py-3 font-bold text-black transition hover:bg-amber-400 disabled:opacity-50"
       >
-        {loading ? "در حال پردازش سند..." : "شروع تبدیل و دریافت فایل Word"}
+        {loading ? "در حال استخراج و تبدیل..." : "شروع تبدیل و دانلود DOCX"}
       </button>
     </div>
+  );
+}
+
+export default function PdfToWordConverter() {
+  return (
+    <ToolAuthGuard toolName="تبدیل هوشمند PDF به ورد">
+      <PdfConverterCore />
+    </ToolAuthGuard>
   );
 }

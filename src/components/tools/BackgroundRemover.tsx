@@ -2,8 +2,9 @@
 
 import { useState, useRef, ChangeEvent } from 'react'
 import { removeBackground } from '@imgly/background-removal'
+import ToolAuthGuard from './ToolAuthGuard'
 
-export default function BackgroundRemover() {
+function BackgroundRemoverCore() {
   const [imageSrc, setImageSrc] = useState<string | null>(null)
   const [resultSrc, setResultSrc] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -32,13 +33,12 @@ export default function BackgroundRemover() {
         },
         output: {
           format: 'image/png',
-          quality: 1,
+          quality: 0.95,
         },
       })
 
       setResultSrc(URL.createObjectURL(blob))
     } catch (err: any) {
-      console.error(err)
       alert('خطا در پردازش تصویر')
     } finally {
       setLoading(false)
@@ -125,5 +125,13 @@ export default function BackgroundRemover() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function BackgroundRemover() {
+  return (
+    <ToolAuthGuard toolName="حذف پس‌زمینه تصویر">
+      <BackgroundRemoverCore />
+    </ToolAuthGuard>
   )
 }
