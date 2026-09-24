@@ -1,207 +1,197 @@
-﻿export const TAG_VOCAB = [
-  "midjourney", "chatgpt", "dall-e", "stable-diffusion", "claude",
-  "writing", "coding", "marketing", "art", "productivity",
-  "design", "business", "education", "seo", "photography"
-];
+export const TAG_VOCAB: { fa: string; en: string }[] = [
+  { fa: 'پرتره', en: 'portrait' }, { fa: 'محصول', en: 'product' }, { fa: 'سینمایی', en: 'cinematic' },
+  { fa: 'فانتزی', en: 'fantasy' }, { fa: 'انیمه', en: 'anime' }, { fa: 'واقع‌گرایانه', en: 'photorealistic' },
+  { fa: 'مینیمال', en: 'minimal' }, { fa: 'لوکس', en: 'luxury' }, { fa: 'تاریک', en: 'dark' },
+  { fa: 'نئون', en: 'neon' }, { fa: 'طبیعت', en: 'nature' }, { fa: 'معماری', en: 'architecture' },
+  { fa: 'کاراکتر', en: 'character' }, { fa: 'لوگو', en: 'logo' }, { fa: 'پوستر', en: 'poster' },
+  { fa: 'تبلیغات', en: 'ads' }, { fa: 'آموزش', en: 'tutorial' }, { fa: 'کد', en: 'code' },
+  { fa: 'نویسندگی', en: 'writing' }, { fa: 'بهره‌وری', en: 'productivity' }, { fa: 'موسیقی', en: 'music' },
+  { fa: 'ویدیو', en: 'video' }, { fa: 'عکاسی', en: 'photography' }, { fa: 'سه‌بعدی', en: '3d' },
+  { fa: 'رنگی', en: 'colorful' },
+]
 
-interface GeminiPart {
-  text?: string;
-  inlineData?: {
-    mimeType: string;
-    data: string;
-  };
+export type GeminiResult = {
+  titleFa: string; titleEn: string; descFa: string; descEn: string;
+  usageFa: string; usageEn: string; categorySlug: string; subSlug: string | null;
+  tagsFa: string[]; tagsEn: string[]; promptEn: string; promptFa: string;
 }
 
-interface GeminiContent {
-  role?: string;
-  parts: GeminiPart[];
+const cleanTitle = (t: string) => t.replace(/^([\u0600-\u06FF\w]+)\s+\1/, '$1')
+
+// حفظ مدل‌های فعال با اولویت سقف روزانه و سرعت بالا
+export const MODEL_CHAIN = [
+  'gemini-3.5-flash-lite',
+  'gemini-3.5-flash',
+  'gemini-3.8-flash',
+  'gemini-3.7-flash',
+]
+
+function getGeminiKeys(): string[] {
+  const raw = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || ''
+  return raw.split(',').map((k) => k.trim()).filter((k) => k.length > 10)
 }
 
-const ACTIVE_MODELS = [
-  "gemini-3.6-flash",
-  "gemini-3.5-flash-lite",
-  "gemini-3.7-flash",
-  "gemini-3.8-flash",
-];
-
-let currentKeyIndex = 0;
-
-function getAllApiKeys(): string[] {
-  const keys: string[] = [];
-
-  if (process.env.GEMINI_API_KEYS) {
-    const splitKeys = process.env.GEMINI_API_KEYS.split(",").map((k) => k.trim()).filter(Boolean);
-    keys.push(...splitKeys);
+export async function generateText(opts: {
+  instruction: string
+  imgBase64?: string | null
+  imgMime?: string
+  expectJson?: boolean
+}): Promise<{ text: string; model: string }> {
+  const parts: any[] = [{ text: opts.instruction }]
+  if (opts.imgBase64) {
+    parts.push({
+      inlineData: {
+        mimeType: opts.imgMime || 'image/jpeg',
+        data: opts.imgBase64.replace(/^data:[^;]+;base64,/, '').trim(),
+      },
+    })
   }
 
-  for (let i = 1; i <= 5; i++) {
-    const k = process.env[`GEMINI_API_KEY_${i}`];
-    if (k && !keys.includes(k.trim())) {
-      keys.push(k.trim());
-    }
-  }
-
-  if (process.env.GEMINI_API_KEY && !keys.includes(process.env.GEMINI_API_KEY.trim())) {
-    keys.push(process.env.GEMINI_API_KEY.trim());
-  }
-
-  return keys;
-}
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-export async function generateWithGeminiCascade(
-  contents: GeminiContent[],
-  systemInstruction?: string,
-  jsonMode: boolean = false
-): Promise<string> {
-  const keys = getAllApiKeys();
-
+  const keys = getGeminiKeys()
   if (keys.length === 0) {
-    throw new Error("هیچ کلید معتبری برای Gemini یافت نشد.");
+    throw new Error('GEMINI_FAILED: کلید API برای جمینای تنظیم نشده است')
   }
 
-  // حذف فیلدهای متفرقه و تضمین ساختار استاندارد Google API
-  const sanitizedContents = contents.map((c) => ({
-    role: c.role,
-    parts: c.parts.map((p) => {
-      const cleanPart: any = {};
-      if (p.text !== undefined) cleanPart.text = String(p.text);
-      if (p.inlineData) {
-        cleanPart.inline_data = {
-          mime_type: p.inlineData.mimeType,
-          data: p.inlineData.data,
-        };
-      }
-      return cleanPart;
-    }),
-  }));
+  const errors: string[] = []
 
-  let lastError: any = null;
-
-  for (const model of ACTIVE_MODELS) {
+  for (const model of MODEL_CHAIN) {
     for (let i = 0; i < keys.length; i++) {
-      const activeKey = keys[(currentKeyIndex + i) % keys.length];
-
+      const key = keys[i]
       try {
-        const bodyPayload: any = { contents: sanitizedContents };
-        if (systemInstruction) {
-          bodyPayload.systemInstruction = {
-            parts: [{ text: systemInstruction }],
-          };
-        }
-        if (jsonMode) {
-          bodyPayload.generationConfig = {
-            responseMimeType: "application/json",
-          };
+        const payload: any = { contents: [{ parts }] }
+        if (opts.expectJson) {
+          payload.generationConfig = { responseMimeType: 'application/json' }
         }
 
+        // مهلت ۳۰ ثانیه برای اطمینان از دریافت کامل ترجمه
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
           {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-goog-api-key": activeKey,
-            },
-            body: JSON.stringify(bodyPayload),
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(30000),
           }
-        );
+        )
 
-        if (res.ok) {
-          const data = await res.json();
-          const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (reply) {
-            currentKeyIndex = (currentKeyIndex + 1) % keys.length;
-            return reply;
-          }
+        const bodyText = await res.text()
+
+        if (!res.ok) {
+          errors.push(`${model}: HTTP ${res.status}`)
+          continue
         }
 
-        const errorData = await res.json().catch(() => ({}));
-        lastError = new Error(
-          `${model} HTTP ${res.status}: ${errorData?.error?.message || "Unavailable"}`
-        );
-        await sleep(300);
+        const json = JSON.parse(bodyText)
+        const raw: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+
+        if (!raw) {
+          errors.push(`${model}: Empty content`)
+          continue
+        }
+
+        return { text: raw, model }
       } catch (err: any) {
-        lastError = err;
+        const isTimeout = err?.name === 'TimeoutError' || String(err).includes('timeout')
+        const msg = isTimeout ? 'Timeout (>30s)' : (err?.message || 'Network error')
+        errors.push(`${model}: ${msg}`)
+        continue
       }
     }
   }
 
-  throw lastError || new Error("تمامی کلیدها و مدل‌ها ناموفق بودند.");
+  throw new Error(`GEMINI_FAILED: ${errors.join(' | ')}`)
 }
 
-export async function generateText(prompt: string, systemInstruction?: string): Promise<string> {
-  return generateWithGeminiCascade(
-    [{ parts: [{ text: prompt }] }],
-    systemInstruction
-  );
-}
-
-export async function normalizePrompt(rawText: string): Promise<string> {
-  if (!rawText || !rawText.trim()) return "";
-
-  const systemInstruction = 
-    "You are a text cleaner for AI prompts. Clean the provided text by removing Telegram channel links, promotional usernames, emojis overload, and irrelevant footers, while keeping the main prompt text completely intact. Output ONLY the cleaned text.";
-
+export async function normalizePrompt(raw: string): Promise<string> {
+  if (!raw || !raw.trim()) return raw
   try {
-    const cleaned = await generateWithGeminiCascade(
-      [{ parts: [{ text: rawText }] }],
-      systemInstruction
-    );
-    return cleaned.trim() || rawText;
-  } catch (err) {
-    return rawText;
+    const { text } = await generateText({
+      instruction: 'Clean this prompt. Remove Telegram IDs, URLs, follow us text. Return ONLY the cleaned prompt:\n\n' + raw,
+    })
+    return text.trim() || raw.replace(/https?:\/\/\S+|@[\w_]+|(t\.me|telegram\.me)\S*/gi, '').trim()
+  } catch {
+    return raw.replace(/https?:\/\/\S+|@[\w_]+|(t\.me|telegram\.me)\S*/gi, '').trim()
   }
 }
 
-export async function analyzeWithGemini(
-  content: any,
-  systemInstruction?: string,
-  jsonMode: boolean = true
-): Promise<any> {
-  let promptText = "";
+type Cat = { slug: string; fa: string; en: string; subs: { slug: string; fa: string; en: string }[] }
 
-  // استخراج متن تمیز بدون ارسال عکس به جمینای
-  if (typeof content === "string") {
-    promptText = content;
-  } else if (Array.isArray(content)) {
-    promptText = content
-      .map((item) => (typeof item === "string" ? item : item.text || item.prompt || ""))
-      .filter(Boolean)
-      .join("\n\n");
-  } else if (typeof content === "object" && content !== null) {
-    const parts: string[] = [];
-    if (content.prompt) parts.push(`Prompt:\n${content.prompt}`);
-    if (content.text) parts.push(`Text:\n${content.text}`);
-    if (content.categories) {
-      const cats = Array.isArray(content.categories)
-        ? content.categories.join(", ")
-        : JSON.stringify(content.categories);
-      parts.push(`Available Categories:\n${cats}`);
-    }
-    if (parts.length === 0) {
-      // فیلدهای غیرمتنی مانند imgBase64 را دور می‌ریزیم
-      const { imgBase64, mode, ...otherData } = content;
-      parts.push(JSON.stringify(otherData));
-    }
-    promptText = parts.join("\n\n");
+export async function analyzeWithGemini(opts: {
+  text: string
+  imgBase64?: string | null
+  imgMime?: string
+  categories: Cat[]
+  mode?: 'auto-import' | 'user-submit'
+}): Promise<GeminiResult> {
+  const isUserSubmit = opts.mode === 'user-submit'
+  const catSlugs = opts.categories.map((c) => c.slug).join(', ')
+  const vocabFa = TAG_VOCAB.map((t) => t.fa).join('، ')
+
+  const instruction = isUserSubmit
+    ? `You are a tagging assistant. Analyze this prompt and return JSON.
+CRITICAL RULES:
+1. Return JSON containing: titleFa, titleEn, descFa, descEn, usageFa, usageEn, promptEn.
+2. ONLY generate 'tagsFa' (2-4 items strictly from: ${vocabFa}) and 'tagsEn'.
+3. Choose the best 'categorySlug' (from: ${catSlugs}) and 'subSlug' (or null).
+Input: ${opts.text.slice(0, 2000)}`
+    : `You are an AI prompt curator. Analyze this prompt and return JSON.
+CRITICAL RULES:
+1. 'titleFa' MUST start with the word "پرامپت ".
+2. Generate catchy 'titleFa'/'titleEn', short 'descFa'/'descEn', and 'usageFa'/'usageEn'.
+3. 'promptEn' is the full prompt translated to English.
+4. 'tagsFa' (2-4 items from: ${vocabFa}) and 'tagsEn'.
+5. Choose 'categorySlug' (from: ${catSlugs}) and 'subSlug' (or null).
+Input: ${opts.text.slice(0, 2000)}`
+
+  const { text: raw } = await generateText({
+    instruction,
+    imgBase64: opts.imgBase64,
+    imgMime: opts.imgMime,
+    expectJson: true,
+  })
+
+  let parsed: any = {}
+  try {
+    const cleanedJson = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/i, '').trim()
+    const m = cleanedJson.match(/\{[\s\S]*\}/)
+    parsed = m ? JSON.parse(m[0]) : JSON.parse(cleanedJson)
+  } catch {
+    parsed = {}
   }
 
-  const rawResponse = await generateWithGeminiCascade(
-    [{ parts: [{ text: promptText }] }],
-    systemInstruction,
-    jsonMode
-  );
-
-  if (jsonMode) {
-    try {
-      const cleaned = rawResponse.replace(/```json/g, "").replace(/```/g, "").trim();
-      return JSON.parse(cleaned);
-    } catch {
-      return { raw: rawResponse };
-    }
+  if (!isUserSubmit) {
+    const baseTitle = String(parsed.titleFa || 'هوش مصنوعی').trim()
+    parsed.titleFa = baseTitle.startsWith('پرامپت') ? baseTitle : `پرامپت ${baseTitle}`
   }
 
-  return rawResponse;
+  const catOk = opts.categories.find((c) => c.slug === parsed.categorySlug)
+  const categorySlug = catOk ? parsed.categorySlug : opts.categories[0]?.slug ?? 'image'
+
+  const chosenCat = opts.categories.find((c) => c.slug === categorySlug)
+  let subSlug: string | null = null
+  if (parsed.subSlug && chosenCat && chosenCat.subs.some((s) => s.slug === parsed.subSlug)) {
+    subSlug = parsed.subSlug
+  }
+
+  const rawTags = Array.isArray(parsed.tagsFa) ? parsed.tagsFa : String(parsed.tagsFa ?? '').split(/[،,]/)
+  const tagsFa: string[] = rawTags.map((t: any) => String(t).trim()).filter(Boolean).slice(0, 4)
+  const tagsEn: string[] = tagsFa.map((fa) => {
+    const v = TAG_VOCAB.find((t) => t.fa === fa)
+    return v ? v.en : fa
+  })
+
+  return {
+    titleFa: cleanTitle(String(parsed.titleFa || 'پرامپت هوش مصنوعی')),
+    titleEn: cleanTitle(String(parsed.titleEn || 'AI Prompt')),
+    descFa: String(parsed.descFa || ''),
+    descEn: String(parsed.descEn || ''),
+    usageFa: String(parsed.usageFa || ''),
+    usageEn: String(parsed.usageEn || ''),
+    categorySlug,
+    subSlug,
+    tagsFa,
+    tagsEn,
+    promptEn: String(parsed.promptEn || opts.text),
+    promptFa: String(opts.text || parsed.promptEn || ''),
+  }
 }
