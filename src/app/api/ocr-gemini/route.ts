@@ -19,9 +19,9 @@ export async function POST(req: NextRequest) {
     const rawText = formData.get("rawText") as string | null;
 
     const ai = new GoogleGenAI({ apiKey });
-    const targetModel = "gemini-2.5-flash";
+    const targetModel = "gemini-3.6-flash";
 
-    // حالت اول: پاکسازی و اصلاح ترتیب متن به‌هم‌ریخته
+    // حالت اول: پاکسازی و مرتب‌سازی متون به‌هم‌ریخته
     if (mode === "cleanup" && rawText) {
       const response = await ai.models.generateContent({
         model: targetModel,

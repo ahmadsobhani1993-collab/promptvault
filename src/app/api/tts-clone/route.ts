@@ -1,5 +1,5 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
-import { Client } from "@gradio/client";
+import { Client, handle_file } from "@gradio/client";
 
 export const maxDuration = 60;
 
@@ -10,26 +10,49 @@ export async function POST(req: NextRequest) {
     const audioFile = formData.get("audio") as Blob | null;
 
     if (!text || !text.trim()) {
-      return NextResponse.json({ ok: false, error: "لطفاً متن را وارد کنید." }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "متن ورودی الزامی است." }, { status: 400 });
     }
 
-    // اتصال با timeout کنترل شده
     const app = await Client.connect("k2-fsa/OmniVoice");
-    
-    // اگر فایل آپلود نشده باشد مقدار undefined می‌فرستیم تا اسپیس ارور ندهد
-    const params: any[] = [text, "Auto"];
-    if (audioFile && audioFile.size > 0) {
-      params.push(audioFile);
-    } else {
-      params.push(null);
+
+    // آماده‌سازی فایل صوتی در صورت وجود
+    const refAudio = audioFile && audioFile.size > 0 ? handle_file(audioFile) : null;
+
+    // ارسال ۱۲ آرگومان دقیق و مطابق با سورس کد _clone_fn
+    const result: any = await app.predict("/_clone_fn", [
+      text,          // 1. text
+      "Auto",        // 2. lang
+      refAudio,      // 3. ref_aud
+      "",            // 4. ref_text (optional)
+      "",            // 5. instruct (style prompt)
+      32,            // 6. ns (Inference steps: 32)
+      3.0,           // 7. gs (Guidance scale: 3.0)
+      0.8,           // 8. dn (Denoise ratio: 0.8)
+      1.0,           // 9. sp (Speed: 1.0)
+      0,             // 10. du (Duration: 0 = auto)
+      true,          // 11. pp (Preprocess prompt)
+      true           // 12. po (Postprocess output)
+    ]);
+
+    // داده‌های خروجی: ایندکس ۰ فایل صوت است
+    let audioUrl = "";
+    if (Array.isArray(result?.data)) {
+      const first = result.data[0];
+      audioUrl = typeof first === "string" ? first : first?.url || first?.path;
+    } else if (result?.data?.url) {
+      audioUrl = result.data.url;
     }
 
-    const result: any = await app.predict(0, params);
-    return NextResponse.json({ ok: true, data: result.data });
+    if (!audioUrl) {
+      console.error("OmniVoice Output missing:", result?.data);
+      return NextResponse.json({ ok: false, error: "فایل خروجی تولید نشد." }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true, data: audioUrl });
   } catch (err: any) {
-    console.error("TTS Server Error:", err);
+    console.error("OmniVoice Full Error:", err);
     return NextResponse.json(
-      { ok: false, error: "خطا از سمت مدل صوتی: " + (err?.message || "پاسخی دریافت نشد") },
+      { ok: false, error: err?.message || "خطا در پردازش با مدل صوتی" },
       { status: 500 }
     );
   }
