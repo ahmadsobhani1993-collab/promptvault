@@ -3,60 +3,64 @@
 export const maxDuration = 30;
 export const dynamic = 'force-dynamic';
 
+// تمام مدل‌های فعال و مجاز در پنل شما
+const MODELS = [
+  "gemini-3.6-flash",
+  "gemini-3.7-flash",
+  "gemini-3.8-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
+  "gemini-3-flash",
+];
+
 export async function GET() {
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
-    return NextResponse.json({
-      status: "error",
-      message: "کلید GEMINI_API_KEY یافت نشد.",
-    });
+    return NextResponse.json({ status: "error", message: "کلید یافت نشد." });
   }
 
-  // استفاده از مدل فعال و سهمیه‌دار جدول شما
-  const modelName = "gemini-3.5-flash-lite";
+  const results: Record<string, any> = {};
 
-  try {
-    const startTime = Date.now();
-
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: "ping" }] }],
-        }),
-      }
-    );
-
-    const elapsed = Date.now() - startTime;
-    const data = await res.json();
-
-    if (!res.ok) {
-      return NextResponse.json(
+  for (const model of MODELS) {
+    try {
+      const startTime = Date.now();
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
         {
-          status: "google_error",
-          model: modelName,
-          error: data,
-        },
-        { status: res.status }
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
+          },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: "hi" }] }],
+          }),
+        }
       );
-    }
 
-    return NextResponse.json({
-      status: "success",
-      model: modelName,
-      elapsedMs: elapsed,
-      reply: data?.candidates?.[0]?.content?.parts?.[0]?.text || "پاسخ خالی",
-    });
-  } catch (err: any) {
-    return NextResponse.json(
-      { status: "fetch_error", message: err?.message },
-      { status: 500 }
-    );
+      const elapsed = Date.now() - startTime;
+      const data = await res.json();
+
+      if (res.ok) {
+        results[model] = {
+          status: "OK",
+          latencyMs: elapsed,
+          text: data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim(),
+        };
+      } else {
+        results[model] = {
+          status: `HTTP ${res.status}`,
+          error: data?.error?.message || data?.error?.status,
+        };
+      }
+    } catch (e: any) {
+      results[model] = { status: "NETWORK_ERROR", error: e?.message };
+    }
   }
+
+  return NextResponse.json({
+    timestamp: new Date().toISOString(),
+    results,
+  });
 }
