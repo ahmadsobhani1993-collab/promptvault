@@ -18,13 +18,20 @@ export type GeminiResult = {
 
 const cleanTitle = (t: string) => t.replace(/^([\u0600-\u06FF\w]+)\s+\1/, '$1')
 
-// حفظ مدل‌های فعال با اولویت سقف روزانه و سرعت بالا
+// زنجیره کامل مدل‌های متنی دارای سهمیه (به ترتیب سهمیه ۵۰۰ تایی و سپس ۲۰ تایی)
 export const MODEL_CHAIN = [
   'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
+  'gemini-3.6-flash',
   'gemini-3.5-flash',
   'gemini-3.8-flash',
   'gemini-3.7-flash',
+  'gemini-3-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.5-flash',
 ]
+
+let globalKeyIndex = 0
 
 function getGeminiKeys(): string[] {
   const raw = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || ''
@@ -55,15 +62,16 @@ export async function generateText(opts: {
   const errors: string[] = []
 
   for (const model of MODEL_CHAIN) {
-    for (let i = 0; i < keys.length; i++) {
-      const key = keys[i]
+    for (let attempt = 0; attempt < keys.length; attempt++) {
+      const keyIndex = (globalKeyIndex + attempt) % keys.length
+      const key = keys[keyIndex]
+
       try {
         const payload: any = { contents: [{ parts }] }
         if (opts.expectJson) {
           payload.generationConfig = { responseMimeType: 'application/json' }
         }
 
-        // مهلت ۳۰ ثانیه برای اطمینان از دریافت کامل ترجمه
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
           {
@@ -89,6 +97,7 @@ export async function generateText(opts: {
           continue
         }
 
+        globalKeyIndex = (globalKeyIndex + 1) % keys.length
         return { text: raw, model }
       } catch (err: any) {
         const isTimeout = err?.name === 'TimeoutError' || String(err).includes('timeout')
