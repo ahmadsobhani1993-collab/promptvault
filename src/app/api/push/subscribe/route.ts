@@ -1,21 +1,33 @@
 ﻿export const dynamic = 'force-dynamic';
-import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import { auth } from '@/auth'
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/db';
+import { auth } from '@/auth';
 
 export async function POST(req: Request) {
-  const session = await auth()
-  if (!session?.user?.id) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
-  const { endpoint, keys } = await req.json()
-  if (!endpoint || !keys) return NextResponse.json({ error: 'bad request' }, { status: 400 })
+    const subscription = await req.json();
 
-  await prisma.pushSubscription.upsert({
-    where: { endpoint },
-    update: { keys: JSON.stringify(keys) },
-    create: { endpoint, keys: JSON.stringify(keys), userId: session.user.id },
-  })
+    await prisma.pushSubscription.upsert({
+      where: { endpoint: subscription.endpoint },
+      update: {
+        keys: JSON.stringify(subscription.keys),
+        userId: session.user.id,
+      },
+      create: {
+        endpoint: subscription.endpoint,
+        keys: JSON.stringify(subscription.keys),
+        userId: session.user.id,
+      },
+    });
 
-  return NextResponse.json({ ok: true })
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Push subscription error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
 }
-

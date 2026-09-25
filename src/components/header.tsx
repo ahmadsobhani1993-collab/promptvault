@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import { cookies } from 'next/headers'
 import { auth } from '@/auth'
 import { type Locale } from '@/lib/i18n'
@@ -18,6 +19,8 @@ export default async function Header() {
     { href: '/submit', label: L(locale, 'ارسال پرامپت', 'Submit') },
   ]
 
+  const userInitial = session?.user?.name ? session.user.name.charAt(0).toUpperCase() : 'U'
+
   return (
     <header className="sticky top-0 z-40 border-b border-line/60 bg-[#070503]/85 backdrop-blur">
       <div className="container-app flex h-16 items-center justify-between gap-2 md:gap-4">
@@ -27,7 +30,9 @@ export default async function Header() {
 
         {/* Desktop Navigation */}
         <nav className="hidden lg:flex items-center gap-4 xl:gap-6 text-sm text-ink-muted">
-          <Link href="/explore" className="transition-colors hover:text-gold-bright whitespace-nowrap">{L(locale, 'کاوش', 'Explore')}</Link>
+          <Link href="/explore" className="transition-colors hover:text-gold-bright whitespace-nowrap">
+            {L(locale, 'کاوش', 'Explore')}
+          </Link>
 
           <div className="group relative">
             <button type="button" className="transition-colors hover:text-gold-bright whitespace-nowrap">
@@ -60,25 +65,57 @@ export default async function Header() {
             </div>
           </div>
 
-          <Link href="/blog" className="transition-colors hover:text-gold-bright whitespace-nowrap">{L(locale, 'مقالات', 'Blog')}</Link>
+          <Link href="/blog" className="transition-colors hover:text-gold-bright whitespace-nowrap">
+            {L(locale, 'مقالات', 'Blog')}
+          </Link>
         </nav>
 
         <div className="flex items-center gap-2 md:gap-3">
-          {/* دکمه ارسال پرامپت - همیشه نمایش داده می‌شود */}
-          <Link href="/submit" className="hidden md:inline-flex rounded-lg bg-gold-bright/20 border border-gold-bright/40 px-3 py-1.5 text-sm font-bold text-gold-bright transition-colors hover:bg-gold-bright/30 whitespace-nowrap">
+          {/* دکمه ارسال پرامپت */}
+          <Link 
+            href="/submit" 
+            className="hidden md:inline-flex rounded-lg bg-gold-bright/15 border border-gold-bright/35 px-3 py-1.5 text-sm font-bold text-gold-bright transition-all hover:bg-gold-bright/25 hover:border-gold-bright whitespace-nowrap"
+          >
             ✨ {L(locale, 'ارسال پرامپت', 'Submit')}
           </Link>
 
           <LocaleSwitcher />
+
           {session?.user ? (
-            <>
+            <div className="flex items-center gap-2">
               {session.user.role === 'ADMIN' && (
-                <Link href="/admin" className="btn-secondary text-xs md:text-sm">Admin</Link>
+                <Link href="/admin" className="btn-secondary text-xs px-2.5 py-1.5">
+                  Admin
+                </Link>
               )}
-              <span className="hidden max-w-28 truncate text-xs text-ink-muted sm:block">{session.user.name}</span>
-            </>
+
+              {/* آواتار کاربر با هدایت مستقیم به پروفایل */}
+              <Link
+                href="/profile"
+                className="group relative flex items-center gap-2 rounded-full p-0.5 transition-all hover:scale-105"
+                title={session.user.name || 'پروفایل من'}
+              >
+                <div className="relative h-9 w-9 overflow-hidden rounded-full border-2 border-gold-bright/50 bg-[#120f09] shadow-[0_0_12px_rgba(212,175,55,0.15)] transition-all group-hover:border-gold-bright group-hover:shadow-[0_0_16px_rgba(212,175,55,0.35)]">
+                  {session.user.image ? (
+                    <Image
+                      src={session.user.image}
+                      alt={session.user.name || 'User'}
+                      fill
+                      sizes="36px"
+                      className="object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#1c160c] to-[#2c2211] font-display text-sm font-bold text-gold-bright">
+                      {userInitial}
+                    </div>
+                  )}
+                </div>
+              </Link>
+            </div>
           ) : (
-            <Link href="/login" className="btn-primary text-xs md:text-sm">{L(locale, 'ورود', 'Login')}</Link>
+            <Link href="/login" className="btn-primary text-xs md:text-sm">
+              {L(locale, 'ورود', 'Login')}
+            </Link>
           )}
 
           <MobileMenu

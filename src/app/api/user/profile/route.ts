@@ -10,7 +10,7 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: 'ابتدا وارد حساب شوید' }, { status: 401 })
     }
 
-    const { name, bio, image } = await req.json()
+    const { name, bio, image, telegram, instagram } = await req.json()
 
     const updatedUser = await prisma.user.update({
       where: { id: session.user.id },
@@ -18,6 +18,8 @@ export async function PATCH(req: Request) {
         ...(name !== undefined && { name: String(name).trim() }),
         ...(bio !== undefined && { bio: String(bio).trim() }),
         ...(image !== undefined && { image: String(image).trim() }),
+        ...(telegram !== undefined && { telegram: telegram ? String(telegram).trim() : null }),
+        ...(instagram !== undefined && { instagram: instagram ? String(instagram).trim() : null }),
       },
     })
 

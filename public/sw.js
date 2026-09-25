@@ -1,32 +1,21 @@
-﻿self.addEventListener('install', (e) => {
-  self.skipWaiting()
-})
-
-self.addEventListener('activate', (e) => {
-  e.waitUntil(self.clients.claim())
-})
-
-self.addEventListener('push', (e) => {
-  const data = e.data?.json() ?? { title: 'PromptsFA', body: 'خبر جدید!' }
-  e.waitUntil(
-    self.registration.showNotification(data.title, {
+﻿self.addEventListener('push', function (event) {
+  if (event.data) {
+    const data = event.data.json();
+    const options = {
       body: data.body,
-      icon: '/icon-192.png',
-      badge: '/icon-192.png',
-      data: data.url ?? '/',
-      dir: 'rtl',
-      lang: 'fa',
-    })
-  )
-})
+      icon: data.icon || '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      data: {
+        url: data.url || '/'
+      }
+    };
+    event.waitUntil(self.registration.showNotification(data.title, options));
+  }
+});
 
-self.addEventListener('notificationclick', (e) => {
-  e.notification.close()
-  const url = e.notification.data || '/'
-  e.waitUntil(
-    self.clients.matchAll({ type: 'window' }).then((list) => {
-      for (const c of list) if (c.url.includes(url) && 'focus' in c) return c.focus()
-      return self.clients.openWindow(url)
-    })
-  )
-})
+self.addEventListener('notificationclick', function (event) {
+  event.notification.close();
+  event.waitUntil(
+    clients.openWindow(event.notification.data.url)
+  );
+});

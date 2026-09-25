@@ -37,25 +37,26 @@ enum OrderStatus {
 model User {
   id                String             @id @default(cuid())
   name              String?
-  username          String?            @unique
-  bio               String?            @db.Text
   email             String?            @unique
   emailVerified     DateTime?
   image             String?
   role              Role               @default(USER)
-  telegramId        String?            @unique
+  bio               String?
+  telegram          String?
+  instagram         String?
   createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @default(now()) @updatedAt
   accounts          Account[]
   sessions          Session[]
-  comments          Comment[]
-  likes             Like[]
-  saves             Save[]
   prompts           Prompt[]
-  pushSubscriptions PushSubscription[]
-  notifications     Notification[]
+  saves             Save[]
   bookmarks         Bookmark[]
+  likes             Like[]
+  comments          Comment[]
+  notifications     Notification[]
   cartItems         CartItem[]
   orders            Order[]
+  pushSubscriptions PushSubscription[]
 }
 
 model Account {
@@ -305,16 +306,16 @@ model LoginToken {
 }
 
 model Product {
-  id          String      @id @default(cuid())
-  titleFa     String
-  titleEn     String?
-  descFa      String?     @db.Text
-  price       Int
-  cover       String?
-  fileUrl     String?
-  createdAt   DateTime    @default(now())
-  cartItems   CartItem[]
-  orderItems  OrderItem[]
+  id         String      @id @default(cuid())
+  titleFa    String
+  titleEn    String?
+  descFa     String?     @db.Text
+  price      Int
+  cover      String?
+  fileUrl    String?
+  createdAt  DateTime    @default(now())
+  cartItems  CartItem[]
+  orderItems OrderItem[]
 }
 
 model CartItem {
@@ -342,7 +343,7 @@ model Order {
 }
 
 model OrderItem {
-  id        String @id @default(cuid())
+  id        String  @id @default(cuid())
   orderId   String
   productId String
   price     Int
