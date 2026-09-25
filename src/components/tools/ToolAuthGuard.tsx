@@ -1,62 +1,59 @@
 ﻿'use client'
 
-import React from 'react'
 import Link from 'next/link'
+import { useSession } from 'next-auth/react'
 
-interface AuthGuardProps {
+interface ToolAuthGuardProps {
   children: React.ReactNode
-  toolName: string
+  toolName?: string
+  description?: string
 }
 
-export default function ToolAuthGuard({ children, toolName }: AuthGuardProps) {
-  // بررسی توکن یا سشن ورود (مطابق ساختار سیستم احراز هویت فعلی سایت)
-  // در صورتی که از کوکی یا localStorage برای سشن استفاده می‌کنید بررسی می‌شود
-  const [isAuthenticated, setIsAuthenticated] = React.useState<boolean | null>(null)
+export default function ToolAuthGuard({
+  children,
+  toolName = 'این ابزار',
+  description,
+}: ToolAuthGuardProps) {
+  const { data: session, status } = useSession()
 
-  React.useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const res = await fetch('/api/auth/me')
-        const data = await res.json().catch(() => null)
-        setIsAuthenticated(Boolean(res.ok && data?.user))
-      } catch {
-        setIsAuthenticated(false)
-      }
-    }
-    checkAuth()
-  }, [])
-
-  if (isAuthenticated === null) {
+  if (status === 'loading') {
     return (
-      <div className="flex h-64 items-center justify-center text-sm text-zinc-400">
-        در حال بررسی دسترسی...
+      <div className="container-app flex min-h-[50vh] items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gold border-t-transparent" />
       </div>
     )
   }
 
-  if (!isAuthenticated) {
+  if (!session?.user) {
     return (
-      <div className="mx-auto max-w-xl rounded-2xl border border-amber-500/20 bg-zinc-950 p-8 text-center text-white shadow-2xl">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 text-2xl text-amber-400">
-          🔒
-        </div>
-        <h3 className="mb-2 text-xl font-black text-amber-400">ورود به حساب کاربری الزامی است</h3>
-        <p className="mb-6 text-sm leading-relaxed text-zinc-400">
-          برای استفاده از ابزار <span className="font-bold text-white">«{toolName}»</span> و دسترسی به پردازش هوش مصنوعی، لطفاً وارد حساب خود شوید یا ثبت‌نام کنید.
-        </p>
-        <div className="flex justify-center gap-3">
-          <Link
-            href="/login"
-            className="rounded-xl bg-amber-500 px-6 py-2.5 text-sm font-bold text-black transition hover:bg-amber-400"
-          >
-            ورود به حساب
-          </Link>
-          <Link
-            href="/register"
-            className="rounded-xl border border-white/10 bg-white/5 px-6 py-2.5 text-sm font-bold text-white transition hover:bg-white/10"
-          >
-            ثبت‌نام رایگان
-          </Link>
+      <div className="container-app py-16">
+        <div className="mx-auto max-w-xl overflow-hidden rounded-3xl border border-line/60 bg-[#12100d]/90 p-8 text-center shadow-2xl backdrop-blur-xl">
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-gold/40 bg-gold/10 text-2xl shadow-inner">
+            🔒
+          </div>
+
+          <h2 className="font-display text-xl md:text-2xl font-black text-ink mb-3">
+            ورود به حساب کاربری الزامی است
+          </h2>
+
+          <p className="text-xs md:text-sm text-ink-muted leading-relaxed mb-8 max-w-md mx-auto">
+            {description || `برای استفاده از ابزار «${toolName}» و دسترسی به پردازش هوش مصنوعی، لطفاً وارد حساب خود شوید یا ثبت‌نام کنید.`}
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Link
+              href="/login"
+              className="w-full sm:w-auto rounded-xl bg-gold hover:bg-gold-bright text-black font-extrabold px-8 py-3 text-xs transition-all shadow-lg shadow-gold/20"
+            >
+              ورود به حساب
+            </Link>
+            <Link
+              href="/login"
+              className="w-full sm:w-auto rounded-xl border border-line bg-surface px-8 py-3 text-xs font-bold text-ink hover:border-gold/50 hover:text-gold-bright transition-all"
+            >
+              ثبت‌نام رایگان
+            </Link>
+          </div>
         </div>
       </div>
     )

@@ -1,10 +1,13 @@
-'use client'
+﻿'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 
 type Comment = {
   id: string
   parentId?: string | null
+  userId?: string | null
+  username?: string | null
   name: string
   image?: string | null
   text: string
@@ -58,26 +61,73 @@ export default function RealCommentBox({
   const roots = list.filter((c) => !c.parentId)
   const kids = (id: string) => list.filter((c) => c.parentId === id)
 
-  const renderOne = (c: Comment, depth: number) => (
-    <div key={c.id} className={depth > 0 ? 'mr-6 mt-3 rounded-xl border border-line/60 bg-elevated/60 p-4' : 'rounded-xl border border-line bg-elevated p-4'}>
-      <div className="flex items-center gap-3">
-        {c.image ? (
-          <img src={c.image} alt="" className="h-8 w-8 rounded-full object-cover" />
-        ) : (
-          <div className="grid h-8 w-8 place-items-center rounded-full bg-gold/20 text-xs font-bold text-gold-bright">{c.name[0]}</div>
-        )}
-        <div>
-          <p className="text-xs font-bold text-gold-bright">{c.name}</p>
-          <p className="text-[10px] text-ink-faint">{c.createdAt}</p>
+  const renderOne = (c: Comment, depth: number) => {
+    const profileSlug = c.username || c.userId
+    const profileUrl = profileSlug ? `/u/${profileSlug}` : null
+
+    return (
+      <div
+        key={c.id}
+        className={
+          depth > 0
+            ? 'mr-6 mt-3 rounded-xl border border-line/60 bg-elevated/60 p-4'
+            : 'rounded-xl border border-line bg-elevated p-4'
+        }
+      >
+        <div className="flex items-center gap-3">
+          {profileUrl ? (
+            <Link
+              href={profileUrl}
+              className="relative block h-8 w-8 shrink-0 overflow-hidden rounded-full border border-gold/40 transition-transform hover:scale-110 hover:border-gold-bright"
+            >
+              {c.image ? (
+                <img src={c.image} alt={c.name} className="h-full w-full object-cover" />
+              ) : (
+                <div className="grid h-full w-full place-items-center bg-gold/20 text-xs font-bold text-gold-bright">
+                  {c.name ? c.name[0] : 'U'}
+                </div>
+              )}
+            </Link>
+          ) : (
+            <div className="relative block h-8 w-8 shrink-0 overflow-hidden rounded-full border border-line bg-surface">
+              {c.image ? (
+                <img src={c.image} alt={c.name} className="h-full w-full object-cover" />
+              ) : (
+                <div className="grid h-full w-full place-items-center bg-gold/20 text-xs font-bold text-gold-bright">
+                  {c.name ? c.name[0] : 'U'}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div>
+            {profileUrl ? (
+              <Link
+                href={profileUrl}
+                className="text-xs font-bold text-gold-bright transition-colors hover:underline hover:text-gold"
+              >
+                {c.name}
+              </Link>
+            ) : (
+              <p className="text-xs font-bold text-gold-bright">{c.name}</p>
+            )}
+            <p className="text-[10px] text-ink-faint">{c.createdAt}</p>
+          </div>
         </div>
+
+        <p className="mt-3 text-sm leading-6 text-ink-muted">{c.text}</p>
+        <button
+          type="button"
+          onClick={() => setReplyTo(c)}
+          className="mt-2 text-[11px] text-ink-faint transition-colors hover:text-gold-bright"
+        >
+          ↩️ پاسخ
+        </button>
+
+        {kids(c.id).map((k) => renderOne(k, Math.min(depth + 1, 2)))}
       </div>
-      <p className="mt-3 text-sm leading-6 text-ink-muted">{c.text}</p>
-      <button type="button" onClick={() => setReplyTo(c)} className="mt-2 text-[11px] text-ink-faint transition-colors hover:text-gold-bright">
-        ↩️ پاسخ
-      </button>
-      {kids(c.id).map((k) => renderOne(k, Math.min(depth + 1, 2)))}
-    </div>
-  )
+    )
+  }
 
   return (
     <div className="card mt-10 p-6">
@@ -87,7 +137,9 @@ export default function RealCommentBox({
         {replyTo && (
           <p className="text-[11px] text-gold-bright">
             در پاسخ به «{replyTo.name}»{' '}
-            <button type="button" onClick={() => setReplyTo(null)} className="text-ink-faint hover:text-danger">✕ انصراف</button>
+            <button type="button" onClick={() => setReplyTo(null)} className="text-ink-faint hover:text-danger">
+              ✕ انصراف
+            </button>
           </p>
         )}
         <textarea
@@ -97,7 +149,9 @@ export default function RealCommentBox({
           rows={3}
           className="input resize-none"
         />
-        <button type="submit" className="btn-primary">{submitLabel}</button>
+        <button type="submit" className="btn-primary">
+          {submitLabel}
+        </button>
       </form>
 
       <div className="mt-6 space-y-4">{roots.map((c) => renderOne(c, 0))}</div>
