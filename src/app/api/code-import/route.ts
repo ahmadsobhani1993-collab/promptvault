@@ -4,9 +4,6 @@ export const maxDuration = 60
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { auth } from '@/auth'
-import { GoogleGenerativeAI } from '@google/generative-ai'
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
@@ -170,7 +167,7 @@ export async function POST(req: Request) {
     const body = await req.json()
     const { action, url, text } = body
 
-    // هندلر واکشی URL از طریق سرور برای دور زدن CORS
+    // واکشی URL با دور زدن CORS
     if (action === 'fetch_url') {
       if (!url) return NextResponse.json({ error: 'آدرس URL ارسال نشده است.' }, { status: 400 })
       const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
@@ -179,11 +176,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, text: fetchedText.slice(0, 100000) })
     }
 
-    // هندلر پردازش و ذخیره پرامپت‌ها
+    // پردازش و ذخیره پرامپت‌ها
     if (action === 'import_text') {
       if (!text) return NextResponse.json({ error: 'متن خالی است.' }, { status: 400 })
 
-      // پیش‌فرض دسته‌بندی
       let category = await prisma.category.findFirst()
       if (!category) {
         category = await prisma.category.create({
@@ -198,8 +194,12 @@ export async function POST(req: Request) {
         })
       }
 
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
-      const aiPrompt = `Analyze the following raw prompts text and extract individual prompts into a clean JSON array.
+      const apiKey = process.env.GEMINI_API_KEY || ''
+      let parsed: any[] = []
+
+      if (apiKey) {
+        try {
+          const aiPrompt = `Analyze the following raw prompts text and extract individual prompts into a clean JSON array.
 Each object must have:
 - titleFa: A short catchy Persian title
 - titleEn: English title
@@ -213,15 +213,33 @@ ${text.slice(0, 15000)}
 
 Respond strictly in pure JSON array format without backticks or markdown.`
 
-      const result = await model.generateContent(aiPrompt)
-      let parsed = []
-      try {
-        const rawJson = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim()
-        parsed = JSON.parse(rawJson)
-      } catch {
+          const geminiRes = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: aiPrompt }] }],
+              }),
+            }
+          )
+
+          if (geminiRes.ok) {
+            const data = await geminiRes.json()
+            const rawOutput = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+            const cleanJson = rawOutput.replace(/```json/g, '').replace(/```/g, '').trim()
+            parsed = JSON.parse(cleanJson)
+          }
+        } catch (err) {
+          console.error('Gemini fetch parse fallback:', err)
+        }
+      }
+
+      // در صورت نبود خروجی معتبر یا عدم تنظیم کلید، ذخیره متن به صورت پرامپت
+      if (!Array.isArray(parsed) || parsed.length === 0) {
         parsed = [
           {
-            titleFa: 'پرامپت متنی ایمپورت شده',
+            titleFa: 'پرامپت ایمپورت شده',
             titleEn: 'Imported Prompt',
             prompt: text.slice(0, 5000),
             type: 'TEXT',
