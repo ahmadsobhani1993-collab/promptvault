@@ -1,6 +1,5 @@
 ﻿'use client'
 
-import { useRef } from 'react'
 import { useMobileStudioState } from './useMobileStudioState'
 import SubtitleStyleModal from './StyleSheet/SubtitleStyleModal'
 import CanvasSheet from './CanvasSheet'
@@ -42,8 +41,8 @@ export default function MobileStudioLayout({
   const currentSegment = subtitles[selectedSegmentIndex] || subtitles[0]
 
   return (
-    <div className="relative flex flex-col h-[90vh] max-w-md mx-auto bg-[#070605] rounded-3xl overflow-hidden border border-stone-800 shadow-2xl">
-      {/* ۱. ناحیه نمایش ویدیو و متن شناور با نسبت انتخابی Canvas */}
+    <div className="relative flex flex-col h-[85vh] max-w-md mx-auto bg-[#070605] rounded-3xl overflow-hidden border border-stone-800 shadow-2xl">
+      {/* ناحیه ویدیو */}
       <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden">
         <div
           className={`relative transition-all overflow-hidden flex items-center justify-center ${
@@ -58,11 +57,10 @@ export default function MobileStudioLayout({
         >
           <video
             src={videoUrl}
-            className={`w-full h-full ${styleConfig.contentFit === 'cover' ? 'object-cover' : 'object-contain'}`}
+            className={`w-full h-full ${styleConfig.contentFit === 'fill' ? 'object-cover' : 'object-contain'}`}
             playsInline
           />
 
-          {/* کادر زیرنویس متحرک روی ویدیو با استایل‌های کاربر */}
           {currentSegment && (
             <div
               onClick={() => setActiveSheet('caption_edit')}
@@ -88,9 +86,10 @@ export default function MobileStudioLayout({
           )}
         </div>
 
-        {/* ۲. نوار ابزار عمودی سمت چپ شناور (مطابق ویدیو) */}
+        {/* دکمه‌های ابزار شناور چپ */}
         <div className="absolute left-3 top-6 flex flex-col gap-3 z-20 bg-black/60 backdrop-blur-md p-2 rounded-2xl border border-stone-800/80">
           <button
+            type="button"
             onClick={() => setActiveSheet('canvas')}
             className="flex flex-col items-center text-[10px] text-stone-300 hover:text-amber-400"
           >
@@ -99,6 +98,7 @@ export default function MobileStudioLayout({
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveSheet('style')}
             className="flex flex-col items-center text-[10px] text-stone-300 hover:text-amber-400"
           >
@@ -107,30 +107,24 @@ export default function MobileStudioLayout({
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveSheet('caption_edit')}
             className="flex flex-col items-center text-[10px] text-stone-300 hover:text-amber-400"
           >
             <span className="text-base">✏️</span>
             <span>Caption</span>
           </button>
-
-          <button
-            onClick={() => alert('تنظیمات سایه در تب Style موجود است.')}
-            className="flex flex-col items-center text-[10px] text-stone-300 hover:text-amber-400"
-          >
-            <span className="text-base">🌑</span>
-            <span>Shadow</span>
-          </button>
         </div>
       </div>
 
-      {/* ۳. تایم‌لاین سگمنت‌ها در پایین */}
+      {/* نوار تایم‌لاین سگمنت‌ها */}
       <div className="bg-[#12100d] border-t border-stone-800 p-3">
         <div className="flex items-center justify-between mb-2 px-1">
           <span className="text-[11px] font-mono text-stone-400">
             {currentTime.toFixed(1)}s / {subtitles.length} سگمنت
           </span>
           <button
+            type="button"
             onClick={onExport}
             className="bg-amber-500 text-black px-3 py-1 rounded-lg text-xs font-bold hover:bg-amber-400 transition-all"
           >
@@ -138,10 +132,10 @@ export default function MobileStudioLayout({
           </button>
         </div>
 
-        {/* لیست قطعات زیرنویس با قابلیت اسکرول و کلیک سریع */}
         <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
           {subtitles.map((sub, idx) => (
             <button
+              type="button"
               key={sub.id || idx}
               onClick={() => {
                 setSelectedSegmentIndex(idx)
@@ -159,7 +153,6 @@ export default function MobileStudioLayout({
         </div>
       </div>
 
-      {/* مودال‌ها و شیت‌های پایین */}
       <SubtitleStyleModal
         isOpen={activeSheet === 'style'}
         onClose={() => setActiveSheet('none')}
