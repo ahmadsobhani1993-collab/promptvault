@@ -9,6 +9,11 @@ import SubtitleStudio from './SubtitleStudio'
 const MAX_FILE_SIZE_MB = 250
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
+const DEFAULT_SEGMENTS = [
+  { id: '1', start: 0.0, end: 3.0, text: 'به استودیوی حرفه‌ای خوش آمدید', words: [] },
+  { id: '2', start: 3.0, end: 6.0, text: 'آنچه مقدر است خواهد آمد، آرام باشید', words: [] },
+]
+
 export default function VideoSubtitleClient() {
   const auth = useAuth()
   const [videoUrl, setVideoUrl] = useState('')
@@ -17,6 +22,8 @@ export default function VideoSubtitleClient() {
 
   const { status, progress, busy, segments, setSegments, run, stop } = useVideoTranscribe()
   const baseName = fileName.replace(/\.[^.]+$/, '') || 'video'
+
+  const activeSegments = segments && segments.length > 0 ? segments : DEFAULT_SEGMENTS
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -62,62 +69,57 @@ export default function VideoSubtitleClient() {
 
   return (
     <div className="min-h-screen bg-[#070605] text-white flex flex-col p-4 md:p-6" dir="rtl">
-      {!videoUrl ? (
-        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-          <div className="max-w-md w-full rounded-3xl border border-stone-800 bg-[#12100d] p-8 shadow-2xl">
-            <div className="h-16 w-16 mx-auto mb-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-3xl">
-              🎬
-            </div>
-            <h2 className="text-lg font-black text-white mb-2">ویدیوی خود را وارد کنید</h2>
-            <p className="text-xs text-stone-400 leading-relaxed mb-6">
-              فایل ویدیوی خود را انتخاب کنید تا با هوش مصنوعی ترنسکرایب و زیرنویس آن آماده شود.
-            </p>
-
-            <div className="flex items-center justify-center gap-2 mb-6">
-              <span className="text-[11px] text-stone-400">سرعت پردازش:</span>
-              {([1, 2, 4, 8] as const).map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setSpeed(s)}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
-                    speed === s ? 'bg-amber-500 text-black' : 'bg-stone-900 border border-stone-800 text-stone-400'
-                  }`}
-                >
-                  {s}x
-                </button>
-              ))}
-            </div>
-
-            <label className="block w-full cursor-pointer rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 py-3 text-xs font-black text-black shadow-lg shadow-orange-500/20 active:scale-95 transition">
-              انتخاب ویدیو از سیستم
+      <div className="w-full max-w-6xl mx-auto space-y-4">
+        {/* نوار بالای صفحه برای تعویض/آپلود ویدیو و کنترل ترنسکرایب */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-stone-800 bg-[#12100d] p-4">
+          <div className="flex items-center gap-3">
+            <label className="cursor-pointer rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-2 text-xs font-black text-black shadow-lg shadow-orange-500/20 active:scale-95 transition">
+              {videoUrl ? '📁 تغییر ویدیو' : '🎬 انتخاب ویدیو'}
               <input type="file" accept="video/*,.mov,.mp4" onChange={handleFile} className="hidden" />
             </label>
+            <span className="text-xs text-stone-400 truncate max-w-[200px]">
+              {fileName || 'ویدیویی انتخاب نشده (حالت پیش‌نمایش)'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-stone-400">سرعت:</span>
+            {([1, 2, 4, 8] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setSpeed(s)}
+                className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                  speed === s ? 'bg-amber-500 text-black' : 'bg-stone-900 border border-stone-800 text-stone-400'
+                }`}
+              >
+                {s}x
+              </button>
+            ))}
           </div>
         </div>
-      ) : (
-        <div className="w-full max-w-6xl mx-auto space-y-4">
-          {busy && (
-            <div className="bg-stone-900/90 border border-amber-500/40 p-3 rounded-2xl backdrop-blur-md">
-              <div className="flex justify-between items-center text-xs mb-1.5">
-                <span className="text-amber-400 font-bold">{status || 'در حال ترنسکرایب...'}</span>
-                <button onClick={stop} className="text-red-400 text-[10px] bg-red-500/10 px-2 py-0.5 rounded">
-                  توقف
-                </button>
-              </div>
-              <div className="h-1.5 w-full bg-stone-800 rounded-full overflow-hidden">
-                <div className="h-full bg-amber-500 transition-all" style={{ width: `${progress}%` }} />
-              </div>
-            </div>
-          )}
 
-          <SubtitleStudio
-            videoUrl={videoUrl}
-            baseName={baseName}
-            segments={segments as any}
-            setSegments={setSegments}
-          />
-        </div>
-      )}
+        {busy && (
+          <div className="bg-stone-900/90 border border-amber-500/40 p-3 rounded-2xl backdrop-blur-md">
+            <div className="flex justify-between items-center text-xs mb-1.5">
+              <span className="text-amber-400 font-bold">{status || 'در حال ترنسکرایب...'}</span>
+              <button onClick={stop} className="text-red-400 text-[10px] bg-red-500/10 px-2 py-0.5 rounded">
+                توقف
+              </button>
+            </div>
+            <div className="h-1.5 w-full bg-stone-800 rounded-full overflow-hidden">
+              <div className="h-full bg-amber-500 transition-all" style={{ width: `${progress}%` }} />
+            </div>
+          </div>
+        )}
+
+        {/* لود مستقیم استودیو زیرنویس جدید با تمام تب‌ها و امکانات کادر، فونت و استایل */}
+        <SubtitleStudio
+          videoUrl={videoUrl}
+          baseName={baseName}
+          segments={activeSegments as any}
+          setSegments={setSegments}
+        />
+      </div>
     </div>
   )
 }
