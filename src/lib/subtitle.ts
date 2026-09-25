@@ -37,3 +37,8 @@ export function download(filename: string, content: string, mime = 'text/plain')
   a.click()
   URL.revokeObjectURL(url)
 }
+
+export function toTxt(segments: { text: string }[]): string {
+  if (!segments || !segments.length) return ''
+  return segments.map((s) => s.text.trim()).filter(Boolean).join('\n')
+}
