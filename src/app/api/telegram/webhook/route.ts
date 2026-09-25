@@ -3,23 +3,9 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import crypto from 'crypto'
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://promptsfa.ir'
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://promptsfa.ir'
 
-async function sendText(chatId: number, text: string) {
-  const token = process.env.LOGIN_BOT_TOKEN
-  if (!token) return
-  try {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text }),
-    })
-  } catch (e) {
-    console.error('Error sending telegram text:', e)
-  }
-}
-
-async function sendButton(chatId: number, text: string, buttonText: string, url: string) {
+async function sendTelegramMessage(chatId: number, text: string, replyMarkup?: any) {
   const token = process.env.LOGIN_BOT_TOKEN
   if (!token) return
   try {
@@ -29,13 +15,11 @@ async function sendButton(chatId: number, text: string, buttonText: string, url:
       body: JSON.stringify({
         chat_id: chatId,
         text,
-        reply_markup: {
-          inline_keyboard: [[{ text: buttonText, url }]],
-        },
+        reply_markup: replyMarkup,
       }),
     })
-  } catch (e) {
-    console.error('Error sending telegram button:', e)
+  } catch (err) {
+    console.error('Failed to send telegram message:', err)
   }
 }
 
@@ -49,27 +33,38 @@ export async function POST(req: Request) {
 
     const from = msg.from
     const chatId = msg.chat.id
-
     if (from.is_bot) return NextResponse.json({ ok: true })
 
-    const token = msg.text.startsWith('/start ')
-      ? msg.text.replace('/start ', '').trim()
+    const textTrimmed = msg.text.trim()
+    const token = textTrimmed.startsWith('/start ')
+      ? textTrimmed.replace('/start ', '').trim()
       : null
 
     if (!token) {
-      await sendText(chatId, 'سلام! برای ورود به سایت، از گزینه «ورود با تلگرام» در سایت استفاده کنید.')
+      await sendTelegramMessage(
+        chatId,
+        '👋 سلام! برای ورود به سایت پرامپت‌فا، ابتدا در سایت روی دکمه «ورود با تلگرام» بزنید تا لینک اختصاصی شما تولید شود.',
+        {
+          inline_keyboard: [
+            [{ text: '🌐 باز کردن سایت پرامپت‌فا', url: `${APP_URL}/login` }]
+          ]
+        }
+      )
       return NextResponse.json({ ok: true })
     }
 
-    const loginToken = await prisma.loginToken.findUnique({ where: { token } })
+    const loginToken = await prisma.loginToken.findUnique({
+      where: { token },
+    })
+
     if (!loginToken) {
-      await sendText(chatId, 'لینک ورود منقضی یا نامعتبر شده است. لطفاً مجدداً از سایت اقدام کنید.')
+      await sendTelegramMessage(chatId, '❌ این لینک ورود منقضی یا نامعتبر شده است. لطفاً مجدداً از صفحه ورود سایت اقدام فرمایید.')
       return NextResponse.json({ ok: true })
     }
 
     const tgIdentifier = from.username ? `@${from.username}` : `tg_${from.id}`
 
-    // جستجو بر اساس فیلد معتبر telegram
+    // جستجوی کاربر با فیلد telegram یا تلگرام هندل
     let user = await prisma.user.findFirst({
       where: {
         OR: [
@@ -80,7 +75,6 @@ export async function POST(req: Request) {
     })
 
     if (!user) {
-      // ساخت یوزرنیم یکتا
       let baseUsername = from.username 
         ? from.username.toLowerCase().replace(/[^a-z0-9_]/g, '')
         : (from.first_name ? from.first_name.toLowerCase().replace(/[^a-z0-9_]/g, '') : 'user')
@@ -88,7 +82,6 @@ export async function POST(req: Request) {
       if (!baseUsername || baseUsername.length < 3) baseUsername = 'user'
       const randomSuffix = crypto.randomBytes(3).toString('hex')
       const finalUsername = `${baseUsername}_${randomSuffix}`
-
       const displayName = [from.first_name, from.last_name].filter(Boolean).join(' ') || from.username || 'کاربر پرامپت‌فا'
 
       user = await prisma.user.create({
@@ -101,7 +94,7 @@ export async function POST(req: Request) {
       })
     }
 
-    // تایید توکن ورود کاربر
+    // تایید نشست لاگین
     await prisma.loginToken.update({
       where: { token },
       data: {
@@ -110,16 +103,21 @@ export async function POST(req: Request) {
       },
     })
 
-    await sendButton(
+    const callbackUrl = `${APP_URL}/api/auth/telegram/callback?token=${token}`
+
+    await sendTelegramMessage(
       chatId,
-      '✅ هویت شما تایید شد! برای ورود به سایت روی دکمه زیر کلیک کنید:',
-      '🚀 ورود به پرامپت‌فا',
-      `${APP_URL}/api/auth/telegram/callback?token=${token}`
+      '✅ هویت شما با موفقیت تایید شد!\nجهت تکمیل ورود و هدایت به پنل کاربری، دکمه زیر را فشار دهید:',
+      {
+        inline_keyboard: [
+          [{ text: '🚀 ورود نهایی به پرامپت‌فا', url: callbackUrl }]
+        ]
+      }
     )
 
     return NextResponse.json({ ok: true })
   } catch (err: any) {
-    console.error('Telegram webhook handled error:', err)
+    console.error('Telegram webhook runtime error:', err)
     return NextResponse.json({ ok: true, handledError: err?.message })
   }
 }
