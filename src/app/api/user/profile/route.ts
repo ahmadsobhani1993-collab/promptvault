@@ -10,29 +10,35 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: 'ابتدا وارد حساب شوید' }, { status: 401 })
     }
 
+    const currentUser = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { username: true },
+    })
+
     const { name, username, bio, image, telegram, instagram } = await req.json()
 
-    // بررسی تکراری نبودن نام کاربری
-    if (username) {
+    let newUsernameData = undefined
+
+    // اگر کاربر قبلاً یوزرنیم نداشته، اکنون می‌تواند یکتا انتخاب کند
+    if (!currentUser?.username && username) {
       const cleanUsername = String(username).toLowerCase().trim().replace(/[^a-z0-9_]/g, '')
+      if (cleanUsername.length < 3) {
+        return NextResponse.json({ error: 'نام کاربری باید حداقل ۳ کاراکتر انگلیسی باشد.' }, { status: 400 })
+      }
       const existing = await prisma.user.findFirst({
-        where: {
-          username: cleanUsername,
-          NOT: { id: session.user.id },
-        },
+        where: { username: cleanUsername },
       })
       if (existing) {
-        return NextResponse.json({ error: 'این نام کاربری قبلاً انتخاب شده است.' }, { status: 400 })
+        return NextResponse.json({ error: 'این نام کاربری قبلاً توسط شخص دیگری انتخاب شده است.' }, { status: 400 })
       }
+      newUsernameData = cleanUsername
     }
 
     const updatedUser = await prisma.user.update({
       where: { id: session.user.id },
       data: {
         ...(name !== undefined && { name: String(name).trim() }),
-        ...(username !== undefined && {
-          username: username ? String(username).toLowerCase().trim().replace(/[^a-z0-9_]/g, '') : null,
-        }),
+        ...(newUsernameData !== undefined && { username: newUsernameData }),
         ...(bio !== undefined && { bio: String(bio).trim() }),
         ...(image !== undefined && { image: String(image).trim() }),
         ...(telegram !== undefined && { telegram: telegram ? String(telegram).trim() : null }),

@@ -7,178 +7,167 @@ import { auth } from '@/auth'
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
-  const isUI = searchParams.get('ui') === '1'
-
-  if (isUI) {
+  if (searchParams.get('ui') === '1') {
     const html = `<!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <title>کنسول ایمپورت هوشمند پرامپت‌ها</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <title>کنسول ایمپورت پرامپت</title>
   <style>
-    body { background-color: #0b0907; color: #f3f3f3; font-family: system-ui, -apple-system, sans-serif; }
+    * { box-sizing: border-box; font-family: system-ui, sans-serif; }
+    body { background: #0b0907; color: #f3f3f3; padding: 30px; margin: 0; }
+    .card { background: #14110d; border: 1px solid #2a241e; border-radius: 16px; padding: 25px; max-width: 800px; margin: auto; }
+    h1 { color: #f59e0b; font-size: 20px; margin: 0 0 15px 0; }
+    .box { border: 1px solid #332a22; border-radius: 12px; padding: 15px; margin-bottom: 20px; background: rgba(0,0,0,0.3); }
+    label { display: block; font-size: 13px; color: #f59e0b; font-weight: bold; margin-bottom: 8px; }
+    input[type="url"], textarea { width: 100%; border: 1px solid #44382c; background: #1b1612; border-radius: 8px; padding: 10px; color: #fff; font-size: 13px; outline: none; }
+    input[type="url"] { direction: ltr; text-align: left; }
+    button { background: #f59e0b; color: #000; border: none; font-weight: bold; cursor: pointer; border-radius: 8px; padding: 10px 18px; font-size: 13px; }
+    button:hover { background: #fbbf24; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-main { width: 100%; padding: 14px; font-size: 15px; border-radius: 12px; }
+    #log { margin-top: 15px; padding: 15px; border-radius: 8px; background: #000; font-size: 12px; white-space: pre-wrap; max-height: 250px; overflow-y: auto; display: none; }
   </style>
 </head>
-<body class="p-6 md:p-10 max-w-4xl mx-auto">
-  <div class="border border-[#2a241e] bg-[#14110d] rounded-2xl p-6 md:p-8 shadow-2xl">
-    <div class="flex items-center justify-between border-b border-[#2a241e] pb-4 mb-6">
-      <div class="flex items-center gap-3">
-        <span class="text-3xl">📥</span>
-        <div>
-          <h1 class="text-xl font-black text-amber-400">کنسول ایمپورت پرامپت (متن، کد، TXT و URL)</h1>
-          <p class="text-xs text-stone-400">تبدیل و دسته‌بندی خودکار داده‌ها با هوش مصنوعی و ذخیره مستقیم در دیتابیس</p>
-        </div>
+<body>
+  <div class="card">
+    <h1>کنسول ایمپورت پرامپت (متن، کد، TXT و URL)</h1>
+    
+    <div class="box">
+      <label>روش ۱: دریافت محتوا از لینک (URL)</label>
+      <div style="display: flex; gap: 10px;">
+        <input id="fetchUrl" type="url" placeholder="https://raw.githubusercontent.com/... یا آدرس فایل متنی" />
+        <button id="fetchBtn" type="button">دریافت</button>
       </div>
     </div>
 
-    <!-- بخش ورودی با URL -->
-    <div class="mb-6 p-4 rounded-xl border border-stone-800 bg-black/40">
-      <label class="block text-xs font-bold text-amber-400 mb-2">روش ۱: ایمپورت مستقیم از لینک اینترنتی (URL)</label>
-      <div class="flex gap-2">
-        <input id="fetchUrl" type="url" placeholder="https://raw.githubusercontent.com/... یا لینک صفحه منبع" class="flex-1 rounded-xl border border-stone-700 bg-stone-900/90 p-2.5 text-xs text-white focus:outline-none focus:border-amber-400" dir="ltr" />
-        <button id="fetchBtn" type="button" class="bg-amber-500 hover:bg-amber-600 text-black px-4 py-2 rounded-xl text-xs font-bold transition-all">
-          دریافت محتوا
-        </button>
-      </div>
+    <div class="box">
+      <label>روش ۲: بارگذاری فایل TXT</label>
+      <input id="txtFile" type="file" accept=".txt" style="font-size: 12px; color: #bbb;" />
     </div>
 
-    <!-- بخش آپلود فایل TXT -->
-    <div class="mb-6 p-4 rounded-xl border border-stone-800 bg-black/40">
-      <label class="block text-xs font-bold text-amber-400 mb-2">روش ۲: آپلود مستقیم فایل TXT</label>
-      <input id="txtFile" type="file" accept=".txt" class="block w-full text-xs text-stone-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-amber-500/20 file:text-amber-400 hover:file:bg-amber-500/30 cursor-pointer" />
+    <div style="margin-bottom: 20px;">
+      <label style="color: #ccc;">محتوای پرامپت‌ها:</label>
+      <textarea id="rawText" rows="10" placeholder="متن پرامپت‌ها را اینجا وارد کنید..."></textarea>
     </div>
 
-    <!-- بخش متن خام پرامپت‌ها -->
-    <div class="mb-6">
-      <label class="block text-xs font-bold text-stone-300 mb-2">محتوای پرامپت‌ها (قابل ویرایش مستقیم یا حاصل از فایل/URL):</label>
-      <textarea id="rawText" rows="10" placeholder="متن پرامپت‌ها را اینجا بگذارید..." class="w-full rounded-xl border border-stone-800 bg-stone-900/80 p-3 text-xs text-stone-200 focus:outline-none focus:border-amber-400 font-mono"></textarea>
-    </div>
-
-    <!-- دکمه پردازش -->
-    <button id="importBtn" type="button" class="w-full bg-amber-500 hover:bg-amber-400 text-black py-3.5 rounded-xl font-black text-sm transition-all shadow-lg shadow-amber-500/10">
-      🚀 شروع پردازش و ایمپورت در پرامپت‌فا
-    </button>
-
-    <!-- گزارش وضعیت -->
-    <div id="statusBox" class="mt-6 hidden p-4 rounded-xl border border-stone-800 bg-black/60 text-xs">
-      <div id="statusText" class="font-bold text-amber-400 mb-2">در حال آماده‌سازی...</div>
-      <pre id="log" class="text-[11px] text-stone-300 overflow-x-auto max-h-48 whitespace-pre-wrap"></pre>
-    </div>
+    <button id="importBtn" type="button" class="btn-main">شروع پردازش و ایمپورت در سایت</button>
+    <div id="log"></div>
   </div>
 
   <script>
-    const fetchBtn = document.getElementById('fetchBtn');
-    const fetchUrlInput = document.getElementById('fetchUrl');
-    const txtFileInput = document.getElementById('txtFile');
-    const rawTextArea = document.getElementById('rawText');
-    const importBtn = document.getElementById('importBtn');
-    const statusBox = document.getElementById('statusBox');
-    const statusText = document.getElementById('statusText');
-    const logBox = document.getElementById('log');
+    var fetchBtn = document.getElementById('fetchBtn');
+    var fetchUrlInput = document.getElementById('fetchUrl');
+    var txtFileInput = document.getElementById('txtFile');
+    var rawTextArea = document.getElementById('rawText');
+    var importBtn = document.getElementById('importBtn');
+    var logBox = document.getElementById('log');
 
-    // خواندن فایل TXT در کلاینت
-    txtFileInput.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
+    txtFileInput.addEventListener('change', function(e) {
+      var file = e.target.files[0];
       if (!file) return;
-      try {
-        const text = await file.text();
-        rawTextArea.value = text;
-        alert('محتوای فایل TXT با موفقیت بارگذاری شد!');
-      } catch (err) {
-        alert('خطا در خواندن فایل TXT');
-      }
+      var reader = new FileReader();
+      reader.onload = function(evt) {
+        rawTextArea.value = evt.target.result;
+        alert('فایل متنی خوانده شد.');
+      };
+      reader.onerror = function() {
+        alert('خطا در خواندن فایل.');
+      };
+      reader.readAsText(file);
     });
 
-    // دریافت محتوا از URL
-    fetchBtn.addEventListener('click', async () => {
-      const url = fetchUrlInput.value.trim();
-      if (!url) return alert('لطفاً آدرس اینترنتی معتبر وارد کنید.');
+    fetchBtn.addEventListener('click', function() {
+      var url = fetchUrlInput.value.trim();
+      if (!url) {
+        alert('لطفا آدرس معتبر وارد کنید.');
+        return;
+      }
       fetchBtn.disabled = true;
       fetchBtn.innerText = 'در حال دریافت...';
-      try {
-        const res = await fetch('/api/code-import', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'fetch_url', url })
-        });
-        const data = await res.json();
+      fetch('/api/code-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'fetch_url', url: url })
+      })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
         if (data.ok && data.text) {
           rawTextArea.value = data.text;
-          alert('محتوای لینک با موفقیت دریافت شد!');
+          alert('محتوای لینک دریافت شد.');
         } else {
-          alert('خطا در دریافت لینک: ' + (data.error || 'ناشناخته'));
+          alert('خطا: ' + (data.error || 'دریافت ناموفق'));
         }
-      } catch (err) {
-        alert('خطا در اتصال به اینترنت یا بلاک بودن منبع.');
-      } finally {
+      })
+      .catch(function(err) {
+        alert('خطای اتصال: ' + err.message);
+      })
+      .finally(function() {
         fetchBtn.disabled = false;
-        fetchBtn.innerText = 'دریافت محتوا';
-      }
+        fetchBtn.innerText = 'دریافت';
+      });
     });
 
-    // شروع ایمپورت
-    importBtn.addEventListener('click', async () => {
-      const text = rawTextArea.value.trim();
-      if (!text) return alert('لطفاً ابتدا متنی برای پرامپت‌ها قرار دهید.');
-
-      importBtn.disabled = true;
-      statusBox.classList.remove('hidden');
-      statusText.innerText = 'در حال استخراج و ساخت رکوردها با هوش مصنوعی...';
-      logBox.innerText = 'ارسال متن به سرور...';
-
-      try {
-        const res = await fetch('/api/code-import', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'import_text', text })
-        });
-        const data = await res.json();
-        if (data.ok) {
-          statusText.innerText = '✅ پردازش با موفقیت به پایان رسید!';
-          logBox.innerText = 'تعداد پرامپت‌های اضافه شده: ' + (data.count || 0) + '\n' + JSON.stringify(data.items, null, 2);
-        } else {
-          statusText.innerText = '❌ خطا در فرآیند:';
-          logBox.innerText = data.error || 'خطای ناشناخته رخ داد.';
-        }
-      } catch (err) {
-        statusText.innerText = '❌ خطای شبکه:';
-        logBox.innerText = err.message;
-      } finally {
-        importBtn.disabled = false;
+    importBtn.addEventListener('click', function() {
+      var text = rawTextArea.value.trim();
+      if (!text) {
+        alert('متن پرامپت خالی است.');
+        return;
       }
+      importBtn.disabled = true;
+      importBtn.innerText = 'در حال ذخیره‌سازی...';
+      logBox.style.display = 'block';
+      logBox.innerText = 'ارسال اطلاعات به سرور...';
+
+      fetch('/api/code-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'import_text', text: text })
+      })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.ok) {
+          logBox.innerText = 'با موفقیت ثبت شد! تعداد: ' + (data.count || 0) + '\n' + JSON.stringify(data.items, null, 2);
+        } else {
+          logBox.innerText = 'خطا در ثبت: ' + (data.error || 'نامشخص');
+        }
+      })
+      .catch(function(err) {
+        logBox.innerText = 'خطای شبکه: ' + err.message;
+      })
+      .finally(function() {
+        importBtn.disabled = false;
+        importBtn.innerText = 'شروع پردازش و ایمپورت در سایت';
+      });
     });
   </script>
 </body>
 </html>`
     return new NextResponse(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
   }
-
-  return NextResponse.json({ message: 'Code Import API active. Pass ?ui=1 for console.' })
+  return NextResponse.json({ message: 'Code Import API active. Pass ?ui=1' })
 }
 
 export async function POST(req: Request) {
   try {
     const session = await auth()
     if (!session?.user || session.user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'دسترسی فقط مخصوص مدیر است' }, { status: 403 })
+      return NextResponse.json({ error: 'دسترسی غیرمجاز' }, { status: 403 })
     }
 
     const body = await req.json()
     const { action, url, text } = body
 
-    // واکشی URL با دور زدن CORS
     if (action === 'fetch_url') {
-      if (!url) return NextResponse.json({ error: 'آدرس URL ارسال نشده است.' }, { status: 400 })
+      if (!url) return NextResponse.json({ error: 'آدرس وارد نشده است' }, { status: 400 })
       const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      if (!res.ok) throw new Error('HTTP ' + res.status)
       const fetchedText = await res.text()
       return NextResponse.json({ ok: true, text: fetchedText.slice(0, 100000) })
     }
 
-    // پردازش و ذخیره پرامپت‌ها
     if (action === 'import_text') {
-      if (!text) return NextResponse.json({ error: 'متن خالی است.' }, { status: 400 })
+      if (!text) return NextResponse.json({ error: 'متن خالی است' }, { status: 400 })
 
       let category = await prisma.category.findFirst()
       if (!category) {
@@ -194,89 +183,29 @@ export async function POST(req: Request) {
         })
       }
 
-      const apiKey = process.env.GEMINI_API_KEY || ''
-      let parsed: any[] = []
+      const slug = 'imp-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6)
+      const created = await prisma.prompt.create({
+        data: {
+          slug,
+          titleFa: 'پرامپت متنی جدید',
+          titleEn: 'Imported Prompt',
+          prompt: text,
+          type: 'TEXT',
+          model: 'GPT-4o',
+          img: '/placeholder.png',
+          categoryId: category.id,
+          userId: session.user.id,
+          tagsFa: ['متن', 'کد'],
+          tagsEn: ['text', 'code'],
+          status: 'PUBLISHED',
+        },
+      })
 
-      if (apiKey) {
-        try {
-          const aiPrompt = `Analyze the following raw prompts text and extract individual prompts into a clean JSON array.
-Each object must have:
-- titleFa: A short catchy Persian title
-- titleEn: English title
-- prompt: The full prompt text
-- type: Either "TEXT" or "CODE"
-- tagsFa: array of 2-3 Persian tags
-- tagsEn: array of 2-3 English tags
-
-Raw Text:
-${text.slice(0, 15000)}
-
-Respond strictly in pure JSON array format without backticks or markdown.`
-
-          const geminiRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: aiPrompt }] }],
-              }),
-            }
-          )
-
-          if (geminiRes.ok) {
-            const data = await geminiRes.json()
-            const rawOutput = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
-            const cleanJson = rawOutput.replace(/```json/g, '').replace(/```/g, '').trim()
-            parsed = JSON.parse(cleanJson)
-          }
-        } catch (err) {
-          console.error('Gemini fetch parse fallback:', err)
-        }
-      }
-
-      // در صورت نبود خروجی معتبر یا عدم تنظیم کلید، ذخیره متن به صورت پرامپت
-      if (!Array.isArray(parsed) || parsed.length === 0) {
-        parsed = [
-          {
-            titleFa: 'پرامپت ایمپورت شده',
-            titleEn: 'Imported Prompt',
-            prompt: text.slice(0, 5000),
-            type: 'TEXT',
-            tagsFa: ['کد', 'متن'],
-            tagsEn: ['code', 'text'],
-          },
-        ]
-      }
-
-      const createdItems = []
-      for (const item of parsed) {
-        const slug = `imp-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`
-        const created = await prisma.prompt.create({
-          data: {
-            slug,
-            titleFa: item.titleFa || 'پرامپت جدید',
-            titleEn: item.titleEn || 'New Prompt',
-            prompt: item.prompt || '',
-            type: item.type === 'CODE' ? 'CODE' : 'TEXT',
-            model: 'GPT-4o / Claude',
-            img: '/placeholder.png',
-            categoryId: category.id,
-            userId: session.user.id,
-            tagsFa: item.tagsFa || [],
-            tagsEn: item.tagsEn || [],
-            status: 'PUBLISHED',
-          },
-        })
-        createdItems.push({ id: created.id, titleFa: created.titleFa, slug: created.slug })
-      }
-
-      return NextResponse.json({ ok: true, count: createdItems.length, items: createdItems })
+      return NextResponse.json({ ok: true, count: 1, items: [created] })
     }
 
     return NextResponse.json({ error: 'اکشن نامعتبر است' }, { status: 400 })
   } catch (error: any) {
-    console.error('Import error:', error)
-    return NextResponse.json({ error: error.message || 'خطا در پردازش سرور' }, { status: 500 })
+    return NextResponse.json({ error: error.message || 'خطا در سرور' }, { status: 500 })
   }
 }
