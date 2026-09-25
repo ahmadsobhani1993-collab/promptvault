@@ -9,11 +9,6 @@ import SubtitleStudio from './SubtitleStudio'
 const MAX_FILE_SIZE_MB = 250
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
-const DEFAULT_SEGMENTS = [
-  { id: '1', start: 0.0, end: 3.0, text: 'به استودیوی حرفه‌ای خوش آمدید', words: [] },
-  { id: '2', start: 3.0, end: 6.0, text: 'آنچه مقدر است خواهد آمد، آرام باشید', words: [] },
-]
-
 export default function VideoSubtitleClient() {
   const auth = useAuth()
   const [videoUrl, setVideoUrl] = useState('')
@@ -22,8 +17,6 @@ export default function VideoSubtitleClient() {
 
   const { status, progress, busy, segments, setSegments, run, stop } = useVideoTranscribe()
   const baseName = fileName.replace(/\.[^.]+$/, '') || 'video'
-
-  const activeSegments = segments && segments.length > 0 ? segments : DEFAULT_SEGMENTS
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -70,7 +63,7 @@ export default function VideoSubtitleClient() {
   return (
     <div className="min-h-screen bg-[#070605] text-white flex flex-col p-4 md:p-6" dir="rtl">
       <div className="w-full max-w-6xl mx-auto space-y-4">
-        {/* نوار بالای صفحه برای تعویض/آپلود ویدیو و کنترل ترنسکرایب */}
+        {/* نوار انتخاب ویدیو */}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-stone-800 bg-[#12100d] p-4">
           <div className="flex items-center gap-3">
             <label className="cursor-pointer rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-2 text-xs font-black text-black shadow-lg shadow-orange-500/20 active:scale-95 transition">
@@ -78,12 +71,12 @@ export default function VideoSubtitleClient() {
               <input type="file" accept="video/*,.mov,.mp4" onChange={handleFile} className="hidden" />
             </label>
             <span className="text-xs text-stone-400 truncate max-w-[200px]">
-              {fileName || 'ویدیویی انتخاب نشده (حالت پیش‌نمایش)'}
+              {fileName || 'هیچ ویدیویی انتخاب نشده است'}
             </span>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-[11px] text-stone-400">سرعت:</span>
+            <span className="text-[11px] text-stone-400">سرعت پردازش:</span>
             {([1, 2, 4, 8] as const).map((s) => (
               <button
                 key={s}
@@ -112,11 +105,11 @@ export default function VideoSubtitleClient() {
           </div>
         )}
 
-        {/* لود مستقیم استودیو زیرنویس جدید با تمام تب‌ها و امکانات کادر، فونت و استایل */}
+        {/* لود کامپوننت جدید با سگمنت‌های واقعی (بدون هیچ متن پیش‌فرض فیک) */}
         <SubtitleStudio
           videoUrl={videoUrl}
           baseName={baseName}
-          segments={activeSegments as any}
+          segments={segments || []}
           setSegments={setSegments}
         />
       </div>
