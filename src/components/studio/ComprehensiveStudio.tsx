@@ -1,7 +1,8 @@
 ﻿'use client'
 
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { CaptionSegment, StyleConfig, DenoiseSettings } from '@/lib/studio/types'
+import ClassicDesktopView from './ClassicDesktopView'
 import StudioHeader from './StudioHeader'
 import StudioToolbar, { ActiveTool } from './StudioToolbar'
 import StudioPreview from './StudioPreview'
@@ -41,7 +42,7 @@ const DEFAULT_STYLE: StyleConfig = {
   hasActiveWordBg: false,
   alignment: 'center',
   aspectRatio: '9:16',
-  contentFit: 'fill',
+  contentFit: 'fit',
   templateId: 'pop-classic-gold',
   showProgressBar: false,
   progressColor: '#f59e0b',
@@ -79,13 +80,18 @@ export default function ComprehensiveStudio({
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null)
   const [showExportModal, setShowExportModal] = useState(false)
 
-  // Undo / Redo
-  const [history, setHistory] = useState<CaptionSegment[][]>([])
-  const [redoStack, setRedoStack] = useState<CaptionSegment[][]>([])
+  // تشخیص هوشمند دستگاه: دسکتاپ به نمای کلاسیک، موبایل به استودیوی پیشرفته
+  const [viewMode, setViewMode] = useState<'classic' | 'advanced'>('classic')
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setViewMode('advanced')
+    }
+  }, [])
 
   // موتور صوتی
-  const videoRef = useRef<HTMLVideoElement | null>(null)
-  const audioEngineRef = useRef<AudioEngine>(new AudioEngine())
+  const videoRef = React.useRef<HTMLVideoElement | null>(null)
+  const audioEngineRef = React.useRef<AudioEngine>(new AudioEngine())
   const [denoiseSettings, setDenoiseSettings] = useState<DenoiseSettings>({
     enabled: false,
     intensity: 40,
@@ -106,7 +112,6 @@ export default function ComprehensiveStudio({
     video.addEventListener('play', handlePlay)
     video.addEventListener('pause', handlePause)
 
-    // پیوند فیلتر صوتی به ویدیو
     try {
       audioEngineRef.current.init(video)
     } catch {}
@@ -118,10 +123,6 @@ export default function ComprehensiveStudio({
       video.removeEventListener('pause', handlePause)
     }
   }, [videoUrl])
-
-  useEffect(() => {
-    audioEngineRef.current.applySettings(denoiseSettings)
-  }, [denoiseSettings])
 
   const togglePlay = () => {
     if (!videoRef.current) return
@@ -135,31 +136,9 @@ export default function ComprehensiveStudio({
     setCurrentTime(time)
   }
 
-  const pushToHistory = (newSegments: CaptionSegment[]) => {
-    setHistory((prev) => [...prev, segments])
-    setRedoStack([])
-    setSegments(newSegments)
-  }
-
-  const handleUndo = () => {
-    if (!history.length) return
-    const prev = history[history.length - 1]
-    setRedoStack((r) => [segments, ...r])
-    setHistory((h) => h.slice(0, h.length - 1))
-    setSegments(prev)
-  }
-
-  const handleRedo = () => {
-    if (!redoStack.length) return
-    const next = redoStack[0]
-    setHistory((h) => [...h, segments])
-    setRedoStack((r) => r.slice(1))
-    setSegments(next)
-  }
-
   const handleTranslate = async () => {
-    const translated = await translateCaptionSegments(segments, 'en')
-    pushToHistory(
+    const translated = await translateCaptionSegments(segments, 'fa')
+    setSegments(
       translated.map((t) => ({
         ...t,
         text: t.translatedText || t.text,
@@ -167,22 +146,40 @@ export default function ComprehensiveStudio({
     )
   }
 
-  const currentSegment = segments.find(
-    (s) => currentTime >= s.start && currentTime <= s.end
-  ) || segments.find((s) => s.id === selectedSegmentId) || null
+  // ۱. رندر نمای کلاسیک در دسکتاپ
+  if (viewMode === 'classic') {
+    return (
+      <ClassicDesktopView
+        videoUrl={videoUrl}
+        segments={segments}
+        onUpdateSegments={setSegments}
+        styleConfig={styleConfig}
+        onUpdateStyle={(p) => setStyleConfig((s) => ({ ...s, ...p }))}
+        currentTime={currentTime}
+        duration={duration}
+        isPlaying={isPlaying}
+        onTogglePlay={togglePlay}
+        onSeek={seek}
+        onTranslate={handleTranslate}
+        onChangeVideo={onClose}
+        onSwitchToAdvanced={() => setViewMode('advanced')}
+        denoiseSettings={denoiseSettings}
+        onUpdateDenoise={(p) => setDenoiseSettings((d) => ({ ...d, ...p }))}
+      />
+    )
+  }
 
+  // ۲. رندر استودیوی عمودی پیشرفته در موبایل یا حالت انتخابی
   return (
     <div className="relative flex flex-col h-screen w-screen bg-[#070605] overflow-hidden select-none">
-      {/* ۱. هدر */}
       <StudioHeader
         onClose={onClose}
         onExportClick={() => setShowExportModal(true)}
         onTranslateClick={handleTranslate}
         segments={segments}
-        onImportSRT={(newSegs) => pushToHistory(newSegs)}
+        onImportSRT={(newSegs) => setSegments(newSegs)}
       />
 
-      {/* ۲. بخش میانی: تولبار سمت چپ + پیش‌نمایش زنده + پنل کشویی ابزارها */}
       <div className="relative flex flex-1 overflow-hidden">
         <StudioToolbar activeTool={activeTool} setActiveTool={setActiveTool} />
 
@@ -190,12 +187,13 @@ export default function ComprehensiveStudio({
           videoUrl={videoUrl}
           currentTime={currentTime}
           styleConfig={styleConfig}
-          currentSegment={currentSegment}
+          currentSegment={
+            segments.find((s) => currentTime >= s.start && currentTime <= s.end) || null
+          }
           videoRef={videoRef}
           onVideoClick={togglePlay}
         />
 
-        {/* پنل بازشو ابزارها */}
         {activeTool !== 'none' && (
           <div className="absolute right-0 top-0 bottom-0 w-80 bg-[#12100d] border-l border-stone-800 shadow-2xl z-30 overflow-y-auto">
             {activeTool === 'canvas' && (
@@ -220,16 +218,12 @@ export default function ComprehensiveStudio({
               />
             )}
             {activeTool === 'prepare_post' && (
-              <PreparePostPanel
-                segments={segments}
-                onClose={() => setActiveTool('none')}
-              />
+              <PreparePostPanel segments={segments} onClose={() => setActiveTool('none')} />
             )}
           </div>
         )}
       </div>
 
-      {/* ۳. تایم‌لاین پایینی */}
       <StudioTimeline
         currentTime={currentTime}
         duration={duration}
@@ -239,39 +233,11 @@ export default function ComprehensiveStudio({
         segments={segments}
         selectedSegmentId={selectedSegmentId}
         onSelectSegment={setSelectedSegmentId}
-        onUndo={handleUndo}
-        onRedo={handleRedo}
-        canUndo={history.length > 0}
-        canRedo={redoStack.length > 0}
+        onUndo={() => {}}
+        onRedo={() => {}}
+        canUndo={false}
+        canRedo={false}
       />
-
-      {/* ۴. مودال خروجی نهایی */}
-      {showExportModal && (
-        <div className="absolute inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
-          <div className="w-full max-w-lg rounded-3xl bg-[#14120f] border border-stone-800 p-6 shadow-2xl text-right" dir="rtl">
-            <div className="flex items-center justify-between mb-4 border-b border-stone-800 pb-3">
-              <h3 className="text-base font-bold text-white">دریافت خروجی ویدیوی نهایی (Export)</h3>
-              <button
-                type="button"
-                onClick={() => setShowExportModal(false)}
-                className="text-stone-400 hover:text-white text-sm"
-              >
-                ✕
-              </button>
-            </div>
-            <SubtitleVideoExport
-              videoUrl={videoUrl}
-              segments={segments as any}
-              style={{
-                fontId: styleConfig.fontFamily,
-                color: styleConfig.textColor,
-                hlColor: styleConfig.activeWordColor,
-                karaoke: true,
-              } as any}
-            />
-          </div>
-        </div>
-      )}
     </div>
   )
 }
