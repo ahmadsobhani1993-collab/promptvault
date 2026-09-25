@@ -1,52 +1,64 @@
 ﻿'use client'
 
 import { useRef, useState } from 'react'
-import { DEFAULT_STYLE, loadFont, type Seg, type Style } from '@/lib/subtitle-studio'
-import { clamp, drawSubtitleOnCanvas } from './subtitle-canvas'
+import { StudioSegment, StudioStyleConfig } from '@/lib/studio/unified-style'
+import { renderStudioFrame, clampCanvasDimensions } from '@/lib/studio/universal-renderer'
+import { ensureFontLoaded } from '@/lib/studio/font-loader'
 
-const STYLE_STORAGE_KEY = 'promptvault.subtitle.style'
 const FPS = 30
-const FALLBACK_COLOR_SPACE = { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', fullRange: false } as const
+const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
 
 let cachedFFmpeg: any = null
+let ffmpegIsLoaded = false
 
-export async function getOrInitFFmpeg(): Promise<any> {
-  if (cachedFFmpeg && cachedFFmpeg.loaded) return cachedFFmpeg
+async function getOrInitFFmpeg(): Promise<any> {
+  if (cachedFFmpeg && ffmpegIsLoaded) return cachedFFmpeg
   const { FFmpeg } = await import('@ffmpeg/ffmpeg')
   const { toBlobURL } = await import('@ffmpeg/util')
 
   const ffmpeg = new FFmpeg()
   const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
-
   const coreURL = await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript')
   const wasmURL = await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm')
 
   await ffmpeg.load({ coreURL, wasmURL })
   cachedFFmpeg = ffmpeg
+  ffmpegIsLoaded = true
   return ffmpeg
 }
 
-export function readStoredStyle(): Partial<Style> | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const raw = localStorage.getItem(STYLE_STORAGE_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    return parsed && typeof parsed === 'object' ? parsed : null
-  } catch {
-    return null
-  }
+function seekTo(video: HTMLVideoElement, time: number): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false
+    const onSeeked = () => {
+      if (done) return
+      done = true
+      video.removeEventListener('seeked', onSeeked)
+      resolve()
+    }
+    video.addEventListener('seeked', onSeeked, { once: true })
+    video.currentTime = time
+    setTimeout(() => {
+      if (!done) {
+        done = true
+        video.removeEventListener('seeked', onSeeked)
+        resolve()
+      }
+    }, 700)
+  })
 }
 
-export function useVideoExport(videoUrl: string, baseName = 'video', segments: Seg[], style?: Style) {
+export function useVideoExport(
+  videoUrl: string,
+  baseName = 'video',
+  segments: StudioSegment[],
+  styleConfig: StudioStyleConfig
+) {
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState('')
-  const [eta, setEta] = useState<string>('')
 
   const abortRef = useRef(false)
-  const segRef = useRef(segments)
-  segRef.current = segments
 
   const cancelExport = () => {
     abortRef.current = true
@@ -54,256 +66,241 @@ export function useVideoExport(videoUrl: string, baseName = 'video', segments: S
   }
 
   const exportVideo = async () => {
-    const safeBaseName = String(baseName || 'video')
-    const matchExt = safeBaseName.match(/\.(mp4|mov|webm|mkv)$/i)
-    const ext = matchExt ? matchExt[1].toLowerCase() : 'mp4'
-    const cleanBaseName = safeBaseName.replace(/\.[^/.]+$/, '') || 'video'
-    const mimeType = ext === 'webm' ? 'video/webm' : ext === 'mov' ? 'video/quicktime' : 'video/mp4'
-
     if (exporting || !videoUrl) return
     setExporting(true)
     setProgress(0)
-    setEta('')
     abortRef.current = false
-    setStatus('در حال آماده‌سازی...')
+    setStatus('آماده‌سازی بافر ویدیو و فونت...')
 
     let video: HTMLVideoElement | null = null
+    let sharedBlob: Blob | null = null
 
     try {
-      if (typeof (window as any).VideoEncoder === 'undefined') {
-        throw new Error('مرورگر شما از WebCodecs پشتیبانی نمی‌کند. لطفاً از آخرین نسخه Chrome یا Edge استفاده کنید.')
-      }
+      await ensureFontLoaded(styleConfig.fontFamily)
 
-      const storedStyle = readStoredStyle()
-      const activeStyle: Style = { ...DEFAULT_STYLE, ...(storedStyle || {}), ...(style || {}) }
-
-      await loadFont(activeStyle.fontId || 'Vazirmatn')
-      try { await document.fonts.ready } catch {}
+      const resp = await fetch(videoUrl)
+      sharedBlob = await resp.blob()
+      const localBlobUrl = URL.createObjectURL(sharedBlob)
 
       video = document.createElement('video')
-      video.src = videoUrl
+      video.src = localBlobUrl
       video.playsInline = true
       video.preload = 'auto'
-      video.crossOrigin = 'anonymous'
       video.muted = true
       video.style.position = 'fixed'
       video.style.left = '-10000px'
       video.style.top = '-10000px'
-      video.style.width = '1px'
-      video.style.height = '1px'
       document.body.appendChild(video)
 
       await new Promise<void>((resolve, reject) => {
-        let settled = false
-        const finish = (fn: () => void) => { if (settled) return; settled = true; fn() }
-        video!.onloadedmetadata = () => finish(resolve)
-        video!.onerror = () => finish(() => reject(new Error('بارگذاری اطلاعات اولیه ویدیو ناموفق بود')))
-        window.setTimeout(() => finish(() => reject(new Error('پاسخی از سورس ویدیو دریافت نشد'))), 25_000)
+        video!.onloadedmetadata = () => resolve()
+        video!.onerror = () => reject(new Error('بارگذاری اولیه ویدیو ناموفق بود'))
+        setTimeout(() => reject(new Error('تایم‌اوت بارگذاری ویدیو')), 25000)
         video!.load()
       })
 
-      const W = video.videoWidth % 2 === 0 ? video.videoWidth : video.videoWidth - 1
-      const H = video.videoHeight % 2 === 0 ? video.videoHeight : video.videoHeight - 1
-      const duration = Number.isFinite(video.duration) ? video.duration : 0
-      if (!W || !H || !duration) throw new Error('ابعاد یا طول ویدیو نامعتبر است')
+      const rawW = video.videoWidth || 1080
+      const rawH = video.videoHeight || 1920
+      const duration = video.duration || 0
 
-      const canvas = document.createElement('canvas')
-      canvas.width = W
-      canvas.height = H
-      const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true })
-      if (!ctx) throw new Error('خطا در دسترسی به بستر Canvas')
-      ctx.lineJoin = 'round'
-      ctx.lineCap = 'round'
+      let targetW = rawW
+      let targetH = rawH
 
-      const mp4Mod: any = await import(/* webpackIgnore: true */ 'https://esm.sh/mp4-muxer@5.1.4')
-      const MuxerClass = mp4Mod.Muxer || mp4Mod.default?.Muxer
-      const TargetClass = mp4Mod.ArrayBufferTarget || mp4Mod.default?.ArrayBufferTarget
-      if (typeof MuxerClass !== 'function' || typeof TargetClass !== 'function') {
-        throw new Error('عدم امکان بارگذاری کامپوننت سازنده MP4')
+      if (styleConfig.aspectRatio === '9:16') {
+        targetW = 1080
+        targetH = 1920
+      } else if (styleConfig.aspectRatio === '16:9') {
+        targetW = 1920
+        targetH = 1080
+      } else if (styleConfig.aspectRatio === '1:1') {
+        targetW = 1080
+        targetH = 1080
+      } else if (styleConfig.aspectRatio === '4:5') {
+        targetW = 1080
+        targetH = 1350
       }
 
+      const clamped = clampCanvasDimensions(targetW, targetH, 1920)
+      const outW = clamped.width
+      const outH = clamped.height
+
+      const canvas = document.createElement('canvas')
+      canvas.width = outW
+      canvas.height = outH
+      const ctx = canvas.getContext('2d', { alpha: false })
+      if (!ctx) throw new Error('عدم دسترسی به بستر Canvas')
+
+      let isWebCodecsSupported = false
+      let mp4Mod: any = null
+
+      if (typeof (window as any).VideoEncoder === 'function') {
+        try {
+          const support = await (window as any).VideoEncoder.isConfigSupported({
+            codec: 'avc1.4d002a',
+            width: outW,
+            height: outH,
+            bitrate: 3_000_000,
+            framerate: FPS,
+          })
+          if (support?.supported) {
+            mp4Mod = await import(/* webpackIgnore: true */ 'https://esm.sh/mp4-muxer@5.1.4').catch(() => null)
+            if (mp4Mod) isWebCodecsSupported = true
+          }
+        } catch {
+          isWebCodecsSupported = false
+        }
+      }
+
+      // فال‌بک MediaRecorder
+      if (!isWebCodecsSupported) {
+        if (typeof MediaRecorder === 'undefined') {
+          throw new Error('مرورگر شما امکان ضبط و خروجی ویدیو را پشتیبانی نمی‌کند. لطفاً از مرورگر جدیدتر (مانند Chrome یا Safari نسخه ۱۴ به بالا) استفاده فرمایید.')
+        }
+
+        setStatus('رندر با موتور پشتیبان مرورگر...')
+        let supportedMime = 'video/webm'
+        if (MediaRecorder.isTypeSupported('video/mp4;codecs=avc1')) {
+          supportedMime = 'video/mp4;codecs=avc1'
+        } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+          supportedMime = 'video/mp4'
+        }
+
+        const stream = canvas.captureStream(FPS)
+        const recorder = new MediaRecorder(stream, { mimeType: supportedMime })
+        const chunks: Blob[] = []
+
+        recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
+        recorder.start()
+
+        const totalFrames = Math.ceil(duration * FPS)
+        for (let f = 0; f < totalFrames; f++) {
+          if (abortRef.current) { recorder.stop(); throw new Error('لغو توسط کاربر') }
+          const curTime = f / FPS
+          await seekTo(video, curTime)
+          renderStudioFrame({ ctx, canvasWidth: outW, canvasHeight: outH, video, currentTime: curTime, segments, style: styleConfig })
+          setProgress(Math.round((f / totalFrames) * 90))
+        }
+
+        recorder.stop()
+        await new Promise((res) => { recorder.onstop = res })
+        const ext = supportedMime.includes('mp4') ? 'mp4' : 'webm'
+        const outBlob = new Blob(chunks, { type: supportedMime })
+        const dlUrl = URL.createObjectURL(outBlob)
+        const a = document.createElement('a')
+        a.href = dlUrl
+        a.download = `${baseName}.subtitled.${ext}`
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        setProgress(100)
+        setStatus('✅ آماده دانلود!')
+        return
+      }
+
+      // مسیر WebCodecs با رفع قطعی Race Condition
+      const MuxerClass = mp4Mod.Muxer || mp4Mod.default?.Muxer
+      const TargetClass = mp4Mod.ArrayBufferTarget || mp4Mod.default?.ArrayBufferTarget
       const target = new TargetClass()
       const muxer = new MuxerClass({
         target,
-        video: { codec: 'avc', width: W, height: H },
+        video: { codec: 'avc', width: outW, height: outH },
         fastStart: 'in-memory',
       })
 
-      const calculatedBitrate = Math.round(clamp((W * H * 2.2), 1_500_000, 4_500_000))
-      const VideoFrameClass = typeof VideoFrame !== 'undefined' ? VideoFrame : (window as any).VideoFrame
-      if (typeof VideoFrameClass !== 'function') {
-        throw new Error('WebCodecs VideoFrame در مرورگر پشتیبانی نمی‌شود.')
-      }
-
-      let chunkIndexDebug = 0
-      let lastChunkMetaDebug = 'ثبت‌نشده'
-      let encoderFatalError: Error | null = null
-
+      const VideoFrameClass = (window as any).VideoFrame
       const encoder = new (window as any).VideoEncoder({
-        output: (chunk: any, meta: any) => {
-          chunkIndexDebug++
-          try { lastChunkMetaDebug = JSON.stringify(meta) } catch { lastChunkMetaDebug = String(meta) }
-
-          if (!meta) {
-            meta = { decoderConfig: { codec: 'avc1.4d002a', codedWidth: W, codedHeight: H, colorSpace: FALLBACK_COLOR_SPACE } }
-          } else if (!meta.decoderConfig) {
-            meta = { ...meta, decoderConfig: { codec: 'avc1.4d002a', codedWidth: W, codedHeight: H, colorSpace: FALLBACK_COLOR_SPACE } }
-          } else if (!meta.decoderConfig.colorSpace) {
-            meta = { ...meta, decoderConfig: { ...meta.decoderConfig, colorSpace: FALLBACK_COLOR_SPACE } }
-          }
-
-          try {
-            muxer.addVideoChunk(chunk, meta)
-          } catch (muxErr: any) {
-            encoderFatalError = new Error(
-              `کرش داخل addVideoChunk، چانک شماره ${chunkIndexDebug}: ${muxErr?.message || muxErr}\nmeta همین چانک: ${lastChunkMetaDebug}`
-            )
-          }
-        },
-        error: (e: any) => {
-          console.error('[VideoEncoder error]', e)
-          if (!encoderFatalError) encoderFatalError = e
-        },
+        output: (chunk: any, meta: any) => muxer.addVideoChunk(chunk, meta),
+        error: (e: any) => console.error('[Encoder Error]', e),
       })
 
       encoder.configure({
         codec: 'avc1.4d002a',
-        width: W,
-        height: H,
-        bitrate: calculatedBitrate,
+        width: outW,
+        height: outH,
+        bitrate: Math.round(clamp(outW * outH * 2.4, 1_800_000, 5_500_000)),
         framerate: FPS,
       })
 
-      setStatus('در حال پردازش فریم‌ها...')
       const totalFrames = Math.ceil(duration * FPS)
-      const frameDurationMicroseconds = 1_000_000 / FPS
-      const startTime = performance.now()
+      const frameDurationMicro = 1_000_000 / FPS
+      setStatus('در حال رندر و پردازش فریم‌ها...')
 
-      for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
-        if (abortRef.current) throw new Error('عملیات رندر توسط کاربر لغو شد.')
+      for (let f = 0; f < totalFrames; f++) {
+        if (abortRef.current) throw new Error('عملیات توسط کاربر لغو شد.')
 
-        const currentTime = frameIndex / FPS
-        video.currentTime = currentTime
+        const curTime = f / FPS
+        await seekTo(video, curTime)
 
-        await new Promise<void>((resolve) => {
-          const onSeeked = () => {
-            video!.removeEventListener('seeked', onSeeked)
-            resolve()
-          }
-          video!.addEventListener('seeked', onSeeked, { once: true })
+        renderStudioFrame({
+          ctx,
+          canvasWidth: outW,
+          canvasHeight: outH,
+          video,
+          currentTime: curTime,
+          segments,
+          style: styleConfig,
         })
-
-        drawSubtitleOnCanvas(ctx, video, W, H, currentTime, duration, segRef.current, activeStyle)
 
         const frame = new VideoFrameClass(canvas, {
-          timestamp: Math.round(frameIndex * frameDurationMicroseconds),
-          duration: Math.round(frameDurationMicroseconds),
+          timestamp: Math.round(f * frameDurationMicro),
+          duration: Math.round(frameDurationMicro),
         })
 
-        const isKeyFrame = frameIndex % FPS === 0
-        encoder.encode(frame, { keyFrame: isKeyFrame })
+        // بستن ایمن فریم تنها پس از تحویل قطعی به انکودر
+        encoder.encode(frame, { keyFrame: f % FPS === 0 })
+        await encoder.flush()
         frame.close()
 
-        if (encoder.encodeQueueSize > 5) {
-          await encoder.flush()
-        }
-        if (encoderFatalError) throw encoderFatalError
-
-        const elapsedSec = (performance.now() - startTime) / 1000
-        const framesDone = frameIndex + 1
-        const remainingFrames = totalFrames - framesDone
-        const fpsReal = framesDone / Math.max(elapsedSec, 0.1)
-        const remainingSeconds = Math.round(remainingFrames / fpsReal)
-
-        if (framesDone > 10 && remainingSeconds > 0) {
-          setEta(`حدود ${remainingSeconds} ثانیه باقی‌مانده`)
-        }
-
-        const framePercent = Math.round((framesDone / totalFrames) * 85)
-        setProgress(framePercent)
+        setProgress(Math.round((f / totalFrames) * 85))
       }
 
       await encoder.flush()
-      if (encoderFatalError) throw encoderFatalError
+      muxer.finalize()
 
-      try {
-        muxer.finalize()
-      } catch (finErr: any) {
-        throw new Error(
-          `کرش داخل muxer.finalize(): ${finErr?.message || finErr}\nتعداد کل چانک‌ها: ${chunkIndexDebug}\nآخرین meta دیده‌شده: ${lastChunkMetaDebug}`
-        )
-      }
-
-      if (abortRef.current) throw new Error('عملیات رندر توسط کاربر لغو شد.')
-
-      setProgress(86)
-      setEta('')
-      setStatus('در حال ادغام صدای اصلی...')
+      setStatus('در حال ادغام صدای اصلی با ویدیو...')
+      setProgress(88)
 
       const ffmpeg = await getOrInitFFmpeg()
-      const videoArrayBuffer = target.buffer
-      await ffmpeg.writeFile('sub_video.mp4', new Uint8Array(videoArrayBuffer))
+      await ffmpeg.writeFile('sub_v.mp4', new Uint8Array(target.buffer))
+      await ffmpeg.writeFile('src_a.mp4', new Uint8Array(await sharedBlob.arrayBuffer()))
 
-      const sourceResponse = await fetch(videoUrl)
-      const sourceBlob = await sourceResponse.blob()
-      const sourceInName = ext === 'mov' ? 'source_input.mov' : 'source_input.mp4'
-      await ffmpeg.writeFile(sourceInName, new Uint8Array(await sourceBlob.arrayBuffer()))
-
-      setProgress(92)
-      const outFileName = 'final_output.mp4'
+      setProgress(94)
       await ffmpeg.exec([
-        '-i', 'sub_video.mp4',
-        '-i', sourceInName,
+        '-i', 'sub_v.mp4',
+        '-i', 'src_a.mp4',
         '-map', '0:v:0',
         '-map', '1:a:0?',
         '-c:v', 'copy',
         '-c:a', 'copy',
         '-movflags', '+faststart',
-        outFileName,
+        'final.mp4',
       ])
 
-      const finalData = (await ffmpeg.readFile(outFileName)) as Uint8Array
-      const finalBlob = new Blob([finalData], { type: mimeType })
+      const finalData = await ffmpeg.readFile('final.mp4')
+      const finalBlob = new Blob([finalData], { type: 'video/mp4' })
 
       setProgress(100)
-      setStatus('✅ ذخیره‌سازی ویدیو...')
+      setStatus('✅ آماده دانلود!')
 
-      const url = URL.createObjectURL(finalBlob)
+      const dlUrl = URL.createObjectURL(finalBlob)
       const a = document.createElement('a')
-      a.href = url
-      a.download = `${cleanBaseName}.subtitled.${ext}`
+      a.href = dlUrl
+      a.download = `${baseName}.subtitled.mp4`
       document.body.appendChild(a)
       a.click()
       a.remove()
+      setTimeout(() => URL.revokeObjectURL(dlUrl), 5000)
 
-      window.setTimeout(() => {
-        URL.revokeObjectURL(url)
-        ffmpeg.deleteFile('sub_video.mp4').catch(() => {})
-        ffmpeg.deleteFile(sourceInName).catch(() => {})
-        ffmpeg.deleteFile(outFileName).catch(() => {})
-      }, 5000)
-
-    } catch (error: any) {
-      if (abortRef.current) {
-        setStatus('عملیات لغو شد')
-      } else {
-        console.error('[WebCodecs Render Error]', error)
+    } catch (err: any) {
+      if (!abortRef.current) {
+        alert('خطا در رندر: ' + (err?.message || err))
         setStatus('❌ خطا در رندر')
-        alert('خطا: ' + (error?.message || 'مشکلی در عملیات رندر پیش آمد'))
       }
     } finally {
       if (video?.parentNode) video.parentNode.removeChild(video)
       setExporting(false)
-      setEta('')
     }
   }
 
-  return {
-    exporting,
-    progress: clamp(Math.round(Number(progress) || 0), 0, 100),
-    status,
-    eta,
-    exportVideo,
-    cancelExport,
-  }
+  return { exporting, progress, status, exportVideo, cancelExport }
 }
