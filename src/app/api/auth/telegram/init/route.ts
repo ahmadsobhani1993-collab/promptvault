@@ -7,10 +7,11 @@ export async function POST() {
   try {
     const token = crypto.randomBytes(16).toString('hex')
 
+    // دقیقاً مطابق مدل فعلی LoginToken در دیتابیس
     await prisma.loginToken.create({
       data: {
         token,
-        confirmed: false,
+        status: 'PENDING',
       },
     })
 

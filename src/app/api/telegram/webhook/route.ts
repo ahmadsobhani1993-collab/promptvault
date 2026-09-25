@@ -1,4 +1,4 @@
-﻿export const dynamic = 'force-dynamic';
+﻿export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import crypto from 'crypto'
@@ -6,7 +6,7 @@ import crypto from 'crypto'
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://promptsfa.ir'
 
 async function sendTelegramMessage(chatId: number, text: string, replyMarkup?: any) {
-  const token = process.env.LOGIN_BOT_TOKEN
+  const token = process.env.LOGIN_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN
   if (!token) return
   try {
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     if (!token) {
       await sendTelegramMessage(
         chatId,
-        '👋 سلام! برای ورود به سایت پرامپت‌فا، ابتدا در سایت روی دکمه «ورود با تلگرام» بزنید تا لینک اختصاصی شما تولید شود.',
+        '👋 سلام! برای ورود به سایت پرامپت‌فا، ابتدا از صفحه لاگین سایت روی «ورود با تلگرام» بزنید.',
         {
           inline_keyboard: [
             [{ text: '🌐 باز کردن سایت پرامپت‌فا', url: `${APP_URL}/login` }]
@@ -57,25 +57,28 @@ export async function POST(req: Request) {
       where: { token },
     })
 
-    if (!loginToken) {
-      await sendTelegramMessage(chatId, '❌ این لینک ورود منقضی یا نامعتبر شده است. لطفاً مجدداً از صفحه ورود سایت اقدام فرمایید.')
+    // اعتبارسنجی عمر توکن (حداکثر ۱۰ دقیقه)
+    const isExpired = loginToken
+      ? Date.now() - new Date(loginToken.createdAt).getTime() > 10 * 60 * 1000
+      : true
+
+    if (!loginToken || isExpired || loginToken.status !== 'PENDING') {
+      await sendTelegramMessage(
+        chatId,
+        '❌ این لینک ورود منقضی یا نامعتبر شده است. لطفاً دوباره از صفحه ورود سایت اقدام فرمایید.'
+      )
       return NextResponse.json({ ok: true })
     }
 
-    const tgIdentifier = from.username ? `@${from.username}` : `tg_${from.id}`
+    // شناسه پایدار عددی تلگرام
+    const tgIdStr = String(from.id)
 
-    // جستجوی کاربر با فیلد telegram یا تلگرام هندل
     let user = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { telegram: tgIdentifier },
-          ...(from.username ? [{ telegram: `@${from.username}` }] : [])
-        ]
-      }
+      where: { telegram: tgIdStr },
     })
 
     if (!user) {
-      let baseUsername = from.username 
+      let baseUsername = from.username
         ? from.username.toLowerCase().replace(/[^a-z0-9_]/g, '')
         : (from.first_name ? from.first_name.toLowerCase().replace(/[^a-z0-9_]/g, '') : 'user')
 
@@ -86,7 +89,7 @@ export async function POST(req: Request) {
 
       user = await prisma.user.create({
         data: {
-          telegram: tgIdentifier,
+          telegram: tgIdStr,
           username: finalUsername,
           name: displayName,
           role: 'USER',
@@ -94,30 +97,30 @@ export async function POST(req: Request) {
       })
     }
 
-    // تایید نشست لاگین
+    // ذخیره شناسه تلگرام در فیلد مربوطه و ذخیره آیدی کاربر در وضعیت
     await prisma.loginToken.update({
       where: { token },
       data: {
-        userId: user.id,
-        confirmed: true,
+        telegramId: tgIdStr,
+        status: `CONFIRMED:${user.id}`,
       },
     })
 
-    const callbackUrl = `${APP_URL}/api/auth/telegram/callback?token=${token}`
+    const callbackUrl = `${APP_URL}/login/telegram-verify?token=${token}`
 
     await sendTelegramMessage(
       chatId,
-      '✅ هویت شما با موفقیت تایید شد!\nجهت تکمیل ورود و هدایت به پنل کاربری، دکمه زیر را فشار دهید:',
+      '✅ هویت شما تایید شد!\nجهت تکمیل ورود و هدایت به سایت، روی دکمه زیر بزنید:',
       {
         inline_keyboard: [
-          [{ text: '🚀 ورود نهایی به پرامپت‌فا', url: callbackUrl }]
+          [{ text: '🚀 تکمیل ورود به پرامپت‌فا', url: callbackUrl }]
         ]
       }
     )
 
     return NextResponse.json({ ok: true })
   } catch (err: any) {
-    console.error('Telegram webhook runtime error:', err)
+    console.error('Telegram webhook error:', err)
     return NextResponse.json({ ok: true, handledError: err?.message })
   }
 }
