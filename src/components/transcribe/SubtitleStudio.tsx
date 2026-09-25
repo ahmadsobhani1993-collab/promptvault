@@ -1,18 +1,30 @@
-'use client'
+﻿'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   FONTS, PRESETS, HL_COLORS, DEFAULT_STYLE,
   type Seg, type Style, type Fx, mkWords, loadFont,
 } from '@/lib/subtitle-studio'
 
-type Props = {
+export type SubtitleStudioProps = {
   videoUrl: string
+  baseName?: string
   segments: Seg[]
-  setSegments: (s: Seg[]) => void
+  setSegments?: (s: Seg[]) => void
+  onChange?: (s: Seg[]) => void
 }
 
-type AspectRatio = 'original' | '9:16' | '1:1' | '16:9'
+type AspectRatio = 'original' | '9:16' | '1:1' | '16:9' | '4:5'
+type ActiveTab = 'none' | 'style' | 'text' | 'canvas' | 'audio'
+
+interface ExtendedStyle extends Style {
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
+  textShadowBlur?: number
+  textShadowColor?: string
+  bgRadius?: number
+}
 
 const fmt = (t: number) => {
   const m = Math.floor(t / 60)
@@ -20,8 +32,27 @@ const fmt = (t: number) => {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-export default function SubtitleStudio({ videoUrl, segments, setSegments }: Props) {
-  const [style, setStyle] = useState<Style>(DEFAULT_STYLE)
+export default function SubtitleStudio({
+  videoUrl,
+  baseName = 'video',
+  segments = [],
+  setSegments,
+  onChange,
+}: SubtitleStudioProps) {
+  const dispatchSegments = useCallback((next: Seg[]) => {
+    if (setSegments) setSegments(next)
+    if (onChange) onChange(next)
+  }, [setSegments, onChange])
+
+  const [style, setStyle] = useState<ExtendedStyle>(() => ({
+    ...DEFAULT_STYLE,
+    bold: true,
+    italic: false,
+    underline: false,
+    textShadowBlur: 4,
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    bgRadius: 8,
+  }))
   const [customFonts, setCustomFonts] = useState<{ id: string; label: string }[]>([])
   const [time, setTime] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -30,18 +61,21 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
   const [selected, setSelected] = useState(-1)
   const [zoom, setZoom] = useState(40)
   const [showSafe, setShowSafe] = useState(false)
-  const [showAdv, setShowAdv] = useState(false) // پیش‌فرض بسته: روی موبایل جا نگیرد
+  const [activeTab, setActiveTab] = useState<ActiveTab>('none')
   const [translating, setTranslating] = useState(false)
   const [showTransMenu, setShowTransMenu] = useState(false)
   const [manualEnd, setManualEnd] = useState('')
-  // ورودی خام (رشته‌ای) شروع/پایان هر کپشن، تا بشود کامل پاکش کرد بدون این‌که فوراً به ۰ اسنپ شود
   const [timeDrafts, setTimeDrafts] = useState<Record<string, string>>({})
-  // ایندکس کپشنی که الان زمانش نامعتبر است (شروع >= پایان)، برای نمایش پیام خطا
   const [timeError, setTimeError] = useState<number | null>(null)
+
+  const [volume, setVolume] = useState(100)
+  const [denoise, setDenoise] = useState(false)
+  const audioCtxRef = useRef<AudioContext | null>(null)
+  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null)
+  const filterNodesRef = useRef<{ hp: BiquadFilterNode; notch: BiquadFilterNode } | null>(null)
 
   const transMenuRef = useRef<HTMLDivElement>(null)
 
-  // بستن منوی ترجمه با کلیک بیرون از آن
   useEffect(() => {
     if (!showTransMenu) return
     const onDocClick = (e: MouseEvent) => {
@@ -52,6 +86,65 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     document.addEventListener('mousedown', onDocClick)
     return () => document.removeEventListener('mousedown', onDocClick)
   }, [showTransMenu])
+
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+
+    const setupAudio = () => {
+      if (!audioCtxRef.current) {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+        if (!AudioCtx) return
+        const ctx = new AudioCtx()
+        const source = ctx.createMediaElementSource(v)
+
+        const hp = ctx.createBiquadFilter()
+        hp.type = 'highpass'
+        hp.frequency.value = 120
+
+        const notch = ctx.createBiquadFilter()
+        notch.type = 'notch'
+        notch.frequency.value = 50
+
+        audioCtxRef.current = ctx
+        sourceNodeRef.current = source
+        filterNodesRef.current = { hp, notch }
+      }
+
+      const ctx = audioCtxRef.current
+      const source = sourceNodeRef.current
+      const filters = filterNodesRef.current
+      if (!ctx || !source || !filters) return
+
+      try {
+        source.disconnect()
+        filters.hp.disconnect()
+        filters.notch.disconnect()
+
+        if (denoise) {
+          source.connect(filters.hp)
+          filters.hp.connect(filters.notch)
+          filters.notch.connect(ctx.destination)
+        } else {
+          source.connect(ctx.destination)
+        }
+      } catch (err) {
+        console.warn('Audio routing error:', err)
+      }
+    }
+
+    const onPlay = () => {
+      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume()
+      }
+    }
+
+    setupAudio()
+    v.addEventListener('play', onPlay)
+    return () => {
+      v.removeEventListener('play', onPlay)
+    }
+  }, [denoise])
 
   const translateSubtitles = async (targetLang: 'fa' | 'en') => {
     if (!segments || segments.length === 0 || translating) return
@@ -77,9 +170,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
       })
 
       const data = await res.json()
-      if (!res.ok || data.error) {
-        throw new Error(data.error || 'خطای دریافت ترجمه')
-      }
+      if (!res.ok || data.error) throw new Error(data.error || 'خطای دریافت ترجمه')
 
       if (data.srt) {
         const blocks = data.srt.trim().replace(/\r\n/g, '\n').split(/\n\s*\n/)
@@ -100,9 +191,9 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
           return { ...seg, text: newTxt, words: newWords }
         })
 
-        setSegments(updated)
+        dispatchSegments(updated)
 
-        setStyle((prev: any) => ({
+        setStyle((prev) => ({
           ...prev,
           direction: targetLang === 'fa' ? 'rtl' : 'ltr',
           fontFamily: targetLang === 'fa'
@@ -206,7 +297,8 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     if (!h) return
     futRef.current.push(JSON.stringify({ segments, style }))
     const s = JSON.parse(h)
-    setSegments(s.segments); setStyle(s.style)
+    dispatchSegments(s.segments)
+    setStyle(s.style)
   }
 
   const redo = () => {
@@ -214,7 +306,8 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     if (!h) return
     histRef.current.push(JSON.stringify({ segments, style }))
     const s = JSON.parse(h)
-    setSegments(s.segments); setStyle(s.style)
+    dispatchSegments(s.segments)
+    setStyle(s.style)
   }
 
   const activeIdx = () => (selected !== -1 ? selected : segments.findIndex((s) => time >= s.start && time <= s.end))
@@ -229,7 +322,6 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     updateSeg(targetIdx, { end: Number(time.toFixed(2)) }, false)
   }
 
-  // تنظیم دستی و عددی زمان پایان کپشن انتخاب‌شده
   const applyManualEnd = () => {
     const idx = activeIdx()
     if (idx === -1 || manualEnd === '') return
@@ -239,15 +331,11 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     setManualEnd('')
   }
 
-  // مقداری که باید در فیلد «از»/«تا» نمایش داده شود: اگر کاربر همین الان در حال تایپ/پاک‌کردن است
-  // همان متن خام را نشان بده، وگرنه عدد واقعی ذخیره‌شده را
   const getTimeDraft = (i: number, field: 'start' | 'end') => {
     const key = `${i}-${field}`
     return key in timeDrafts ? timeDrafts[key] : String(Number(segments[i][field].toFixed(1)))
   }
 
-  // تایپ آزاد: فیلد را می‌شود کامل پاک کرد و هر عددی نوشت — فقط وقتی مقدار معتبر و
-  // شروع < پایان باشد واقعاً روی کپشن اعمال می‌شود، وگرنه فقط پیام خطا نشان داده می‌شود
   const handleTimeInput = (i: number, field: 'start' | 'end', raw: string) => {
     const key = `${i}-${field}`
     setTimeDrafts((d) => ({ ...d, [key]: raw }))
@@ -266,7 +354,6 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     updateSeg(i, { [field]: val } as Partial<Seg>)
   }
 
-  // وقتی از فیلد خارج می‌شود، اگر چیزی ناقص/نامعتبر مانده بود، به آخرین مقدار معتبر برمی‌گردد
   const handleTimeBlur = (i: number, field: 'start' | 'end') => {
     const key = `${i}-${field}`
     setTimeDrafts((d) => {
@@ -340,14 +427,29 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
 
   const updateSeg = (i: number, patch: Partial<Seg>, hist = true) => {
     if (hist) snapshot()
-    setSegments(segments.map((s, idx) => {
+    const updated = segments.map((s, idx) => {
       if (idx !== i) return s
       const next = { ...s, ...patch }
       if (patch.text !== undefined || patch.start !== undefined || patch.end !== undefined) {
         next.words = mkWords(next.text, next.start, next.end)
       }
       return next
-    }))
+    })
+    dispatchSegments(updated)
+  }
+
+  const insertLineBreak = () => {
+    const idx = activeIdx()
+    if (idx === -1) return
+    const s = segments[idx]
+    if (!s || !s.text) return
+
+    const words = s.text.trim().split(/\s+/)
+    if (words.length <= 1) return
+
+    const half = Math.ceil(words.length / 2)
+    const newText = words.slice(0, half).join(' ') + '\n' + words.slice(half).join(' ')
+    updateSeg(idx, { text: newText })
   }
 
   const splitSeg = (i: number) => {
@@ -360,7 +462,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     const a: Seg = { ...s, text: toks.slice(0, half).join(' '), start: s.start, end: mid, words: [] }
     const b: Seg = { ...s, text: toks.slice(half).join(' '), start: mid, end: s.end, words: [] }
     a.words = mkWords(a.text, a.start, a.end); b.words = mkWords(b.text, b.start, b.end)
-    setSegments([...segments.slice(0, i), a, b, ...segments.slice(i + 1)])
+    dispatchSegments([...segments.slice(0, i), a, b, ...segments.slice(i + 1)])
   }
 
   const mergeSeg = (i: number) => {
@@ -369,13 +471,13 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
     const a = segments[i], b = segments[i + 1]
     const m: Seg = { ...a, text: a.text + ' ' + b.text, end: b.end, words: [] }
     m.words = mkWords(m.text, m.start, m.end)
-    setSegments([...segments.slice(0, i), m, ...segments.slice(i + 2)])
+    dispatchSegments([...segments.slice(0, i), m, ...segments.slice(i + 2)])
   }
 
   const findReplace = () => {
     if (!findQ) return
     snapshot()
-    setSegments(segments.map((s) => {
+    dispatchSegments(segments.map((s) => {
       const t = s.text.split(findQ).join(replQ)
       return { ...s, text: t, words: mkWords(t, s.start, s.end) }
     }))
@@ -396,8 +498,9 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
   }
 
   const getAspectClass = () => {
-    if (aspect === '9:16') return 'aspect-[9/16] max-h-[420px] mx-auto'
+    if (aspect === '9:16') return 'aspect-[9/16] max-h-[440px] mx-auto'
     if (aspect === '1:1') return 'aspect-square max-h-[380px] mx-auto'
+    if (aspect === '4:5') return 'aspect-[4/5] max-h-[420px] mx-auto'
     if (aspect === '16:9') return 'aspect-video w-full'
     return 'aspect-video w-full'
   }
@@ -414,7 +517,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
       `}</style>
 
       {/* ─── Toolbar ── */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-3">
         <div className="relative flex items-center gap-1.5">
           <button onClick={undo} title="واگرد (Ctrl+Z)" className={iconBtn}>↩</button>
           <button onClick={redo} title="ازنو (Ctrl+Shift+Z)" className={iconBtn}>↪</button>
@@ -440,23 +543,34 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
               </div>
             )}
           </div>
-
-          <button onClick={() => setShowAdv(!showAdv)} title="تنظیمات استایل" className={`${iconBtn} ${showAdv ? '!border-amber-500/60 !text-amber-300' : ''}`}>⚙</button>
         </div>
 
-        <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-zinc-900/60 p-1 text-xs">
-          <span className="px-1 text-[10px] text-white/40">کادر:</span>
-          {(['original', '9:16', '1:1', '16:9'] as const).map((ratio) => (
-            <button
-              key={ratio}
-              onClick={() => setAspect(ratio)}
-              className={`rounded px-2 py-0.5 text-[11px] transition ${
-                aspect === ratio ? 'bg-amber-500 font-bold text-black' : 'text-white/60 hover:bg-white/10'
-              }`}
-            >
-              {ratio === 'original' ? 'اصلی' : ratio}
-            </button>
-          ))}
+        {/* منوهای تب برای امکانات جدید */}
+        <div className="flex items-center gap-1 overflow-x-auto rounded-xl border border-white/10 bg-zinc-900/80 p-1 text-xs">
+          <button
+            onClick={() => setActiveTab(activeTab === 'canvas' ? 'none' : 'canvas')}
+            className={`rounded-lg px-2.5 py-1 transition ${activeTab === 'canvas' ? 'bg-amber-500 font-bold text-black' : 'text-white/70 hover:bg-white/5'}`}
+          >
+            🖼️ ابعاد و کادر
+          </button>
+          <button
+            onClick={() => setActiveTab(activeTab === 'style' ? 'none' : 'style')}
+            className={`rounded-lg px-2.5 py-1 transition ${activeTab === 'style' ? 'bg-amber-500 font-bold text-black' : 'text-white/70 hover:bg-white/5'}`}
+          >
+            🎨 استایل و رنگ
+          </button>
+          <button
+            onClick={() => setActiveTab(activeTab === 'text' ? 'none' : 'text')}
+            className={`rounded-lg px-2.5 py-1 transition ${activeTab === 'text' ? 'bg-amber-500 font-bold text-black' : 'text-white/70 hover:bg-white/5'}`}
+          >
+            🔤 فونت و متن
+          </button>
+          <button
+            onClick={() => setActiveTab(activeTab === 'audio' ? 'none' : 'audio')}
+            className={`rounded-lg px-2.5 py-1 transition ${activeTab === 'audio' ? 'bg-amber-500 font-bold text-black' : 'text-white/70 hover:bg-white/5'}`}
+          >
+            🔊 نویزگیر و صدا
+          </button>
         </div>
 
         {vidW > 0 && (
@@ -466,12 +580,142 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
         )}
       </div>
 
-      {/* ─── Workspace ── */}
-      <div className="grid gap-4 lg:grid-cols-5">
-        <div className="space-y-3 lg:col-span-3">
+      {activeTab === 'canvas' && (
+        <div className="rounded-xl border border-white/10 bg-zinc-900/90 p-3 my-2 text-xs flex flex-wrap items-center gap-4">
+          <span className="text-white/60 font-bold">نسبت کادر ویدیو:</span>
+          {(['original', '9:16', '1:1', '16:9', '4:5'] as const).map((ratio) => (
+            <button
+              key={ratio}
+              onClick={() => setAspect(ratio)}
+              className={`rounded-lg px-3 py-1.5 transition ${
+                aspect === ratio ? 'bg-amber-500 font-bold text-black' : 'bg-white/5 text-white/70 hover:bg-white/10'
+              }`}
+            >
+              {ratio === 'original' ? 'اصلی' : ratio}
+            </button>
+          ))}
+        </div>
+      )}
 
-          {/* فقط ویدیو sticky می‌شود — نه پریست‌ها و نه پنل تنظیمات پیشرفته،
-              وگرنه روی موبایل کل صفحه را می‌گیرد و کپشن‌ها دوباره از دید خارج می‌شوند */}
+      {activeTab === 'text' && (
+        <div className="rounded-xl border border-white/10 bg-zinc-900/90 p-3 my-2 text-xs flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1 border-l border-white/10 pl-3">
+            <button
+              onClick={() => setStyle((s) => ({ ...s, bold: !s.bold }))}
+              className={`px-3 py-1 rounded-md font-bold transition ${style.bold ? 'bg-amber-500 text-black' : 'bg-white/5 text-white/70'}`}
+              title="Bold"
+            >
+              B
+            </button>
+            <button
+              onClick={() => setStyle((s) => ({ ...s, italic: !s.italic }))}
+              className={`px-3 py-1 rounded-md italic transition ${style.italic ? 'bg-amber-500 text-black' : 'bg-white/5 text-white/70'}`}
+              title="Italic"
+            >
+              I
+            </button>
+            <button
+              onClick={() => setStyle((s) => ({ ...s, underline: !s.underline }))}
+              className={`px-3 py-1 rounded-md underline transition ${style.underline ? 'bg-amber-500 text-black' : 'bg-white/5 text-white/70'}`}
+              title="Underline"
+            >
+              U
+            </button>
+            <button
+              onClick={insertLineBreak}
+              className="px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 text-white/80 transition"
+              title="شکستن خط در کپشن جاری"
+            >
+              ↵ شکست خط
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-white/50">فونت:</span>
+            <select
+              value={style.fontId}
+              onChange={(e) => setStyle({ ...style, fontId: e.target.value })}
+              className="rounded-lg border border-white/10 bg-black/50 p-1.5 text-white/80"
+            >
+              {customFonts.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+              {FONTS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-white/50">اندازه: {style.size}٪</span>
+            <input
+              type="range" min={1} max={20} step={0.5}
+              value={style.size}
+              onChange={(e) => setStyle({ ...style, size: Number(e.target.value) })}
+              className="w-24 accent-amber-500"
+            />
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'style' && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 rounded-xl border border-white/10 bg-zinc-900/90 p-3 my-2 text-xs">
+          <div>
+            <div className="mb-1 text-white/40">رنگ متن</div>
+            <input type="color" value={style.color} onChange={(e) => setStyle({ ...style, color: e.target.value })} className="h-7 w-full cursor-pointer rounded-lg border border-white/10 bg-transparent p-0" />
+          </div>
+          <div>
+            <div className="mb-1 text-white/40">رنگ هایلایت/کاراوکه</div>
+            <input type="color" value={style.hlColor} onChange={(e) => setStyle({ ...style, hlColor: e.target.value })} className="h-7 w-full cursor-pointer rounded-lg border border-white/10 bg-transparent p-0" />
+          </div>
+          <div>
+            <div className="mb-1 text-white/40">شفافیت پس‌زمینه</div>
+            <input type="range" min={0} max={100} value={Math.round(style.bgOpacity * 100)} onChange={(e) => setStyle({ ...style, bgOpacity: Number(e.target.value) / 100 })} className="w-full accent-amber-500" />
+          </div>
+          <div>
+            <div className="mb-1 text-white/40">شعاع کادر (Radius)</div>
+            <input type="range" min={0} max={24} value={style.bgRadius ?? 8} onChange={(e) => setStyle({ ...style, bgRadius: Number(e.target.value) })} className="w-full accent-amber-500" />
+          </div>
+          <div>
+            <div className="mb-1 text-white/40">سایه متن (Shadow)</div>
+            <input type="range" min={0} max={15} value={style.textShadowBlur ?? 4} onChange={(e) => setStyle({ ...style, textShadowBlur: Number(e.target.value) })} className="w-full accent-amber-500" />
+          </div>
+          <div>
+            <div className="mb-1 text-white/40">حاشیه استروک</div>
+            <button onClick={() => setStyle({ ...style, outline: !style.outline })} className={`w-full py-1.5 rounded-lg transition ${style.outline ? 'bg-amber-500 font-bold text-black' : 'bg-white/5 text-white/50'}`}>
+              {style.outline ? 'روشن' : 'خاموش'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'audio' && (
+        <div className="flex flex-wrap items-center gap-6 rounded-xl border border-white/10 bg-zinc-900/90 p-3 my-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-white/60">حجم صدا:</span>
+            <input
+              type="range" min={0} max={100} value={volume}
+              onChange={(e) => {
+                const v = Number(e.target.value)
+                setVolume(v)
+                if (videoRef.current) videoRef.current.volume = v / 100
+              }}
+              className="w-28 accent-amber-500"
+            />
+            <span className="font-mono text-white/80">{volume}%</span>
+          </div>
+
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={denoise}
+              onChange={(e) => setDenoise(e.target.checked)}
+              className="accent-amber-500 h-4 w-4 rounded"
+            />
+            <span className="text-white/80">هوش مصنوعی حذف نویز (AI Denoise)</span>
+          </label>
+        </div>
+      )}
+
+      {/* ─── Workspace ── */}
+      <div className="grid gap-4 lg:grid-cols-5 mt-2">
+        <div className="space-y-3 lg:col-span-3">
           <div className="sticky top-2 z-20 -mx-4 bg-neutral-950/95 px-4 pb-2 backdrop-blur lg:static lg:mx-0 lg:bg-transparent lg:px-0 lg:pb-0">
             <div ref={stageRef} className={`relative select-none overflow-hidden rounded-2xl border border-white/10 bg-black ${getAspectClass()}`} style={{ containerType: 'inline-size' }}>
               <video
@@ -503,15 +747,19 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                       className="block w-full text-center whitespace-pre-wrap break-words"
                       style={{
                         fontFamily: `"${style.fontId}"`,
-                        fontWeight: 700,
+                        fontWeight: style.bold ? 800 : 400,
+                        fontStyle: style.italic ? 'italic' : 'normal',
+                        textDecoration: style.underline ? 'underline' : 'none',
                         fontSize: `${(style.size / 100) * videoFrame.width}px`,
                         lineHeight: 1.25,
                         color: style.color,
                         backgroundColor: current.hl || (style.bgOpacity > 0 ? `rgba(0,0,0,${style.bgOpacity})` : 'transparent'),
                         padding: '0.2em 0.6em',
-                        borderRadius: '0.5em',
+                        borderRadius: `${style.bgRadius ?? 8}px`,
                         boxSizing: 'border-box',
-                        textShadow: style.outline ? '0 2px 6px rgba(0,0,0,0.9)' : 'none',
+                        textShadow: style.textShadowBlur
+                          ? `0 2px ${style.textShadowBlur}px ${style.textShadowColor || 'rgba(0,0,0,0.9)'}`
+                          : style.outline ? '0 2px 6px rgba(0,0,0,0.9)' : 'none',
                         animation: fxAnim(current),
                       }}
                     >
@@ -519,7 +767,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                       current.words.map((wd, i) => {
                         const active = time >= wd.start && time <= wd.end
                         return (
-                          <span key={i} style={{ display: 'inline-block', color: active ? style.hlColor : style.color, transform: active ? 'scale(1.15)' : undefined, fontWeight: active ? 800 : 700, transition: 'transform .12s, color .12s' }}>
+                          <span key={i} style={{ display: 'inline-block', color: active ? style.hlColor : style.color, transform: active ? 'scale(1.15)' : undefined, fontWeight: active ? 800 : (style.bold ? 800 : 400), transition: 'transform .12s, color .12s' }}>
                             {wd.w}{' '}
                           </span>
                         )
@@ -532,7 +780,6 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
             </div>
           </div>
 
-          {/* از اینجا به بعد داخل ناحیه‌ی sticky نیست و به‌طور عادی اسکرول می‌شود */}
           <p className="hidden text-[10px] text-white/30 lg:block">💡 کپشن را با ماوس بگیر و در تصویر جابه‌جا کن</p>
 
           <div className="flex flex-wrap items-center gap-1.5">
@@ -546,45 +793,9 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
               <input type="file" accept=".ttf,.otf,.woff,.woff2" className="hidden" onChange={(e) => e.target.files?.[0] && addCustomFont(e.target.files[0])} />
             </label>
           </div>
-
-          {showAdv && (
-            <div className="grid grid-cols-2 gap-2.5 rounded-xl border border-white/10 bg-zinc-900/60 p-3 text-xs sm:grid-cols-4 lg:grid-cols-7">
-              <div>
-                <div className="mb-1 text-white/40">فونت</div>
-                <select value={style.fontId} onChange={(e) => setStyle({ ...style, fontId: e.target.value })} className="w-full rounded-lg border border-white/10 bg-black/40 p-1.5 text-white/80">
-                  {customFonts.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-                  {FONTS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <div className="mb-1 text-white/40">اندازه: {style.size}٪</div>
-                <input type="range" min={1} max={20} step={0.5} value={style.size} onChange={(e) => setStyle({ ...style, size: Number(e.target.value) })} className="w-full accent-amber-500" />
-              </div>
-              <div>
-                <div className="mb-1 text-white/40">رنگ متن</div>
-                <input type="color" value={style.color} onChange={(e) => setStyle({ ...style, color: e.target.value })} className="h-7 w-full cursor-pointer rounded-lg border border-white/10 bg-transparent p-0" />
-              </div>
-              <div>
-                <div className="mb-1 text-white/40">رنگ کاراوکه</div>
-                <input type="color" value={style.hlColor} onChange={(e) => setStyle({ ...style, hlColor: e.target.value })} className="h-7 w-full cursor-pointer rounded-lg border border-white/10 bg-transparent p-0" />
-              </div>
-              <div>
-                <div className="mb-1 text-white/40">پس‌زمینه: {Math.round(style.bgOpacity * 100)}٪</div>
-                <input type="range" min={0} max={100} value={Math.round(style.bgOpacity * 100)} onChange={(e) => setStyle({ ...style, bgOpacity: Number(e.target.value) / 100 })} className="w-full accent-amber-500" />
-              </div>
-              <div>
-                <div className="mb-1 text-white/40">حاشیه</div>
-                <button onClick={() => setStyle({ ...style, outline: !style.outline })} className={`rounded-lg px-3 py-1 transition ${style.outline ? 'bg-amber-500 font-bold text-black' : 'bg-white/5 text-white/50'}`}>{style.outline ? 'روشن' : 'خاموش'}</button>
-              </div>
-              <div>
-                <div className="mb-1 text-white/40">مکان</div>
-                <button onClick={() => setStyle({ ...style, x: null, y: null })} className="rounded-lg bg-white/5 px-3 py-1 text-white/60 transition hover:bg-white/10">پیش‌فرض</button>
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Transcript List */}
+        {/* لیست رونویسی کپشن‌ها */}
         <div className="lg:col-span-2">
           <div className="flex h-full flex-col rounded-2xl border border-white/10 bg-zinc-900/60">
             <div className="flex flex-wrap items-center gap-2 border-b border-white/10 p-3 text-xs">
@@ -603,7 +814,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                   key={d}
                   onClick={() => {
                     snapshot()
-                    setSegments(segments.map((s) => ({
+                    dispatchSegments(segments.map((s) => ({
                       ...s,
                       start: Math.max(0, s.start + d),
                       end: s.end + d,
@@ -615,7 +826,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                   {d > 0 ? `+${d}` : d}s
                 </button>
               ))}
-              <button onClick={() => { snapshot(); setSegments([]) }} className="mr-auto rounded-md border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-red-400 transition hover:bg-red-500/20">
+              <button onClick={() => { snapshot(); dispatchSegments([]) }} className="mr-auto rounded-md border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-red-400 transition hover:bg-red-500/20">
                 پاک کردن
               </button>
             </div>
@@ -691,7 +902,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
                     </div>
                     <button title="تقسیم" onClick={() => splitSeg(i)} className="rounded-md bg-white/10 px-1.5 text-white/60 hover:text-white">✂️</button>
                     <button title="ادغام با بعدی" onClick={() => mergeSeg(i)} className="rounded-md bg-white/10 px-1.5 text-white/60 hover:text-white">🔗</button>
-                    <button title="حذف" onClick={() => { snapshot(); setSegments(segments.filter((_, idx) => idx !== i)) }} className="mr-auto rounded-md bg-white/10 px-1.5 text-red-400 hover:text-red-300">✕</button>
+                    <button title="حذف" onClick={() => { snapshot(); dispatchSegments(segments.filter((_, idx) => idx !== i)) }} className="mr-auto rounded-md bg-white/10 px-1.5 text-red-400 hover:text-red-300">✕</button>
                   </div>
 
                   <textarea
@@ -708,9 +919,9 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
         </div>
       </div>
 
-      {/* ─── Timeline ── */}
+      {/* ─── تایم‌لاین ── */}
       {duration > 0 && (
-        <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-3 select-none" dir="rtl">
+        <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-3 select-none mt-4" dir="rtl">
           <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px] text-white/40">
             <span className="font-bold text-white/70">تایم‌لاین</span>
             <input type="range" min={15} max={120} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} className="w-24 accent-amber-500" title="بزرگ‌نمایی" />
@@ -723,7 +934,6 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
               ⏱️ پایان در همین ثانیه ({fmt(time)})
             </button>
 
-            {/* تنظیم دستی و عددی زمان پایان */}
             <div className="flex items-center gap-1">
               <input
                 type="number" step="0.1" placeholder="عدد دقیق"
@@ -734,7 +944,7 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
               <button
                 onClick={applyManualEnd}
                 className="rounded-lg border border-white/20 bg-white/5 px-2 py-1 text-[10px] text-white/70 transition hover:border-amber-500/40 hover:text-amber-300"
-                title="زمان پایان کپشن انتخاب‌شده را دقیقاً به این عدد تنظیم کن"
+                title="تنظیم دقیق زمان پایان"
               >
                 تنظیم دقیق
               </button>
@@ -767,10 +977,8 @@ export default function SubtitleStudio({ videoUrl, segments, setSegments }: Prop
 
                     const move = (ev: globalThis.PointerEvent) => {
                       const deltaSec = (ev.clientX - startX) / zoom
-                      // محدود به بازه‌ی ۰ تا پایان ویدیو
                       let nextStart = Math.max(0, Math.min(duration - segLen, origStart + deltaSec))
 
-                      // اسنپ مغناطیسی، هماهنگ با دستگیره‌های لبه
                       if (prevSeg && Math.abs(nextStart - prevSeg.end) < 0.15) nextStart = prevSeg.end
                       if (nextSeg && Math.abs(nextStart + segLen - nextSeg.start) < 0.15) nextStart = nextSeg.start - segLen
                       if (Math.abs(nextStart - time) < 0.12) nextStart = time
