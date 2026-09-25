@@ -21,7 +21,7 @@ export default function CanvasSheet({ isOpen, onClose, config, onChange }: Props
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/90 backdrop-blur-none animate-fade-in">
       <div 
         className="w-full rounded-t-3xl border-t border-stone-800 bg-[#141210] p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -75,3 +75,4 @@ export default function CanvasSheet({ isOpen, onClose, config, onChange }: Props
     </div>
   )
 }
+

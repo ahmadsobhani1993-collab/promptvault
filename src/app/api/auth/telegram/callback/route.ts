@@ -1,42 +1,45 @@
-﻿export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
-import { NextRequest, NextResponse } from 'next/server'
+﻿export const dynamic = 'force-dynamic'
+import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import crypto from 'crypto'
+import { cookies } from 'next/headers'
 
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url)
-  const token = searchParams.get('token')
-  const loginUrl = new URL('/login', req.url)
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://promptsfa.ir'
 
-  if (!token) return NextResponse.redirect(loginUrl)
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const token = searchParams.get('token')
 
-  const loginToken = await prisma.loginToken.findUnique({ where: { token } })
-  if (!loginToken || loginToken.status !== 'APPROVED' || !loginToken.telegramId) {
-    return NextResponse.redirect(loginUrl)
+    if (!token) {
+      return NextResponse.redirect(`${APP_URL}/login?error=missing_token`)
+    }
+
+    const loginToken = await prisma.loginToken.findUnique({
+      where: { token },
+      include: { user: true },
+    })
+
+    if (!loginToken || !loginToken.confirmed || !loginToken.user) {
+      return NextResponse.redirect(`${APP_URL}/login?error=unauthorized_token`)
+    }
+
+    // ثبت نشست در کوکی یا هدایت به حساب کاربری
+    const cookieStore = await cookies()
+    cookieStore.set('telegram_auth_user', loginToken.user.id, {
+      path: '/',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 60 * 60 * 24 * 7, // 7 روز
+    })
+
+    // ابطال یا حذف توکن مصرف شده
+    await prisma.loginToken.delete({
+      where: { token },
+    }).catch(() => {})
+
+    return NextResponse.redirect(`${APP_URL}/`)
+  } catch (err) {
+    console.error('Telegram callback error:', err)
+    return NextResponse.redirect(`${APP_URL}/login?error=callback_failed`)
   }
-
-  const user = await prisma.user.findUnique({ where: { telegramId: loginToken.telegramId } })
-  if (!user) return NextResponse.redirect(loginUrl)
-
-  await prisma.loginToken.delete({ where: { token } }).catch(() => {})
-
-  const sessionToken = crypto.randomUUID()
-  const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-  await prisma.session.create({ data: { sessionToken, userId: user.id, expires } })
-
-  const isSecure = req.url.startsWith('https')
-  const cookieName = isSecure ? '__Secure-authjs.session-token' : 'authjs.session-token'
-
-  const res = NextResponse.redirect(new URL('/', req.url))
-  res.cookies.set(cookieName, sessionToken, {
-    httpOnly: true,
-    secure: isSecure,
-    sameSite: 'lax',
-    path: '/',
-    expires,
-  })
-
-  return res
 }

@@ -36,7 +36,7 @@ export default function SubtitleStyleModal({ isOpen, onClose, config, onChange }
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/90 backdrop-blur-none animate-fade-in">
       <div 
         className="w-full rounded-t-3xl border-t border-stone-800 bg-[#141210] p-5 shadow-2xl max-h-[75vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
@@ -256,3 +256,4 @@ export default function SubtitleStyleModal({ isOpen, onClose, config, onChange }
     </div>
   )
 }
+

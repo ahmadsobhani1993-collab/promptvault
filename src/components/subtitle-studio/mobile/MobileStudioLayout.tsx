@@ -1,9 +1,11 @@
 ﻿'use client'
 
+import { useEffect, useState } from 'react'
 import { useMobileStudioState } from './useMobileStudioState'
 import SubtitleStyleModal from './StyleSheet/SubtitleStyleModal'
 import CanvasSheet from './CanvasSheet'
 import CaptionEditSheet from './CaptionEditSheet'
+import SubtitleVideoExport from '@/components/transcribe/SubtitleVideoExport'
 
 interface SubtitleSegment {
   id: string
@@ -18,7 +20,7 @@ interface Props {
   onUpdateSubtitleText: (index: number, newText: string) => void
   currentTime: number
   onSeek: (time: number) => void
-  onExport: () => void
+  onExport?: () => void
 }
 
 export default function MobileStudioLayout({
@@ -27,7 +29,6 @@ export default function MobileStudioLayout({
   onUpdateSubtitleText,
   currentTime,
   onSeek,
-  onExport,
 }: Props) {
   const {
     styleConfig,
@@ -38,27 +39,28 @@ export default function MobileStudioLayout({
     setSelectedSegmentIndex,
   } = useMobileStudioState()
 
+  const [showExportModal, setShowExportModal] = useState(false)
   const currentSegment = subtitles[selectedSegmentIndex] || subtitles[0]
 
   return (
-    <div className="relative flex flex-col h-[85vh] max-w-md mx-auto bg-[#070605] rounded-3xl overflow-hidden border border-stone-800 shadow-2xl">
-      {/* نوار هدر ثابت بالای استودیو همراه دکمه خروجی رسمی */}
-      <div className="flex items-center justify-between px-4 py-3 bg-[#110f0d] border-b border-stone-800/80 z-30">
+    <div className="relative flex flex-col h-[88vh] max-w-md mx-auto bg-[#070605] rounded-3xl overflow-hidden border border-stone-800 shadow-2xl">
+      {/* هدر بدون تاری */}
+      <div className="flex items-center justify-between px-4 py-3 bg-[#110f0d] border-b border-stone-800 z-20">
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
           <span className="text-xs font-bold text-stone-200">استودیو زیرنویس</span>
         </div>
         <button
           type="button"
-          onClick={onExport}
-          className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black px-4 py-1.5 rounded-xl text-xs font-black shadow-lg shadow-amber-500/20 active:scale-95 transition-all"
+          onClick={() => setShowExportModal(true)}
+          className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black px-4 py-1.5 rounded-xl text-xs font-black shadow-md active:scale-95 transition-all"
         >
           <span>خروجی نهایی</span>
           <span>⬇️</span>
         </button>
       </div>
 
-      {/* ناحیه ویدیو */}
+      {/* ناحیه تصویر ویدیو - شفاف و بدون تیرگی */}
       <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden">
         <div
           className={`relative transition-all overflow-hidden flex items-center justify-center ${
@@ -80,9 +82,9 @@ export default function MobileStudioLayout({
           {currentSegment && (
             <div
               onClick={() => setActiveSheet('caption_edit')}
-              className="absolute bottom-8 px-4 py-2 text-center cursor-pointer select-none transition-all border border-dashed border-amber-400/50 rounded-xl bg-black/40 backdrop-blur-sm"
+              className="absolute bottom-10 px-4 py-2 text-center cursor-pointer select-none transition-all border border-dashed border-amber-400/50"
               style={{
-                backgroundColor: styleConfig.hasBg ? styleConfig.bgColor : undefined,
+                backgroundColor: styleConfig.hasBg ? styleConfig.bgColor : 'transparent',
                 borderRadius: `${styleConfig.bgRadius}px`,
                 textShadow: styleConfig.hasShadow
                   ? `${styleConfig.shadowX}px ${styleConfig.shadowY}px ${styleConfig.shadowBlur}px ${styleConfig.shadowColor}`
@@ -103,11 +105,11 @@ export default function MobileStudioLayout({
         </div>
 
         {/* جعبه ابزارهای کناری */}
-        <div className="absolute left-3 top-4 flex flex-col gap-2.5 z-20 bg-black/70 backdrop-blur-md p-2 rounded-2xl border border-stone-800/80 shadow-xl">
+        <div className="absolute left-3 top-4 flex flex-col gap-2.5 z-10 bg-black/80 p-2 rounded-2xl border border-stone-800">
           <button
             type="button"
             onClick={() => setActiveSheet('canvas')}
-            className="flex flex-col items-center gap-1 text-[10px] text-stone-300 hover:text-amber-400 transition"
+            className="flex flex-col items-center gap-1 text-[10px] text-stone-300 hover:text-amber-400"
           >
             <span className="text-base">📐</span>
             <span>کادر</span>
@@ -116,7 +118,7 @@ export default function MobileStudioLayout({
           <button
             type="button"
             onClick={() => setActiveSheet('style')}
-            className="flex flex-col items-center gap-1 text-[10px] text-stone-300 hover:text-amber-400 transition"
+            className="flex flex-col items-center gap-1 text-[10px] text-stone-300 hover:text-amber-400"
           >
             <span className="text-base">🎨</span>
             <span>استایل</span>
@@ -125,7 +127,7 @@ export default function MobileStudioLayout({
           <button
             type="button"
             onClick={() => setActiveSheet('caption_edit')}
-            className="flex flex-col items-center gap-1 text-[10px] text-stone-300 hover:text-amber-400 transition"
+            className="flex flex-col items-center gap-1 text-[10px] text-stone-300 hover:text-amber-400"
           >
             <span className="text-base">✏️</span>
             <span>متن</span>
@@ -133,8 +135,8 @@ export default function MobileStudioLayout({
         </div>
       </div>
 
-      {/* تایم‌لاین سگمنت‌ها در پایین */}
-      <div className="bg-[#12100d] border-t border-stone-800 p-3">
+      {/* سگمنت‌ها در پایین */}
+      <div className="bg-[#12100d] border-t border-stone-800 p-3 z-10">
         <div className="flex items-center justify-between mb-2 px-1">
           <span className="text-[11px] font-mono text-stone-400">
             ⏱️ {currentTime.toFixed(1)} ثانیه / {subtitles.length} سگمنت
@@ -161,6 +163,34 @@ export default function MobileStudioLayout({
           ))}
         </div>
       </div>
+
+      {/* پنجره پاپ‌آپ استخراج با انتقال کامل استایل‌های زنده */}
+      {showExportModal && (
+        <div className="absolute inset-0 z-50 bg-black/90 flex flex-col justify-end p-4">
+          <div className="bg-[#161412] border border-stone-800 rounded-3xl p-5 mb-2">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-white">دریافت خروجی نهایی ویدیو</h3>
+              <button
+                type="button"
+                onClick={() => setShowExportModal(false)}
+                className="text-stone-400 hover:text-white text-sm"
+              >
+                ✕
+              </button>
+            </div>
+            <SubtitleVideoExport
+              videoUrl={videoUrl}
+              segments={subtitles as any}
+              style={{
+                fontId: styleConfig.fontFamily,
+                color: styleConfig.textColor,
+                hlColor: styleConfig.activeWordColor,
+                karaoke: true,
+              } as any}
+            />
+          </div>
+        </div>
+      )}
 
       <SubtitleStyleModal
         isOpen={activeSheet === 'style'}

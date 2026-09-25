@@ -1,4 +1,4 @@
-﻿export const dynamic = 'force-dynamic';
+﻿export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import crypto from 'crypto'
@@ -7,11 +7,10 @@ export async function POST() {
   try {
     const token = crypto.randomBytes(16).toString('hex')
 
-    // ذخیره در دیتابیس
     await prisma.loginToken.create({
       data: {
         token,
-        status: 'PENDING',
+        confirmed: false,
       },
     })
 
@@ -29,14 +28,10 @@ export async function POST() {
       url: targetUrl,
     })
   } catch (error: any) {
-    console.error('❌ Failed to initialize Telegram login token:', error)
+    console.error('Failed to initialize Telegram login token:', error)
     return NextResponse.json(
-      {
-        ok: false,
-        error: error.message || 'Database error occurred',
-      },
+      { ok: false, error: error.message || 'Database error occurred' },
       { status: 500 }
     )
   }
 }
-
