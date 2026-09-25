@@ -27,9 +27,18 @@ enum PromptStatus {
   REJECTED
 }
 
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELED
+}
+
 model User {
   id                String             @id @default(cuid())
   name              String?
+  username          String?            @unique
+  bio               String?            @db.Text
   email             String?            @unique
   emailVerified     DateTime?
   image             String?
@@ -45,6 +54,8 @@ model User {
   pushSubscriptions PushSubscription[]
   notifications     Notification[]
   bookmarks         Bookmark[]
+  cartItems         CartItem[]
+  orders            Order[]
 }
 
 model Account {
@@ -285,9 +296,57 @@ model AnalyticsBuffer {
   ip        String?
   createdAt DateTime @default(now())
 }
+
 model LoginToken {
   token      String   @id
   telegramId String?
   status     String   @default("PENDING")
   createdAt  DateTime @default(now())
+}
+
+model Product {
+  id          String      @id @default(cuid())
+  titleFa     String
+  titleEn     String?
+  descFa      String?     @db.Text
+  price       Int
+  cover       String?
+  fileUrl     String?
+  createdAt   DateTime    @default(now())
+  cartItems   CartItem[]
+  orderItems  OrderItem[]
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  userId    String
+  productId String
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+}
+
+model Order {
+  id        String      @id @default(cuid())
+  userId    String
+  total     Int
+  status    OrderStatus @default(PENDING)
+  createdAt DateTime    @default(now())
+
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items OrderItem[]
+}
+
+model OrderItem {
+  id        String @id @default(cuid())
+  orderId   String
+  productId String
+  price     Int
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
 }
