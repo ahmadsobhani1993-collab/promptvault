@@ -4,18 +4,25 @@ import webpush from 'web-push';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT || 'mailto:admin@promptsfa.ir',
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '',
-  process.env.VAPID_PRIVATE_KEY || ''
-);
-
 export async function POST(req: Request) {
   try {
     const session = await auth();
     if (!session?.user || session.user.role !== 'ADMIN') {
       return NextResponse.json({ error: 'دسترسی غیرمجاز' }, { status: 403 });
     }
+
+    const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    const privateKey = process.env.VAPID_PRIVATE_KEY;
+    const subject = process.env.VAPID_SUBJECT || 'mailto:admin@promptsfa.ir';
+
+    if (!publicKey || !privateKey) {
+      return NextResponse.json(
+        { error: 'کلیدهای VAPID در متغیرهای محیطی سرور تنظیم نشده‌اند.' },
+        { status: 500 }
+      );
+    }
+
+    webpush.setVapidDetails(subject, publicKey, privateKey);
 
     const { title, body, url, target, targetEmail } = await req.json();
 
