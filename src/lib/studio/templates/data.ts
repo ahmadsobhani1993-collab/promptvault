@@ -1,0 +1,141 @@
+﻿import { TemplateItem } from '../types'
+
+export const TEMPLATES: TemplateItem[] = [
+  // Popular / Dynamic
+  {
+    id: 'pop-classic-gold',
+    name: 'طلایی مینیمال',
+    category: 'Popular',
+    previewBg: 'linear-gradient(135deg, #1f1a10, #382d0e)',
+    style: {
+      fontFamily: 'Vazirmatn',
+      textColor: '#ffffff',
+      activeWordColor: '#f59e0b',
+      hasBg: false,
+      hasShadow: true,
+      shadowColor: 'rgba(0,0,0,0.85)',
+      shadowBlur: 8,
+      shadowY: 3,
+    },
+  },
+  {
+    id: 'dyn-pulse-coral',
+    name: 'داینامیک پالس',
+    category: 'Dynamic',
+    isNew: true,
+    previewBg: 'linear-gradient(135deg, #2b1113, #4f1d22)',
+    style: {
+      fontFamily: 'Vazirmatn',
+      textColor: '#ffffff',
+      activeWordColor: '#fb7185',
+      hasBg: true,
+      bgColor: 'rgba(0,0,0,0.7)',
+      bgRadius: 14,
+      hasActiveWordBg: true,
+      activeWordBgColor: 'rgba(251,113,133,0.25)',
+    },
+  },
+  // Music
+  {
+    id: 'music-waveform-player',
+    name: 'موزیک پلیر مدرن',
+    category: 'Music',
+    previewBg: 'linear-gradient(135deg, #091e3a, #113665)',
+    style: {
+      fontFamily: 'Vazirmatn',
+      textColor: '#e0f2fe',
+      activeWordColor: '#38bdf8',
+      showWaveform: true,
+      waveformColor: '#38bdf8',
+      showProgressBar: true,
+      progressColor: '#0284c7',
+      hasBg: true,
+      bgColor: 'rgba(15,23,42,0.85)',
+      bgRadius: 20,
+    },
+  },
+  // Progress
+  {
+    id: 'prog-bottom-line',
+    name: 'پیشرفت زیر متن',
+    category: 'Progress',
+    previewBg: 'linear-gradient(135deg, #14291e, #1c4b32)',
+    style: {
+      fontFamily: 'Vazirmatn',
+      textColor: '#ffffff',
+      activeWordColor: '#10b981',
+      showProgressBar: true,
+      progressColor: '#10b981',
+      hasBg: true,
+      bgColor: 'rgba(0,0,0,0.6)',
+      bgRadius: 10,
+    },
+  },
+  // Standard
+  {
+    id: 'std-clean-white',
+    name: 'استاندارد یوتیوب',
+    category: 'Standard',
+    previewBg: 'linear-gradient(135deg, #1c1917, #292524)',
+    style: {
+      fontFamily: 'Vazirmatn',
+      textColor: '#ffffff',
+      activeWordColor: '#ffffff',
+      hasBg: true,
+      bgColor: 'rgba(0,0,0,0.8)',
+      bgRadius: 8,
+      hasShadow: false,
+    },
+  },
+  // Cinema
+  {
+    id: 'cinema-letterbox',
+    name: 'سینماتیک دارک',
+    category: 'Cinema',
+    previewBg: 'linear-gradient(135deg, #050505, #141414)',
+    style: {
+      fontFamily: 'Vazirmatn',
+      textColor: '#fef08a',
+      activeWordColor: '#fde047',
+      hasBg: false,
+      hasShadow: true,
+      shadowColor: '#000000',
+      shadowBlur: 14,
+      shadowX: 0,
+      shadowY: 4,
+    },
+  },
+  // Fantasy
+  {
+    id: 'fan-cyber-neon',
+    name: 'سایبرپانک نئون',
+    category: 'Fantasy',
+    previewBg: 'linear-gradient(135deg, #240a34, #491169)',
+    style: {
+      fontFamily: 'Vazirmatn',
+      textColor: '#fdf4ff',
+      activeWordColor: '#c084fc',
+      hasShadow: true,
+      shadowColor: '#a855f7',
+      shadowBlur: 20,
+      hasBg: true,
+      bgColor: 'rgba(59,7,100,0.6)',
+      bgRadius: 16,
+    },
+  },
+  // Text Effect
+  {
+    id: 'fx-highlight-box',
+    name: 'هایلایت کلمه‌ای',
+    category: 'Text Effect',
+    previewBg: 'linear-gradient(135deg, #2e2607, #453702)',
+    style: {
+      fontFamily: 'Vazirmatn',
+      textColor: '#ffffff',
+      activeWordColor: '#000000',
+      hasActiveWordBg: true,
+      activeWordBgColor: '#eab308',
+      hasBg: false,
+    },
+  },
+]
