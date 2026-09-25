@@ -12,6 +12,7 @@ const items = [
   { href: '/admin/categories', fa: 'دسته‌بندی‌ها', en: 'Categories', icon: '📁' },
   { href: '/admin/comments', fa: 'کامنت‌ها', en: 'Comments', icon: '💬' },
   { href: '/admin/users', fa: 'کاربران', en: 'Users', icon: '👥' },
+  { href: '/admin/notifications', fa: 'اعلان‌ها', en: 'Notifications', icon: '📢' },
 ]
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {

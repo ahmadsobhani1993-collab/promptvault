@@ -1,20 +1,21 @@
 ﻿'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import Link from 'next/link'
 import EditPromptModal from './EditPromptModal'
 
-// آواتارهای شیک و آماده
-const PRESET_AVATARS = [
-  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1568602471122-7832951cc4c5?w=150&auto=format&fit=crop&q=80',
-  'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+// آواتارهای انیمیشنی و سه بعدی
+const ANIME_AVATARS = [
+  'https://api.dicebear.com/7.x/bottts/svg?seed=Felix',
+  'https://api.dicebear.com/7.x/bottts/svg?seed=Zack',
+  'https://api.dicebear.com/7.x/bottts/svg?seed=Luna',
+  'https://api.dicebear.com/7.x/bottts/svg?seed=Milo',
+  'https://api.dicebear.com/7.x/bottts/svg?seed=Oliver',
+  'https://api.dicebear.com/7.x/bottts/svg?seed=Bella',
+  'https://api.dicebear.com/7.x/bottts/svg?seed=Jasper',
+  'https://api.dicebear.com/7.x/bottts/svg?seed=Coco',
 ]
 
-// تابع کمکی برای تشخیص ویدیو و حل باگ تصویر شکسته
 function isVideoMedia(url?: string | null, type?: string | null) {
   if (!url) return false
   if (type === 'VIDEO' || type === 'video') return true
@@ -27,7 +28,7 @@ function PromptMediaPreview({ prompt }: { prompt: any }) {
 
   if (isVideo) {
     return (
-      <div className="relative h-full w-full bg-black/90 group/media">
+      <div className="relative h-full w-full bg-black/90">
         <video
           src={mediaUrl}
           muted
@@ -56,8 +57,8 @@ function PromptMediaPreview({ prompt }: { prompt: any }) {
       alt={prompt.titleFa || 'Prompt'}
       className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
       onError={(e) => {
-        // فالبک برای تصاویر نامعتبر
-        (e.target as HTMLImageElement).src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="%23222"><rect width="24" height="24"/><text x="50%" y="50%" fill="%23d4af37" font-size="3" text-anchor="middle" dominant-baseline="middle">Media</text></svg>'
+        (e.target as HTMLImageElement).src =
+          'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="%23111"><text x="50%" y="50%" fill="%23d4af37" font-size="3" text-anchor="middle" dominant-baseline="middle">Media</text></svg>'
       }}
     />
   )
@@ -82,8 +83,32 @@ export default function ProfessionalDashboard({
     instagram: user?.instagram || '',
   })
   const [savingProfile, setSavingProfile] = useState(false)
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false)
-  const [togglingPush, setTogglingPush] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // فشرده‌سازی بسیار بالا با ابعاد آواتار (حجم نهایی زیر ۱۵ کیلوبایت)
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const size = 160
+        canvas.width = size
+        canvas.height = size
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, size, size)
+          const compressed = canvas.toDataURL('image/webp', 0.6)
+          setProfileData((prev) => ({ ...prev, image: compressed }))
+        }
+      }
+      img.src = event.target?.result as string
+    }
+    reader.readAsDataURL(file)
+  }
 
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -103,31 +128,13 @@ export default function ProfessionalDashboard({
     }
   }
 
-  const handleTogglePush = async () => {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      alert('مرورگر شما از وب پوش پشتیبانی نمی‌کند.')
-      return
-    }
-    setTogglingPush(true)
-    try {
-      const permission = await Notification.requestPermission()
-      if (permission === 'granted') {
-        setNotificationsEnabled(true)
-        alert('اعلان‌های اختصاصی PromptsFA فعال شدند!')
-      } else {
-        alert('اجازه دریافت نوتیفیکیشن داده نشد.')
-      }
-    } catch {
-      alert('خطا در تنظیم اعلان‌ها')
-    } finally {
-      setTogglingPush(false)
-    }
-  }
-
   const cartTotal = cartItems.reduce(
     (acc: number, item: any) => acc + (item.product?.price || 0) * (item.quantity || 1),
     0
   )
+
+  const cleanTelegram = profileData.telegram?.replace(/^@/, '')
+  const cleanInstagram = profileData.instagram?.replace(/^@/, '')
 
   return (
     <div className="space-y-8">
@@ -157,28 +164,28 @@ export default function ProfessionalDashboard({
                 {user.bio || 'هنوز بیوگرافی اضافه نشده است.'}
               </p>
 
-              {/* نمایش آیدی‌های شبکه‌های اجتماعی */}
+              {/* نمایش آیدی‌های شبکه‌های اجتماعی کلیک‌خور */}
               <div className="mt-3 flex items-center justify-center md:justify-start gap-3">
                 {user.telegram && (
                   <a
-                    href={`https://t.me/${user.telegram.replace('@', '')}`}
+                    href={`https://t.me/${user.telegram.replace(/^@/, '')}`}
                     target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-1.5 rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-0.5 text-[11px] text-sky-400 hover:border-sky-400 transition-colors"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 rounded-full border border-sky-500/40 bg-sky-500/10 px-3 py-1 text-xs text-sky-400 hover:bg-sky-500/20 hover:border-sky-400 transition-all cursor-pointer"
                   >
                     <span>✈️</span>
-                    <span>{user.telegram}</span>
+                    <span dir="ltr">@{user.telegram.replace(/^@/, '')}</span>
                   </a>
                 )}
                 {user.instagram && (
                   <a
-                    href={`https://instagram.com/${user.instagram.replace('@', '')}`}
+                    href={`https://instagram.com/${user.instagram.replace(/^@/, '')}`}
                     target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-1.5 rounded-full border border-pink-500/30 bg-pink-500/10 px-2.5 py-0.5 text-[11px] text-pink-400 hover:border-pink-400 transition-colors"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 rounded-full border border-pink-500/40 bg-pink-500/10 px-3 py-1 text-xs text-pink-400 hover:bg-pink-500/20 hover:border-pink-400 transition-all cursor-pointer"
                   >
                     <span>📷</span>
-                    <span>{user.instagram}</span>
+                    <span dir="ltr">@{user.instagram.replace(/^@/, '')}</span>
                   </a>
                 )}
               </div>
@@ -186,17 +193,6 @@ export default function ProfessionalDashboard({
           </div>
 
           <div className="flex flex-wrap items-center gap-3 justify-center">
-            {/* دکمه نوتیفیکیشن در تنظیمات */}
-            <button
-              onClick={handleTogglePush}
-              disabled={togglingPush}
-              className="flex items-center gap-1.5 rounded-xl border border-line bg-surface/70 px-3.5 py-2 text-xs font-bold text-ink-muted hover:border-gold/50 hover:text-gold-bright transition-all"
-              title="اعلان‌های مرورگر"
-            >
-              <span>🔔</span>
-              <span>{notificationsEnabled ? 'اعلان‌ها فعال' : 'فعال‌سازی نوتیف'}</span>
-            </button>
-
             <button
               onClick={() => setIsEditProfileOpen(true)}
               className="btn-secondary rounded-xl border border-line px-4 py-2 text-xs font-bold text-ink-muted hover:border-gold/50 hover:text-gold-bright transition-all"
@@ -212,7 +208,7 @@ export default function ProfessionalDashboard({
         </div>
       </div>
 
-      {/* نوار تب‌ها */}
+      {/* تب‌ها */}
       <div className="flex flex-wrap items-center gap-2 border-b border-line pb-3">
         {[
           { key: 'prompts', label: 'پرامپت‌های من', count: myPrompts.length, icon: '⚡' },
@@ -239,7 +235,6 @@ export default function ProfessionalDashboard({
 
       {/* محتوای تب‌ها */}
       <div>
-        {/* ۱. تب پرامپت‌های من */}
         {activeTab === 'prompts' && (
           <div className="card divide-y divide-line overflow-hidden">
             {myPrompts.map((p: any) => (
@@ -264,7 +259,6 @@ export default function ProfessionalDashboard({
           </div>
         )}
 
-        {/* ۲. تب ذخیره‌ها (با حل باگ تصویر ویدیو) */}
         {activeTab === 'saved' && (
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             {savedPrompts.map(
@@ -291,7 +285,6 @@ export default function ProfessionalDashboard({
           </div>
         )}
 
-        {/* ۳. تب لایک‌ها (با حل باگ تصویر ویدیو) */}
         {activeTab === 'likes' && (
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             {likedPrompts.map(
@@ -318,7 +311,6 @@ export default function ProfessionalDashboard({
           </div>
         )}
 
-        {/* ۴. تب نظرات */}
         {activeTab === 'comments' && (
           <div className="card divide-y divide-line overflow-hidden">
             {myComments.map((c: any) => (
@@ -337,7 +329,6 @@ export default function ProfessionalDashboard({
           </div>
         )}
 
-        {/* ۵. تب سبد خرید */}
         {activeTab === 'cart' && (
           <div className="card p-6">
             <h3 className="font-display text-lg font-bold text-gold-bright mb-4">سبد خرید شما</h3>
@@ -372,7 +363,7 @@ export default function ProfessionalDashboard({
         )}
       </div>
 
-      {/* مودال حرفه‌ای ویرایش پروفایل همراه با انتخاب آواتار و آیدی شبکه‌های اجتماعی */}
+      {/* مودال ویرایش پروفایل با آپلود اختصاصی و آواتارهای انیمیشنی */}
       {isEditProfileOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
           <div className="card w-full max-w-lg border-gold/40 bg-[#12100d] p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -390,45 +381,62 @@ export default function ProfessionalDashboard({
                 />
               </div>
 
-              {/* بخش انتخاب آواتارهای آماده */}
+              {/* بخش آپلود تصویر مستقیم فشرده */}
               <div>
-                <label className="block text-xs text-ink-muted mb-2">انتخاب سریع آواتار</label>
-                <div className="flex items-center gap-3 overflow-x-auto pb-2">
-                  {PRESET_AVATARS.map((avatar, idx) => (
+                <label className="block text-xs text-ink-muted mb-2">تصویر آواتار شخصی</label>
+                <div className="flex items-center gap-4">
+                  <div className="h-14 w-14 overflow-hidden rounded-full border-2 border-gold/50 bg-black/60 shrink-0">
+                    {profileData.image ? (
+                      <img src={profileData.image} alt="Preview" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-xs text-ink-muted">بدون عکس</div>
+                    )}
+                  </div>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleImageUpload}
+                    accept="image/*"
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="rounded-lg border border-gold/40 bg-gold/10 px-3.5 py-2 text-xs font-bold text-gold-bright hover:bg-gold/20 transition-all"
+                  >
+                    📁 آپلود از دستگاه (فشرده‌سازی خودکار)
+                  </button>
+                </div>
+              </div>
+
+              {/* آواتارهای کارتونی/انیمیشنی آماده */}
+              <div>
+                <label className="block text-xs text-ink-muted mb-2">یا انتخاب آواتار انیمیشنی آماده</label>
+                <div className="flex items-center gap-2.5 overflow-x-auto pb-2">
+                  {ANIME_AVATARS.map((avatar, idx) => (
                     <button
                       key={idx}
                       type="button"
                       onClick={() => setProfileData({ ...profileData, image: avatar })}
-                      className={`relative h-12 w-12 shrink-0 overflow-hidden rounded-full border-2 transition-all ${
+                      className={`relative h-12 w-12 shrink-0 overflow-hidden rounded-full border-2 bg-[#1a1714] p-1 transition-all ${
                         profileData.image === avatar
-                          ? 'border-gold-bright scale-110 shadow-[0_0_10px_rgba(212,175,55,0.4)]'
+                          ? 'border-gold-bright scale-110 shadow-[0_0_12px_rgba(212,175,55,0.5)]'
                           : 'border-line/60 opacity-60 hover:opacity-100'
                       }`}
                     >
-                      <img src={avatar} alt={`Avatar ${idx}`} className="h-full w-full object-cover" />
+                      <img src={avatar} alt={`Avatar ${idx}`} className="h-full w-full object-contain" />
                     </button>
                   ))}
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs text-ink-muted mb-1">یا آدرس عکس آواتار دلخواه (URL)</label>
-                <input
-                  type="url"
-                  placeholder="https://..."
-                  value={profileData.image}
-                  onChange={(e) => setProfileData({ ...profileData, image: e.target.value })}
-                  className="w-full rounded-lg border border-line bg-surface p-2.5 text-xs text-ink focus:border-gold/60 focus:outline-none"
-                />
-              </div>
-
-              {/* ورودی آیدی تلگرام و اینستاگرام */}
+              {/* آیدی شبکه‌های اجتماعی */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-ink-muted mb-1">آیدی تلگرام</label>
                   <input
                     type="text"
-                    placeholder="@username"
+                    placeholder="username"
                     value={profileData.telegram}
                     onChange={(e) => setProfileData({ ...profileData, telegram: e.target.value })}
                     className="w-full rounded-lg border border-line bg-surface p-2.5 text-xs text-ink focus:border-gold/60 focus:outline-none dir-ltr text-left"
@@ -438,7 +446,7 @@ export default function ProfessionalDashboard({
                   <label className="block text-xs text-ink-muted mb-1">آیدی اینستاگرام</label>
                   <input
                     type="text"
-                    placeholder="@username"
+                    placeholder="username"
                     value={profileData.instagram}
                     onChange={(e) => setProfileData({ ...profileData, instagram: e.target.value })}
                     className="w-full rounded-lg border border-line bg-surface p-2.5 text-xs text-ink focus:border-gold/60 focus:outline-none dir-ltr text-left"

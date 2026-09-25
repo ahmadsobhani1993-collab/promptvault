@@ -26,8 +26,12 @@ export default async function Header({ locale: propLocale }: { locale?: Locale }
   ]
 
   if (session?.user) {
-    mobileLinks.push({ href: '/account', label: L(locale, 'حساب', 'Account') })
+    mobileLinks.push({ href: '/account', label: L(locale, 'حساب کاربری', 'Account') })
   }
+
+  const userImage = session?.user?.image
+  const userName = session?.user?.name || session?.user?.email || 'کاربر'
+  const userInitial = userName.charAt(0).toUpperCase()
 
   return (
     <header className="sticky top-0 z-40 border-b border-line/60 bg-[#070503]/85 backdrop-blur">
@@ -84,9 +88,18 @@ export default async function Header({ locale: propLocale }: { locale?: Locale }
 
           <NotifBell />
 
+          {/* آواتار دایره‌ای شیک متصل به صفحه حساب */}
           {session?.user ? (
-            <Link href={locale === 'en' ? '/en/account' : '/account'} className="btn-secondary hidden md:inline-flex text-xs">
-              👤 {L(locale, 'حساب', 'Account')}
+            <Link
+              href={locale === 'en' ? '/en/account' : '/account'}
+              title={userName}
+              className="relative hidden md:flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border-2 border-gold/50 bg-[#15120e] shadow-md transition-all hover:scale-105 hover:border-gold-bright"
+            >
+              {userImage ? (
+                <img src={userImage} alt={userName} className="h-full w-full object-cover" />
+              ) : (
+                <span className="font-display text-xs font-bold text-gold-bright">{userInitial}</span>
+              )}
             </Link>
           ) : (
             <Link href={locale === 'en' ? '/en/login' : '/login'} className="btn-secondary hidden md:inline-flex text-xs">
