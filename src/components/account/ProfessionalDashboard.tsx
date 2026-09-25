@@ -1,10 +1,9 @@
 ﻿'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import EditPromptModal from './EditPromptModal'
 
-// آواتارهای انیمیشنی و سه بعدی
 const ANIME_AVATARS = [
   'https://api.dicebear.com/7.x/bottts/svg?seed=Felix',
   'https://api.dicebear.com/7.x/bottts/svg?seed=Zack',
@@ -77,15 +76,26 @@ export default function ProfessionalDashboard({
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false)
   const [profileData, setProfileData] = useState({
     name: user?.name || '',
+    username: user?.username || '',
     bio: user?.bio || '',
     image: user?.image || '',
     telegram: user?.telegram || '',
     instagram: user?.instagram || '',
   })
   const [savingProfile, setSavingProfile] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const modalRef = useRef<HTMLDivElement>(null)
 
-  // فشرده‌سازی بسیار بالا با ابعاد آواتار (حجم نهایی زیر ۱۵ کیلوبایت)
+  // بستن مودال با دکمه Esc
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsEditProfileOpen(false)
+    }
+    if (isEditProfileOpen) window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isEditProfileOpen])
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -113,15 +123,19 @@ export default function ProfessionalDashboard({
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSavingProfile(true)
+    setErrorMessage(null)
     try {
       const res = await fetch('/api/user/profile', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(profileData),
       })
+      const data = await res.json()
       if (res.ok) {
         setIsEditProfileOpen(false)
         window.location.reload()
+      } else {
+        setErrorMessage(data.error || 'خطا در ثبت اطلاعات')
       }
     } finally {
       setSavingProfile(false)
@@ -133,12 +147,11 @@ export default function ProfessionalDashboard({
     0
   )
 
-  const cleanTelegram = profileData.telegram?.replace(/^@/, '')
-  const cleanInstagram = profileData.instagram?.replace(/^@/, '')
+  const publicUrl = user?.username ? `/u/${user.username}` : null
 
   return (
     <div className="space-y-8">
-      {/* هدر هویت بصری کاربر */}
+      {/* هدر اطلاعات کاربر */}
       <div className="relative overflow-hidden rounded-2xl border border-line bg-gradient-to-r from-elevated via-surface to-elevated p-6 md:p-8">
         <div className="flex flex-col md:flex-row items-center gap-6 justify-between">
           <div className="flex flex-col md:flex-row items-center gap-5 text-center md:text-right">
@@ -159,19 +172,31 @@ export default function ProfessionalDashboard({
                   {user.role === 'ADMIN' ? 'مدیر سیستم' : 'عضو طلایی'}
                 </span>
               </div>
-              <p className="mt-1 text-xs text-ink-muted">{user.email}</p>
+              
+              <div className="mt-1 flex items-center gap-2 justify-center md:justify-start text-xs text-ink-muted">
+                <span>{user.email}</span>
+                {user.username && (
+                  <>
+                    <span>·</span>
+                    <Link href={`/u/${user.username}`} target="_blank" className="text-gold-bright hover:underline" dir="ltr">
+                      promptsfa.ir/u/{user.username} ↗
+                    </Link>
+                  </>
+                )}
+              </div>
+
               <p className="mt-2 max-w-lg text-xs leading-relaxed text-ink/80">
                 {user.bio || 'هنوز بیوگرافی اضافه نشده است.'}
               </p>
 
-              {/* نمایش آیدی‌های شبکه‌های اجتماعی کلیک‌خور */}
+              {/* آیدی شبکه‌های اجتماعی */}
               <div className="mt-3 flex items-center justify-center md:justify-start gap-3">
                 {user.telegram && (
                   <a
                     href={`https://t.me/${user.telegram.replace(/^@/, '')}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 rounded-full border border-sky-500/40 bg-sky-500/10 px-3 py-1 text-xs text-sky-400 hover:bg-sky-500/20 hover:border-sky-400 transition-all cursor-pointer"
+                    className="flex items-center gap-1.5 rounded-full border border-sky-500/40 bg-sky-500/10 px-3 py-1 text-xs text-sky-400 hover:bg-sky-500/20 hover:border-sky-400 transition-all"
                   >
                     <span>✈️</span>
                     <span dir="ltr">@{user.telegram.replace(/^@/, '')}</span>
@@ -182,7 +207,7 @@ export default function ProfessionalDashboard({
                     href={`https://instagram.com/${user.instagram.replace(/^@/, '')}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 rounded-full border border-pink-500/40 bg-pink-500/10 px-3 py-1 text-xs text-pink-400 hover:bg-pink-500/20 hover:border-pink-400 transition-all cursor-pointer"
+                    className="flex items-center gap-1.5 rounded-full border border-pink-500/40 bg-pink-500/10 px-3 py-1 text-xs text-pink-400 hover:bg-pink-500/20 hover:border-pink-400 transition-all"
                   >
                     <span>📷</span>
                     <span dir="ltr">@{user.instagram.replace(/^@/, '')}</span>
@@ -193,6 +218,15 @@ export default function ProfessionalDashboard({
           </div>
 
           <div className="flex flex-wrap items-center gap-3 justify-center">
+            {publicUrl && (
+              <Link
+                href={publicUrl}
+                target="_blank"
+                className="btn-secondary rounded-xl border border-line px-3.5 py-2 text-xs font-bold text-gold-bright hover:border-gold/50 transition-all"
+              >
+                🌐 مشاهده صفحه عمومی
+              </Link>
+            )}
             <button
               onClick={() => setIsEditProfileOpen(true)}
               className="btn-secondary rounded-xl border border-line px-4 py-2 text-xs font-bold text-ink-muted hover:border-gold/50 hover:text-gold-bright transition-all"
@@ -363,29 +397,64 @@ export default function ProfessionalDashboard({
         )}
       </div>
 
-      {/* مودال ویرایش پروفایل با آپلود اختصاصی و آواتارهای انیمیشنی */}
+      {/* مودال با قابلیت بسته‌شدن با کلیک بیرون (Click Outside) */}
       {isEditProfileOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
-          <div className="card w-full max-w-lg border-gold/40 bg-[#12100d] p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="font-display text-base font-bold text-gold-bright mb-4">
-              ویرایش اطلاعات حساب کاربری
-            </h3>
+        <div
+          onClick={() => setIsEditProfileOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md"
+        >
+          <div
+            ref={modalRef}
+            onClick={(e) => e.stopPropagation()}
+            className="card w-full max-w-lg border-gold/40 bg-[#12100d] p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between border-b border-line pb-3 mb-4">
+              <h3 className="font-display text-base font-bold text-gold-bright">
+                ویرایش اطلاعات حساب کاربری
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsEditProfileOpen(false)}
+                className="text-ink-muted hover:text-ink text-sm p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {errorMessage && (
+              <div className="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 p-2.5 text-xs text-red-400">
+                {errorMessage}
+              </div>
+            )}
+
             <form onSubmit={handleProfileSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs text-ink-muted mb-1">نام یا نام مستعار</label>
-                <input
-                  type="text"
-                  value={profileData.name}
-                  onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
-                  className="w-full rounded-lg border border-line bg-surface p-2.5 text-xs text-ink focus:border-gold/60 focus:outline-none"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-ink-muted mb-1 font-bold">نام نمایشی</label>
+                  <input
+                    type="text"
+                    value={profileData.name}
+                    onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
+                    className="w-full rounded-lg border border-line bg-surface p-2.5 text-xs text-ink focus:border-gold/60 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-muted mb-1 font-bold">نام کاربری یکتا (URL)</label>
+                  <input
+                    type="text"
+                    placeholder="username"
+                    value={profileData.username}
+                    onChange={(e) => setProfileData({ ...profileData, username: e.target.value })}
+                    className="w-full rounded-lg border border-line bg-surface p-2.5 text-xs text-ink focus:border-gold/60 focus:outline-none dir-ltr text-left font-mono"
+                  />
+                </div>
               </div>
 
-              {/* بخش آپلود تصویر مستقیم فشرده */}
+              {/* بخش آپلود آواتار شخصی */}
               <div>
-                <label className="block text-xs text-ink-muted mb-2">تصویر آواتار شخصی</label>
+                <label className="block text-xs text-ink-muted mb-2 font-bold">تصویر آواتار</label>
                 <div className="flex items-center gap-4">
-                  <div className="h-14 w-14 overflow-hidden rounded-full border-2 border-gold/50 bg-black/60 shrink-0">
+                  <div className="relative group/avatar h-16 w-16 overflow-hidden rounded-full border-2 border-gold/50 bg-black/60 shrink-0">
                     {profileData.image ? (
                       <img src={profileData.image} alt="Preview" className="h-full w-full object-cover" />
                     ) : (
@@ -402,16 +471,17 @@ export default function ProfessionalDashboard({
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="rounded-lg border border-gold/40 bg-gold/10 px-3.5 py-2 text-xs font-bold text-gold-bright hover:bg-gold/20 transition-all"
+                    className="flex items-center gap-2 rounded-xl border border-gold/40 bg-gold/10 px-4 py-2.5 text-xs font-bold text-gold-bright hover:bg-gold/20 transition-all"
                   >
-                    📁 آپلود از دستگاه (فشرده‌سازی خودکار)
+                    <span>📁</span>
+                    <span>انتخاب عکس از سیستم</span>
                   </button>
                 </div>
               </div>
 
-              {/* آواتارهای کارتونی/انیمیشنی آماده */}
+              {/* آواتارهای کارتونی آماده */}
               <div>
-                <label className="block text-xs text-ink-muted mb-2">یا انتخاب آواتار انیمیشنی آماده</label>
+                <label className="block text-xs text-ink-muted mb-2 font-bold">یا انتخاب آواتار انیمیشنی</label>
                 <div className="flex items-center gap-2.5 overflow-x-auto pb-2">
                   {ANIME_AVATARS.map((avatar, idx) => (
                     <button
@@ -430,10 +500,10 @@ export default function ProfessionalDashboard({
                 </div>
               </div>
 
-              {/* آیدی شبکه‌های اجتماعی */}
+              {/* آیدی تلگرام و اینستاگرام */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-ink-muted mb-1">آیدی تلگرام</label>
+                  <label className="block text-xs text-ink-muted mb-1 font-bold">آیدی تلگرام</label>
                   <input
                     type="text"
                     placeholder="username"
@@ -443,7 +513,7 @@ export default function ProfessionalDashboard({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-ink-muted mb-1">آیدی اینستاگرام</label>
+                  <label className="block text-xs text-ink-muted mb-1 font-bold">آیدی اینستاگرام</label>
                   <input
                     type="text"
                     placeholder="username"
@@ -455,7 +525,7 @@ export default function ProfessionalDashboard({
               </div>
 
               <div>
-                <label className="block text-xs text-ink-muted mb-1">بیوگرافی کوتاه</label>
+                <label className="block text-xs text-ink-muted mb-1 font-bold">بیوگرافی کوتاه</label>
                 <textarea
                   rows={3}
                   value={profileData.bio}
