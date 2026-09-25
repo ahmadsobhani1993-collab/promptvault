@@ -1,9 +1,9 @@
-function getMediaCover(url) {
+﻿function getMediaCover(url: string) {
   if (!url) return '';
   if (url.includes('/video/upload/')) {
     return url.replace('/video/upload/', '/video/upload/so_0,f_jpg/').replace(/.[^/.]+$/, '.jpg');
   }
-  if (url.match(/.(mp4|mov|webm|mkv)$/i)) {
+  if (url.match(/.(mp4|mov|webm|m4v|mkv)$/i)) {
     return url.replace(/.[^/.]+$/, '.jpg');
   }
   return url;
@@ -16,6 +16,7 @@ import { prisma } from '@/lib/db'
 import { L } from '@/lib/data'
 import { cookies } from 'next/headers'
 import { type Locale } from '@/lib/i18n'
+import EditPromptModal from '@/components/account/EditPromptModal'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'حساب کاربری | PromptsFA' }
@@ -33,32 +34,28 @@ export default async function AccountPage() {
     prisma.like.findMany({
       where: { userId },
       include: { prompt: { include: { category: true } } },
-      orderBy: { id: "desc" },
+      orderBy: { id: 'desc' },
       take: 20,
     }),
     prisma.save.findMany({
       where: { userId },
       include: { prompt: { include: { category: true } } },
-      orderBy: { id: "desc" },
+      orderBy: { id: 'desc' },
       take: 20,
     }),
     prisma.prompt.findMany({
       where: { userId },
       include: { category: true },
-      orderBy: { id: "desc" },
+      orderBy: { id: 'desc' },
       take: 20,
     }),
     prisma.comment.findMany({
       where: { userId },
       include: { prompt: true },
-      orderBy: { id: "desc" },
+      orderBy: { id: 'desc' },
       take: 20,
     }),
   ])
-
-  const chip = (active: boolean) =>
-    'rounded-full border px-4 py-1.5 text-xs transition-colors ' +
-    (active ? 'border-gold bg-gold/15 text-gold-bright' : 'border-line bg-elevated text-ink-muted hover:border-gold/40')
 
   return (
     <section className="container-app py-10">
@@ -111,9 +108,11 @@ export default async function AccountPage() {
               </div>
             </Link>
           ))}
-          {likedPrompts.length === 0 && <p className="col-span-full text-center text-sm text-ink-faint">
-            {L(locale, 'هنوز پرامپتی لایک نکرده‌اید', 'No liked prompts yet')}
-          </p>}
+          {likedPrompts.length === 0 && (
+            <p className="col-span-full text-center text-sm text-ink-faint">
+              {L(locale, 'هنوز پرامپتی لایک نکرده‌اید', 'No liked prompts yet')}
+            </p>
+          )}
         </div>
       </div>
 
@@ -134,9 +133,11 @@ export default async function AccountPage() {
               </div>
             </Link>
           ))}
-          {savedPrompts.length === 0 && <p className="col-span-full text-center text-sm text-ink-faint">
-            {L(locale, 'هنوز پرامپتی ذخیره نکرده‌اید', 'No saved prompts yet')}
-          </p>}
+          {savedPrompts.length === 0 && (
+            <p className="col-span-full text-center text-sm text-ink-faint">
+              {L(locale, 'هنوز پرامپتی ذخیره نکرده‌اید', 'No saved prompts yet')}
+            </p>
+          )}
         </div>
       </div>
 
@@ -157,18 +158,23 @@ export default async function AccountPage() {
                     {new Intl.DateTimeFormat('fa-IR', { timeZone: 'Asia/Tehran', dateStyle: 'medium' }).format(p.createdAt)}
                   </p>
                 </div>
-                <span className={
-                  'rounded-full px-2 py-0.5 text-[9px] ' +
-                  (p.status === 'PUBLISHED' ? 'bg-green-500/15 text-green-400' :
-                   p.status === 'PENDING' ? 'bg-yellow-500/15 text-yellow-400' : 'bg-red-500/15 text-red-400')
-                }>
-                  {p.status === 'PUBLISHED' ? 'منتشر' : p.status === 'PENDING' ? 'در انتظار' : 'رد شده'}
-                </span>
+                <div className="flex items-center gap-3">
+                  <EditPromptModal prompt={p} />
+                  <span className={
+                    'rounded-full px-2 py-0.5 text-[9px] ' +
+                    (p.status === 'PUBLISHED' ? 'bg-green-500/15 text-green-400' :
+                     p.status === 'PENDING' ? 'bg-yellow-500/15 text-yellow-400' : 'bg-red-500/15 text-red-400')
+                  }>
+                    {p.status === 'PUBLISHED' ? 'منتشر' : p.status === 'PENDING' ? 'در انتظار' : 'رد شده'}
+                  </span>
+                </div>
               </div>
             ))}
-            {myPrompts.length === 0 && <p className="p-6 text-center text-sm text-ink-faint">
-              {L(locale, 'هنوز پرامپتی ارسال نکرده‌اید', 'No submitted prompts yet')}
-            </p>}
+            {myPrompts.length === 0 && (
+              <p className="p-6 text-center text-sm text-ink-faint">
+                {L(locale, 'هنوز پرامپتی ارسال نکرده‌اید', 'No submitted prompts yet')}
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -193,9 +199,11 @@ export default async function AccountPage() {
                 </div>
               </div>
             ))}
-            {myComments.length === 0 && <p className="p-6 text-center text-sm text-ink-faint">
-              {L(locale, 'هنوز کامنتی نگذاشته‌اید', 'No comments yet')}
-            </p>}
+            {myComments.length === 0 && (
+              <p className="p-6 text-center text-sm text-ink-faint">
+                {L(locale, 'هنوز کامنتی نگذاشته‌اید', 'No comments yet')}
+              </p>
+            )}
           </div>
         </div>
       </div>
