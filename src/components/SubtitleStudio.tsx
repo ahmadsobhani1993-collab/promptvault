@@ -1,10 +1,18 @@
-﻿'use client'
+'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import {
-  FONTS, PRESETS, HL_COLORS, DEFAULT_STYLE,
-  type Seg, type Style, type Fx, mkWords, loadFont,
+  FONTS,
+  PRESETS,
+  HL_COLORS,
+  DEFAULT_STYLE,
+  type Seg,
+  type Style,
+  type Fx,
+  mkWords,
+  loadFont,
 } from '@/lib/subtitle-studio'
+import { useVideoExport } from './export/useVideoExport'
 
 export type SubtitleStudioProps = {
   videoUrl: string
@@ -15,7 +23,7 @@ export type SubtitleStudioProps = {
 }
 
 type AspectRatio = 'original' | '9:16' | '1:1' | '16:9' | '4:5'
-type ActiveTab = 'none' | 'style' | 'text' | 'canvas' | 'audio'
+type ActiveTab = 'none' | 'style' | 'text' | 'canvas'
 
 interface ExtendedStyle extends Style {
   bold?: boolean
@@ -40,10 +48,13 @@ export default function SubtitleStudio({
   onChange,
 }: SubtitleStudioProps) {
   // پل ارتباطی سازگار با هر دو نوع نام‌گذاری Props
-  const dispatchSegments = useCallback((next: Seg[]) => {
-    if (setSegments) setSegments(next)
-    if (onChange) onChange(next)
-  }, [setSegments, onChange])
+  const dispatchSegments = useCallback(
+    (next: Seg[]) => {
+      if (setSegments) setSegments(next)
+      if (onChange) onChange(next)
+    },
+    [setSegments, onChange]
+  )
 
   const [style, setStyle] = useState<ExtendedStyle>(() => ({
     ...DEFAULT_STYLE,
@@ -69,12 +80,13 @@ export default function SubtitleStudio({
   const [timeDrafts, setTimeDrafts] = useState<Record<string, string>>({})
   const [timeError, setTimeError] = useState<number | null>(null)
 
-  // صدا و کنترل نویز صوتی
-  const [volume, setVolume] = useState(100)
-  const [denoise, setDenoise] = useState(false)
-  const audioCtxRef = useRef<AudioContext | null>(null)
-  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null)
-  const filterNodesRef = useRef<{ hp: BiquadFilterNode; notch: BiquadFilterNode } | null>(null)
+  // هوک رندر MP4 از روی Canvas بدون افزایش حجم غیرمنطقی
+  const { exporting, progress, exportVideo, cancelExport } = useVideoExport()
+
+  // بخش تولید کپشن هوشمند اینستاگرام مبتنی بر Gemini
+  const [generatingCaption, setGeneratingCaption] = useState(false)
+  const [igCaptionResult, setIgCaptionResult] = useState('')
+  const [showIgModal, setShowIgModal] = useState(false)
 
   const transMenuRef = useRef<HTMLDivElement>(null)
 
@@ -88,66 +100,6 @@ export default function SubtitleStudio({
     document.addEventListener('mousedown', onDocClick)
     return () => document.removeEventListener('mousedown', onDocClick)
   }, [showTransMenu])
-
-  // اتصال فیلترهای صوتی واقعی Web Audio برای AI/Audio Denoise
-  useEffect(() => {
-    const v = videoRef.current
-    if (!v) return
-
-    const setupAudio = () => {
-      if (!audioCtxRef.current) {
-        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
-        if (!AudioCtx) return
-        const ctx = new AudioCtx()
-        const source = ctx.createMediaElementSource(v)
-
-        const hp = ctx.createBiquadFilter()
-        hp.type = 'highpass'
-        hp.frequency.value = 120
-
-        const notch = ctx.createBiquadFilter()
-        notch.type = 'notch'
-        notch.frequency.value = 50
-
-        audioCtxRef.current = ctx
-        sourceNodeRef.current = source
-        filterNodesRef.current = { hp, notch }
-      }
-
-      const ctx = audioCtxRef.current
-      const source = sourceNodeRef.current
-      const filters = filterNodesRef.current
-      if (!ctx || !source || !filters) return
-
-      try {
-        source.disconnect()
-        filters.hp.disconnect()
-        filters.notch.disconnect()
-
-        if (denoise) {
-          source.connect(filters.hp)
-          filters.hp.connect(filters.notch)
-          filters.notch.connect(ctx.destination)
-        } else {
-          source.connect(ctx.destination)
-        }
-      } catch (err) {
-        console.warn('Audio routing error:', err)
-      }
-    }
-
-    const onPlay = () => {
-      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-        audioCtxRef.current.resume()
-      }
-    }
-
-    setupAudio()
-    v.addEventListener('play', onPlay)
-    return () => {
-      v.removeEventListener('play', onPlay)
-    }
-  }, [denoise])
 
   const translateSubtitles = async (targetLang: 'fa' | 'en') => {
     if (!segments || segments.length === 0 || translating) return
@@ -164,7 +116,9 @@ export default function SubtitleStudio({
         return `${h}:${m}:${sc},${ms}`
       }
 
-      const srt = segments.map((s, i) => `${i + 1}\n${fmtTime(s.start)} --> ${fmtTime(s.end)}\n${s.text}`).join('\n\n')
+      const srt = segments
+        .map((s, i) => `${i + 1}\n${fmtTime(s.start)} --> ${fmtTime(s.end)}\n${s.text}`)
+        .join('\n\n')
 
       const res = await fetch('/api/translate-srt', {
         method: 'POST',
@@ -199,9 +153,12 @@ export default function SubtitleStudio({
         setStyle((prev) => ({
           ...prev,
           direction: targetLang === 'fa' ? 'rtl' : 'ltr',
-          fontFamily: targetLang === 'fa'
-            ? (prev?.fontFamily?.includes('Lalezar') ? prev.fontFamily : 'Vazirmatn, system-ui, sans-serif')
-            : 'Inter, system-ui, sans-serif'
+          fontFamily:
+            targetLang === 'fa'
+              ? prev?.fontFamily?.includes('Lalezar')
+                ? prev.fontFamily
+                : 'Vazirmatn, system-ui, sans-serif'
+              : 'Inter, system-ui, sans-serif',
         }))
       }
     } catch (e: any) {
@@ -209,6 +166,106 @@ export default function SubtitleStudio({
       alert('خطا در فرآیند ترجمه: ' + (e.message || 'پاسخی از سرور دریافت نشد'))
     } finally {
       setTranslating(false)
+    }
+  }
+
+  // خروجی‌های متنی (SRT / VTT / TXT)
+  const downloadFile = (filename: string, content: string, type: string) => {
+    const blob = new Blob([content], { type: `${type};charset=utf-8` })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 4000)
+  }
+
+  const exportSRT = () => {
+    const pad = (n: number, z = 2) => String(Math.floor(n)).padStart(z, '0')
+    const fmtT = (sec: number) => {
+      const s = Math.max(0, Number(sec) || 0)
+      const h = pad(s / 3600)
+      const m = pad((s % 3600) / 60)
+      const sc = pad(s % 60)
+      const ms = pad((s % 1) * 1000, 3)
+      return `${h}:${m}:${sc},${ms}`
+    }
+    const content = segments
+      .map((s, i) => `${i + 1}\n${fmtT(s.start)} --> ${fmtT(s.end)}\n${s.text}`)
+      .join('\n\n')
+    downloadFile(`${baseName}.srt`, '\uFEFF' + content, 'text/plain')
+  }
+
+  const exportVTT = () => {
+    const pad = (n: number, z = 2) => String(Math.floor(n)).padStart(z, '0')
+    const fmtT = (sec: number) => {
+      const s = Math.max(0, Number(sec) || 0)
+      const h = pad(s / 3600)
+      const m = pad((s % 3600) / 60)
+      const sc = pad(s % 60)
+      const ms = pad((s % 1) * 1000, 3)
+      return `${h}:${m}:${sc}.${ms}`
+    }
+    const content =
+      'WEBVTT\n\n' +
+      segments
+        .map((s, i) => `${i + 1}\n${fmtT(s.start)} --> ${fmtT(s.end)}\n${s.text}`)
+        .join('\n\n')
+    downloadFile(`${baseName}.vtt`, '\uFEFF' + content, 'text/vtt')
+  }
+
+  const exportTXT = () => {
+    const content = segments.map((s) => s.text).join('\n')
+    downloadFile(`${baseName}.txt`, '\uFEFF' + content, 'text/plain')
+  }
+
+  // درخواست کپشن اینستاگرام به API مبتنی بر Gemini
+  const generateInstagramCaption = async () => {
+    if (!segments || segments.length === 0) {
+      alert('ابتدا باید زیرنویسی در ویدیو وجود داشته باشد.')
+      return
+    }
+    setGeneratingCaption(true)
+    setShowIgModal(true)
+    try {
+      const pad = (n: number, z = 2) => String(Math.floor(n)).padStart(z, '0')
+      const fmtTime = (sec: number) => {
+        const s = Math.max(0, Number(sec) || 0)
+        const h = pad(s / 3600)
+        const m = pad((s % 3600) / 60)
+        const sc = pad(s % 60)
+        const ms = pad((s % 1) * 1000, 3)
+        return `${h}:${m}:${sc},${ms}`
+      }
+      const srt = segments
+        .map((s, i) => `${i + 1}\n${fmtTime(s.start)} --> ${fmtTime(s.end)}\n${s.text}`)
+        .join('\n\n')
+      const fullText = segments.map((s) => s.text).join(' ')
+
+      const res = await fetch('/api/generate-caption', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcript: fullText,
+          text: fullText,
+          srtContent: srt,
+          targetLang: 'fa',
+          platform: 'instagram',
+        }),
+      })
+
+      const data = await res.json()
+      if (data.caption || data.result || data.text) {
+        setIgCaptionResult(data.caption || data.result || data.text)
+      } else {
+        setIgCaptionResult(fullText + '\n\n#آموزش #ویدیو #ریلز #اکسپلور')
+      }
+    } catch (err: any) {
+      console.error('[CAPTION GENERATION ERROR]:', err)
+      const fallback = segments.map((s) => s.text).join(' ')
+      setIgCaptionResult(fallback + '\n\n#آموزش #ریلز #ویدیو')
+    } finally {
+      setGeneratingCaption(false)
     }
   }
 
@@ -223,7 +280,9 @@ export default function SubtitleStudio({
   const futRef = useRef<string[]>([])
   const skipPersistRef = useRef(true)
 
-  useEffect(() => { loadFont(style.fontId) }, [style.fontId])
+  useEffect(() => {
+    loadFont(style.fontId)
+  }, [style.fontId])
 
   useEffect(() => {
     try {
@@ -313,7 +372,10 @@ export default function SubtitleStudio({
     setStyle(s.style)
   }
 
-  const activeIdx = () => (selected !== -1 ? selected : segments.findIndex((s) => time >= s.start && time <= s.end))
+  const activeIdx = () =>
+    selected !== -1
+      ? selected
+      : segments.findIndex((s) => time >= s.start && time <= s.end)
 
   const endActiveSegmentHere = () => {
     const targetIdx = activeIdx()
@@ -343,15 +405,24 @@ export default function SubtitleStudio({
     const key = `${i}-${field}`
     setTimeDrafts((d) => ({ ...d, [key]: raw }))
 
-    if (raw.trim() === '') { setTimeError(i); return }
+    if (raw.trim() === '') {
+      setTimeError(i)
+      return
+    }
     const val = Number(raw)
-    if (Number.isNaN(val) || val < 0) { setTimeError(i); return }
+    if (Number.isNaN(val) || val < 0) {
+      setTimeError(i)
+      return
+    }
 
     const seg = segments[i]
     const nextStart = field === 'start' ? val : seg.start
     const nextEnd = field === 'end' ? val : seg.end
 
-    if (nextStart >= nextEnd) { setTimeError(i); return }
+    if (nextStart >= nextEnd) {
+      setTimeError(i)
+      return
+    }
 
     setTimeError((cur) => (cur === i ? null : cur))
     updateSeg(i, { [field]: val } as Partial<Seg>)
@@ -374,17 +445,28 @@ export default function SubtitleStudio({
       const v = videoRef.current
       if (!v) return
 
-      if (e.code === 'Space') { e.preventDefault(); v.paused ? v.play() : v.pause() }
+      if (e.code === 'Space') {
+        e.preventDefault()
+        v.paused ? v.play() : v.pause()
+      }
       if (e.code === 'ArrowRight') v.currentTime = Math.min(v.duration, v.currentTime + 1)
       if (e.code === 'ArrowLeft') v.currentTime = Math.max(0, v.currentTime - 1)
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo() }
-      if (e.shiftKey && e.key.toLowerCase() === 'e') { e.preventDefault(); endActiveSegmentHere() }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault()
+        e.shiftKey ? redo() : undo()
+      }
+      if (e.shiftKey && e.key.toLowerCase() === 'e') {
+        e.preventDefault()
+        endActiveSegmentHere()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  const seek = (t: number) => { if (videoRef.current) videoRef.current.currentTime = t }
+  const seek = (t: number) => {
+    if (videoRef.current) videoRef.current.currentTime = t
+  }
 
   const onSubPointerDown = (e: React.PointerEvent) => {
     e.preventDefault()
@@ -423,9 +505,14 @@ export default function SubtitleStudio({
       const face = new FontFace(name, `url(${url})`)
       await face.load()
       ;(document as any).fonts.add(face)
-      setCustomFonts((p) => [...p.filter((x) => x.id !== name), { id: name, label: `${name} (دلخواه)` }])
+      setCustomFonts((p) => [
+        ...p.filter((x) => x.id !== name),
+        { id: name, label: `${name} (دلخواه)` },
+      ])
       setStyle((s) => ({ ...s, fontId: name }))
-    } catch { alert('❌ فونت نامعتبر') }
+    } catch {
+      alert('❌ فونت نامعتبر')
+    }
   }
 
   const updateSeg = (i: number, patch: Partial<Seg>, hist = true) => {
@@ -463,16 +550,30 @@ export default function SubtitleStudio({
     snapshot()
     const half = Math.ceil(toks.length / 2)
     const mid = s.start + (s.end - s.start) * (half / toks.length)
-    const a: Seg = { ...s, text: toks.slice(0, half).join(' '), start: s.start, end: mid, words: [] }
-    const b: Seg = { ...s, text: toks.slice(half).join(' '), start: mid, end: s.end, words: [] }
-    a.words = mkWords(a.text, a.start, a.end); b.words = mkWords(b.text, b.start, b.end)
+    const a: Seg = {
+      ...s,
+      text: toks.slice(0, half).join(' '),
+      start: s.start,
+      end: mid,
+      words: [],
+    }
+    const b: Seg = {
+      ...s,
+      text: toks.slice(half).join(' '),
+      start: mid,
+      end: s.end,
+      words: [],
+    }
+    a.words = mkWords(a.text, a.start, a.end)
+    b.words = mkWords(b.text, b.start, b.end)
     dispatchSegments([...segments.slice(0, i), a, b, ...segments.slice(i + 1)])
   }
 
   const mergeSeg = (i: number) => {
     if (i >= segments.length - 1) return
     snapshot()
-    const a = segments[i], b = segments[i + 1]
+    const a = segments[i],
+      b = segments[i + 1]
     const m: Seg = { ...a, text: a.text + ' ' + b.text, end: b.end, words: [] }
     m.words = mkWords(m.text, m.start, m.end)
     dispatchSegments([...segments.slice(0, i), m, ...segments.slice(i + 2)])
@@ -481,15 +582,26 @@ export default function SubtitleStudio({
   const findReplace = () => {
     if (!findQ) return
     snapshot()
-    dispatchSegments(segments.map((s) => {
-      const t = s.text.split(findQ).join(replQ)
-      return { ...s, text: t, words: mkWords(t, s.start, s.end) }
-    }))
+    dispatchSegments(
+      segments.map((s) => {
+        const t = s.text.split(findQ).join(replQ)
+        return { ...s, text: t, words: mkWords(t, s.start, s.end) }
+      })
+    )
   }
 
   const applyPreset = (p: (typeof PRESETS)[number]) => {
     snapshot()
-    setStyle((s) => ({ ...s, fontId: p.fontId, size: p.size, color: p.color, bgOpacity: p.bgOpacity, outline: p.outline, karaoke: p.karaoke, hlColor: p.hlColor }))
+    setStyle((s) => ({
+      ...s,
+      fontId: p.fontId,
+      size: p.size,
+      color: p.color,
+      bgOpacity: p.bgOpacity,
+      outline: p.outline,
+      karaoke: p.karaoke,
+      hlColor: p.hlColor,
+    }))
   }
 
   const fxAnim = (seg: Seg) => {
@@ -509,7 +621,8 @@ export default function SubtitleStudio({
     return 'aspect-video w-full'
   }
 
-  const iconBtn = 'rounded-lg border border-white/10 bg-white/5 p-2 text-xs text-white/60 transition hover:border-amber-500/40 hover:text-amber-300'
+  const iconBtn =
+    'rounded-lg border border-white/10 bg-white/5 p-2 text-xs text-white/60 transition hover:border-amber-500/40 hover:text-amber-300'
 
   return (
     <>
@@ -520,28 +633,49 @@ export default function SubtitleStudio({
         @keyframes subSlide { from { transform: translateX(-40px); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
       `}</style>
 
-      {/* ─── نوار ابزار اصلی بالای ادیتور ── */}
+      {/* ─── نوار ابزار اصلی بالای ادیتور (حذف کامل نویزگیر) ── */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-3">
         <div className="relative flex items-center gap-1.5">
-          <button onClick={undo} title="واگرد (Ctrl+Z)" className={iconBtn}>↩</button>
-          <button onClick={redo} title="ازنو (Ctrl+Shift+Z)" className={iconBtn}>↪</button>
-          <button onClick={() => setShowSafe(!showSafe)} title="ناحیه امن اینستاگرام" className={`${iconBtn} ${showSafe ? '!border-amber-500/60 !text-amber-300' : ''}`}>▦</button>
+          <button onClick={undo} title="واگرد (Ctrl+Z)" className={iconBtn}>
+            ↩
+          </button>
+          <button onClick={redo} title="ازنو (Ctrl+Shift+Z)" className={iconBtn}>
+            ↪
+          </button>
+          <button
+            onClick={() => setShowSafe(!showSafe)}
+            title="ناحیه امن اینستاگرام"
+            className={`${iconBtn} ${showSafe ? '!border-amber-500/60 !text-amber-300' : ''}`}
+          >
+            ▦
+          </button>
 
           <div className="relative" ref={transMenuRef}>
             <button
               onClick={() => setShowTransMenu((v) => !v)}
               disabled={translating}
               title="ترجمه هوشمند زیرنویس"
-              className={`${iconBtn} ${translating ? '!border-amber-500 text-amber-400 animate-pulse' : ''}`}
+              className={`${iconBtn} ${
+                translating ? '!border-amber-500 text-amber-400 animate-pulse' : ''
+              }`}
             >
               🌐
             </button>
             {showTransMenu && (
-              <div className="absolute top-full mt-1.5 z-50 flex flex-col gap-1 rounded-xl border border-white/10 bg-neutral-900 p-1.5 shadow-2xl min-w-[130px]" dir="rtl">
-                <button onClick={() => translateSubtitles('fa')} className="rounded-lg px-2.5 py-1.5 text-right text-xs text-white/80 transition hover:bg-amber-500 hover:text-black font-medium">
+              <div
+                className="absolute top-full mt-1.5 z-50 flex flex-col gap-1 rounded-xl border border-white/10 bg-neutral-900 p-1.5 shadow-2xl min-w-[130px]"
+                dir="rtl"
+              >
+                <button
+                  onClick={() => translateSubtitles('fa')}
+                  className="rounded-lg px-2.5 py-1.5 text-right text-xs text-white/80 transition hover:bg-amber-500 hover:text-black font-medium"
+                >
                   انگلیسی ➔ فارسی
                 </button>
-                <button onClick={() => translateSubtitles('en')} className="rounded-lg px-2.5 py-1.5 text-right text-xs text-white/80 transition hover:bg-amber-500 hover:text-black font-medium">
+                <button
+                  onClick={() => translateSubtitles('en')}
+                  className="rounded-lg px-2.5 py-1.5 text-right text-xs text-white/80 transition hover:bg-amber-500 hover:text-black font-medium"
+                >
                   فارسی ➔ انگلیسی
                 </button>
               </div>
@@ -553,27 +687,33 @@ export default function SubtitleStudio({
         <div className="flex items-center gap-1 overflow-x-auto rounded-xl border border-white/10 bg-zinc-900/80 p-1 text-xs">
           <button
             onClick={() => setActiveTab(activeTab === 'canvas' ? 'none' : 'canvas')}
-            className={`rounded-lg px-2.5 py-1 transition ${activeTab === 'canvas' ? 'bg-amber-500 font-bold text-black' : 'text-white/70 hover:bg-white/5'}`}
+            className={`rounded-lg px-2.5 py-1 transition ${
+              activeTab === 'canvas'
+                ? 'bg-amber-500 font-bold text-black'
+                : 'text-white/70 hover:bg-white/5'
+            }`}
           >
             🖼️ ابعاد و کادر
           </button>
           <button
             onClick={() => setActiveTab(activeTab === 'style' ? 'none' : 'style')}
-            className={`rounded-lg px-2.5 py-1 transition ${activeTab === 'style' ? 'bg-amber-500 font-bold text-black' : 'text-white/70 hover:bg-white/5'}`}
+            className={`rounded-lg px-2.5 py-1 transition ${
+              activeTab === 'style'
+                ? 'bg-amber-500 font-bold text-black'
+                : 'text-white/70 hover:bg-white/5'
+            }`}
           >
             🎨 استایل و رنگ
           </button>
           <button
             onClick={() => setActiveTab(activeTab === 'text' ? 'none' : 'text')}
-            className={`rounded-lg px-2.5 py-1 transition ${activeTab === 'text' ? 'bg-amber-500 font-bold text-black' : 'text-white/70 hover:bg-white/5'}`}
+            className={`rounded-lg px-2.5 py-1 transition ${
+              activeTab === 'text'
+                ? 'bg-amber-500 font-bold text-black'
+                : 'text-white/70 hover:bg-white/5'
+            }`}
           >
             🔤 فونت و متن
-          </button>
-          <button
-            onClick={() => setActiveTab(activeTab === 'audio' ? 'none' : 'audio')}
-            className={`rounded-lg px-2.5 py-1 transition ${activeTab === 'audio' ? 'bg-amber-500 font-bold text-black' : 'text-white/70 hover:bg-white/5'}`}
-          >
-            🔊 نویزگیر و صدا
           </button>
         </div>
 
@@ -593,7 +733,9 @@ export default function SubtitleStudio({
               key={ratio}
               onClick={() => setAspect(ratio)}
               className={`rounded-lg px-3 py-1.5 transition ${
-                aspect === ratio ? 'bg-amber-500 font-bold text-black' : 'bg-white/5 text-white/70 hover:bg-white/10'
+                aspect === ratio
+                  ? 'bg-amber-500 font-bold text-black'
+                  : 'bg-white/5 text-white/70 hover:bg-white/10'
               }`}
             >
               {ratio === 'original' ? 'اصلی' : ratio}
@@ -607,21 +749,27 @@ export default function SubtitleStudio({
           <div className="flex items-center gap-1 border-l border-white/10 pl-3">
             <button
               onClick={() => setStyle((s) => ({ ...s, bold: !s.bold }))}
-              className={`px-3 py-1 rounded-md font-bold transition ${style.bold ? 'bg-amber-500 text-black' : 'bg-white/5 text-white/70'}`}
+              className={`px-3 py-1 rounded-md font-bold transition ${
+                style.bold ? 'bg-amber-500 text-black' : 'bg-white/5 text-white/70'
+              }`}
               title="Bold"
             >
               B
             </button>
             <button
               onClick={() => setStyle((s) => ({ ...s, italic: !s.italic }))}
-              className={`px-3 py-1 rounded-md italic transition ${style.italic ? 'bg-amber-500 text-black' : 'bg-white/5 text-white/70'}`}
+              className={`px-3 py-1 rounded-md italic transition ${
+                style.italic ? 'bg-amber-500 text-black' : 'bg-white/5 text-white/70'
+              }`}
               title="Italic"
             >
               I
             </button>
             <button
               onClick={() => setStyle((s) => ({ ...s, underline: !s.underline }))}
-              className={`px-3 py-1 rounded-md underline transition ${style.underline ? 'bg-amber-500 text-black' : 'bg-white/5 text-white/70'}`}
+              className={`px-3 py-1 rounded-md underline transition ${
+                style.underline ? 'bg-amber-500 text-black' : 'bg-white/5 text-white/70'
+              }`}
               title="Underline"
             >
               U
@@ -642,15 +790,26 @@ export default function SubtitleStudio({
               onChange={(e) => setStyle({ ...style, fontId: e.target.value })}
               className="rounded-lg border border-white/10 bg-black/50 p-1.5 text-white/80"
             >
-              {customFonts.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-              {FONTS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+              {customFonts.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                </option>
+              ))}
+              {FONTS.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                </option>
+              ))}
             </select>
           </div>
 
           <div className="flex items-center gap-2">
             <span className="text-white/50">اندازه: {style.size}٪</span>
             <input
-              type="range" min={1} max={20} step={0.5}
+              type="range"
+              min={1}
+              max={20}
+              step={0.5}
               value={style.size}
               onChange={(e) => setStyle({ ...style, size: Number(e.target.value) })}
               className="w-24 accent-amber-500"
@@ -663,58 +822,70 @@ export default function SubtitleStudio({
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 rounded-xl border border-white/10 bg-zinc-900/90 p-3 my-2 text-xs">
           <div>
             <div className="mb-1 text-white/40">رنگ متن</div>
-            <input type="color" value={style.color} onChange={(e) => setStyle({ ...style, color: e.target.value })} className="h-7 w-full cursor-pointer rounded-lg border border-white/10 bg-transparent p-0" />
+            <input
+              type="color"
+              value={style.color}
+              onChange={(e) => setStyle({ ...style, color: e.target.value })}
+              className="h-7 w-full cursor-pointer rounded-lg border border-white/10 bg-transparent p-0"
+            />
           </div>
           <div>
             <div className="mb-1 text-white/40">رنگ هایلایت/کاراوکه</div>
-            <input type="color" value={style.hlColor} onChange={(e) => setStyle({ ...style, hlColor: e.target.value })} className="h-7 w-full cursor-pointer rounded-lg border border-white/10 bg-transparent p-0" />
+            <input
+              type="color"
+              value={style.hlColor}
+              onChange={(e) => setStyle({ ...style, hlColor: e.target.value })}
+              className="h-7 w-full cursor-pointer rounded-lg border border-white/10 bg-transparent p-0"
+            />
           </div>
           <div>
             <div className="mb-1 text-white/40">شفافیت پس‌زمینه</div>
-            <input type="range" min={0} max={100} value={Math.round(style.bgOpacity * 100)} onChange={(e) => setStyle({ ...style, bgOpacity: Number(e.target.value) / 100 })} className="w-full accent-amber-500" />
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={Math.round(style.bgOpacity * 100)}
+              onChange={(e) =>
+                setStyle({ ...style, bgOpacity: Number(e.target.value) / 100 })
+              }
+              className="w-full accent-amber-500"
+            />
           </div>
           <div>
             <div className="mb-1 text-white/40">شعاع کادر (Radius)</div>
-            <input type="range" min={0} max={24} value={style.bgRadius ?? 8} onChange={(e) => setStyle({ ...style, bgRadius: Number(e.target.value) })} className="w-full accent-amber-500" />
+            <input
+              type="range"
+              min={0}
+              max={24}
+              value={style.bgRadius ?? 8}
+              onChange={(e) => setStyle({ ...style, bgRadius: Number(e.target.value) })}
+              className="w-full accent-amber-500"
+            />
           </div>
           <div>
             <div className="mb-1 text-white/40">سایه متن (Shadow)</div>
-            <input type="range" min={0} max={15} value={style.textShadowBlur ?? 4} onChange={(e) => setStyle({ ...style, textShadowBlur: Number(e.target.value) })} className="w-full accent-amber-500" />
+            <input
+              type="range"
+              min={0}
+              max={15}
+              value={style.textShadowBlur ?? 4}
+              onChange={(e) =>
+                setStyle({ ...style, textShadowBlur: Number(e.target.value) })
+              }
+              className="w-full accent-amber-500"
+            />
           </div>
           <div>
             <div className="mb-1 text-white/40">حاشیه استروک</div>
-            <button onClick={() => setStyle({ ...style, outline: !style.outline })} className={`w-full py-1.5 rounded-lg transition ${style.outline ? 'bg-amber-500 font-bold text-black' : 'bg-white/5 text-white/50'}`}>
+            <button
+              onClick={() => setStyle({ ...style, outline: !style.outline })}
+              className={`w-full py-1.5 rounded-lg transition ${
+                style.outline ? 'bg-amber-500 font-bold text-black' : 'bg-white/5 text-white/50'
+              }`}
+            >
               {style.outline ? 'روشن' : 'خاموش'}
             </button>
           </div>
-        </div>
-      )}
-
-      {activeTab === 'audio' && (
-        <div className="flex flex-wrap items-center gap-6 rounded-xl border border-white/10 bg-zinc-900/90 p-3 my-2 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-white/60">حجم صدا:</span>
-            <input
-              type="range" min={0} max={100} value={volume}
-              onChange={(e) => {
-                const v = Number(e.target.value)
-                setVolume(v)
-                if (videoRef.current) videoRef.current.volume = v / 100
-              }}
-              className="w-28 accent-amber-500"
-            />
-            <span className="font-mono text-white/80">{volume}%</span>
-          </div>
-
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={denoise}
-              onChange={(e) => setDenoise(e.target.checked)}
-              className="accent-amber-500 h-4 w-4 rounded"
-            />
-            <span className="text-white/80">هوش مصنوعی حذف نویز (AI Denoise)</span>
-          </label>
         </div>
       )}
 
@@ -722,11 +893,22 @@ export default function SubtitleStudio({
       <div className="grid gap-4 lg:grid-cols-5 mt-2">
         <div className="space-y-3 lg:col-span-3">
           <div className="sticky top-2 z-20 -mx-4 bg-neutral-950/95 px-4 pb-2 backdrop-blur lg:static lg:mx-0 lg:bg-transparent lg:px-0 lg:pb-0">
-            <div ref={stageRef} className={`relative select-none overflow-hidden rounded-2xl border border-white/10 bg-black ${getAspectClass()}`} style={{ containerType: 'inline-size' }}>
+            <div
+              ref={stageRef}
+              className={`relative select-none overflow-hidden rounded-2xl border border-white/10 bg-black ${getAspectClass()}`}
+              style={{ containerType: 'inline-size' }}
+            >
               <video
-                ref={videoRef} src={videoUrl} controls playsInline
+                ref={videoRef}
+                src={videoUrl}
+                controls
+                playsInline
                 onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
-                onLoadedMetadata={(e) => { setDuration(e.currentTarget.duration); setVidW(e.currentTarget.videoWidth); setVidH(e.currentTarget.videoHeight) }}
+                onLoadedMetadata={(e) => {
+                  setDuration(e.currentTarget.duration)
+                  setVidW(e.currentTarget.videoWidth)
+                  setVidH(e.currentTarget.videoHeight)
+                }}
                 className="h-full w-full object-contain"
               />
               {showSafe && (
@@ -736,14 +918,26 @@ export default function SubtitleStudio({
                 </>
               )}
               {current && videoFrame.width > 0 && (
-                <div className="absolute pointer-events-none overflow-hidden"
-                  style={{ left: videoFrame.left, top: videoFrame.top, width: videoFrame.width, height: videoFrame.height }}
+                <div
+                  className="absolute pointer-events-none overflow-hidden"
+                  style={{
+                    left: videoFrame.left,
+                    top: videoFrame.top,
+                    width: videoFrame.width,
+                    height: videoFrame.height,
+                  }}
                 >
-                  <div onPointerDown={onSubPointerDown} className="absolute pointer-events-auto cursor-grab active:cursor-grabbing" style={{
+                  <div
+                    onPointerDown={onSubPointerDown}
+                    className="absolute pointer-events-auto cursor-grab active:cursor-grabbing"
+                    style={{
                       left: `${style.x ?? 50}%`,
                       top: `${style.y ?? 90}%`,
                       transform: 'translate(-50%,-50%)',
-                      width: `${Math.max(8, Math.min(96, 2 * Math.min(style.x ?? 50, 100 - (style.x ?? 50))))}%`,
+                      width: `${Math.max(
+                        8,
+                        Math.min(96, 2 * Math.min(style.x ?? 50, 100 - (style.x ?? 50)))
+                      )}%`,
                     }}
                   >
                     <span
@@ -758,26 +952,49 @@ export default function SubtitleStudio({
                         fontSize: `${(style.size / 100) * videoFrame.width}px`,
                         lineHeight: 1.25,
                         color: style.color,
-                        backgroundColor: current.hl || (style.bgOpacity > 0 ? `rgba(0,0,0,${style.bgOpacity})` : 'transparent'),
+                        backgroundColor:
+                          current.hl ||
+                          (style.bgOpacity > 0
+                            ? `rgba(0,0,0,${style.bgOpacity})`
+                            : 'transparent'),
                         padding: '0.2em 0.6em',
                         borderRadius: `${style.bgRadius ?? 8}px`,
                         boxSizing: 'border-box',
                         textShadow: style.textShadowBlur
-                          ? `0 2px ${style.textShadowBlur}px ${style.textShadowColor || 'rgba(0,0,0,0.9)'}`
-                          : style.outline ? '0 2px 6px rgba(0,0,0,0.9)' : 'none',
+                          ? `0 2px ${style.textShadowBlur}px ${
+                              style.textShadowColor || 'rgba(0,0,0,0.9)'
+                            }`
+                          : style.outline
+                          ? '0 2px 6px rgba(0,0,0,0.9)'
+                          : 'none',
                         animation: fxAnim(current),
                       }}
                     >
-                    {style.karaoke && current.words?.length ? (
-                      current.words.map((wd, i) => {
-                        const active = time >= wd.start && time <= wd.end
-                        return (
-                          <span key={i} style={{ display: 'inline-block', color: active ? style.hlColor : style.color, transform: active ? 'scale(1.15)' : undefined, fontWeight: active ? 800 : (style.bold ? 800 : 400), transition: 'transform .12s, color .12s' }}>
-                            {wd.w}{' '}
-                          </span>
-                        )
-                      })
-                    ) : current.text}
+                      {style.karaoke && current.words?.length ? (
+                        current.words.map((wd, i) => {
+                          const active = time >= wd.start && time <= wd.end
+                          return (
+                            <span
+                              key={i}
+                              style={{
+                                display: 'inline-block',
+                                color: active ? style.hlColor : style.color,
+                                transform: active ? 'scale(1.15)' : undefined,
+                                fontWeight: active
+                                  ? 800
+                                  : style.bold
+                                  ? 800
+                                  : 400,
+                                transition: 'transform .12s, color .12s',
+                              }}
+                            >
+                              {wd.w}{' '}
+                            </span>
+                          )
+                        })
+                      ) : (
+                        current.text
+                      )}
                     </span>
                   </div>
                 </div>
@@ -785,17 +1002,28 @@ export default function SubtitleStudio({
             </div>
           </div>
 
-          <p className="hidden text-[10px] text-white/30 lg:block">💡 کپشن را با ماوس بگیر و در تصویر جابه‌جا کن</p>
+          <p className="hidden text-[10px] text-white/30 lg:block">
+            💡 کپشن را با ماوس بگیر و در تصویر جابه‌جا کن
+          </p>
 
           <div className="flex flex-wrap items-center gap-1.5">
             {PRESETS.map((p) => (
-              <button key={p.id} onClick={() => applyPreset(p)} className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-white/70 transition hover:border-amber-500/40 hover:text-amber-300">
+              <button
+                key={p.id}
+                onClick={() => applyPreset(p)}
+                className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-white/70 transition hover:border-amber-500/40 hover:text-amber-300"
+              >
                 {p.label}
               </button>
             ))}
             <label className="cursor-pointer rounded-lg border border-dashed border-white/20 px-2.5 py-1 text-[11px] text-white/50 transition hover:border-amber-500/50 hover:text-amber-300">
               ＋ فونت دلخواه
-              <input type="file" accept=".ttf,.otf,.woff,.woff2" className="hidden" onChange={(e) => e.target.files?.[0] && addCustomFont(e.target.files[0])} />
+              <input
+                type="file"
+                accept=".ttf,.otf,.woff,.woff2"
+                className="hidden"
+                onChange={(e) => e.target.files?.[0] && addCustomFont(e.target.files[0])}
+              />
             </label>
           </div>
         </div>
@@ -806,9 +1034,24 @@ export default function SubtitleStudio({
             <div className="flex flex-wrap items-center gap-2 border-b border-white/10 p-3 text-xs">
               <strong className="text-white/80">کپشن‌ها ({segments.length})</strong>
               <div className="ms-auto flex items-center gap-1.5">
-                <input placeholder="جستجو" value={findQ} onChange={(e) => setFindQ(e.target.value)} className="w-16 sm:w-20 rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-white/70 placeholder:text-white/30 focus:border-amber-500/50 focus:outline-none" />
-                <input placeholder="جایگزینی" value={replQ} onChange={(e) => setReplQ(e.target.value)} className="w-16 sm:w-20 rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-white/70 placeholder:text-white/30 focus:border-amber-500/50 focus:outline-none" />
-                <button onClick={findReplace} className="rounded-lg bg-amber-500 px-2.5 py-1 font-bold text-black transition hover:bg-amber-400">اعمال</button>
+                <input
+                  placeholder="جستجو"
+                  value={findQ}
+                  onChange={(e) => setFindQ(e.target.value)}
+                  className="w-16 sm:w-20 rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-white/70 placeholder:text-white/30 focus:border-amber-500/50 focus:outline-none"
+                />
+                <input
+                  placeholder="جایگزینی"
+                  value={replQ}
+                  onChange={(e) => setReplQ(e.target.value)}
+                  className="w-16 sm:w-20 rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-white/70 placeholder:text-white/30 focus:border-amber-500/50 focus:outline-none"
+                />
+                <button
+                  onClick={findReplace}
+                  className="rounded-lg bg-amber-500 px-2.5 py-1 font-bold text-black transition hover:bg-amber-400"
+                >
+                  اعمال
+                </button>
               </div>
             </div>
 
@@ -819,19 +1062,27 @@ export default function SubtitleStudio({
                   key={d}
                   onClick={() => {
                     snapshot()
-                    dispatchSegments(segments.map((s) => ({
-                      ...s,
-                      start: Math.max(0, s.start + d),
-                      end: s.end + d,
-                      words: mkWords(s.text, Math.max(0, s.start + d), s.end + d),
-                    })))
+                    dispatchSegments(
+                      segments.map((s) => ({
+                        ...s,
+                        start: Math.max(0, s.start + d),
+                        end: s.end + d,
+                        words: mkWords(s.text, Math.max(0, s.start + d), s.end + d),
+                      }))
+                    )
                   }}
                   className="rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono text-white/70 transition hover:border-amber-500/40 hover:text-amber-300"
                 >
                   {d > 0 ? `+${d}` : d}s
                 </button>
               ))}
-              <button onClick={() => { snapshot(); dispatchSegments([]) }} className="mr-auto rounded-md border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-red-400 transition hover:bg-red-500/20">
+              <button
+                onClick={() => {
+                  snapshot()
+                  dispatchSegments([])
+                }}
+                className="mr-auto rounded-md border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-red-400 transition hover:bg-red-500/20"
+              >
                 پاک کردن
               </button>
             </div>
@@ -840,7 +1091,10 @@ export default function SubtitleStudio({
               {segments.map((s, i) => (
                 <div
                   key={i}
-                  onClick={() => { setSelected(i); seek(s.start) }}
+                  onClick={() => {
+                    setSelected(i)
+                    seek(s.start)
+                  }}
                   className={`group rounded-xl border-r-2 p-2.5 transition ${
                     time >= s.start && time <= s.end
                       ? 'border-amber-500 bg-amber-500/10'
@@ -849,25 +1103,34 @@ export default function SubtitleStudio({
                       : 'border-transparent hover:bg-white/5'
                   }`}
                 >
-                  <div className="flex flex-wrap items-center gap-1.5 text-[11px]" onClick={(e) => e.stopPropagation()}>
+                  <div
+                    className="flex flex-wrap items-center gap-1.5 text-[11px]"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <span className="text-white/40">از</span>
                     <input
-                      type="number" step="0.1"
+                      type="number"
+                      step="0.1"
                       value={getTimeDraft(i, 'start')}
                       onChange={(e) => handleTimeInput(i, 'start', e.target.value)}
                       onBlur={() => handleTimeBlur(i, 'start')}
                       className={`w-16 rounded-md border bg-black/40 px-1.5 py-0.5 font-mono text-white/90 focus:outline-none ${
-                        timeError === i ? 'border-red-500/70 focus:border-red-500' : 'border-white/10 focus:border-amber-500/50'
+                        timeError === i
+                          ? 'border-red-500/70 focus:border-red-500'
+                          : 'border-white/10 focus:border-amber-500/50'
                       }`}
                     />
                     <span className="text-white/40">تا</span>
                     <input
-                      type="number" step="0.1"
+                      type="number"
+                      step="0.1"
                       value={getTimeDraft(i, 'end')}
                       onChange={(e) => handleTimeInput(i, 'end', e.target.value)}
                       onBlur={() => handleTimeBlur(i, 'end')}
                       className={`w-16 rounded-md border bg-black/40 px-1.5 py-0.5 font-mono text-white/90 focus:outline-none ${
-                        timeError === i ? 'border-red-500/70 focus:border-red-500' : 'border-white/10 focus:border-amber-500/50'
+                        timeError === i
+                          ? 'border-red-500/70 focus:border-red-500'
+                          : 'border-white/10 focus:border-amber-500/50'
                       }`}
                     />
                     <span className="text-white/40">ثانیه</span>
@@ -879,21 +1142,61 @@ export default function SubtitleStudio({
 
                     <div className="flex items-center gap-0.5">
                       {[-0.5, -0.1, 0.1, 0.5].map((d) => (
-                        <button key={d} onClick={() => updateSeg(i, { start: Math.max(0, s.start + d), end: s.end + d })} className="rounded-md bg-white/5 px-1 py-0.5 font-mono text-[10px] text-white/60 hover:bg-white/10 hover:text-white">
+                        <button
+                          key={d}
+                          onClick={() =>
+                            updateSeg(i, {
+                              start: Math.max(0, s.start + d),
+                              end: s.end + d,
+                            })
+                          }
+                          className="rounded-md bg-white/5 px-1 py-0.5 font-mono text-[10px] text-white/60 hover:bg-white/10 hover:text-white"
+                        >
                           {d > 0 ? `+${d}` : d}
                         </button>
                       ))}
                     </div>
 
                     <div className="ms-auto flex items-center gap-1">
-                      <button onClick={() => seek(s.start)} className="rounded-md bg-amber-500/20 px-1.5 py-0.5 text-amber-300 hover:bg-amber-500/30" title="پرش به ابتدا">▶</button>
-                      <button onClick={() => { snapshot(); updateSeg(i, { start: time }, false) }} className="rounded-md bg-white/10 px-1.5 py-0.5 text-white/70 hover:bg-white/20" title="شروع از زمان فعلی">S</button>
-                      <button onClick={() => { snapshot(); updateSeg(i, { end: time }, false) }} className="rounded-md bg-white/10 px-1.5 py-0.5 text-white/70 hover:bg-white/20" title="پایان در زمان فعلی">E</button>
+                      <button
+                        onClick={() => seek(s.start)}
+                        className="rounded-md bg-amber-500/20 px-1.5 py-0.5 text-amber-300 hover:bg-amber-500/30"
+                        title="پرش به ابتدا"
+                      >
+                        ▶
+                      </button>
+                      <button
+                        onClick={() => {
+                          snapshot()
+                          updateSeg(i, { start: time }, false)
+                        }}
+                        className="rounded-md bg-white/10 px-1.5 py-0.5 text-white/70 hover:bg-white/20"
+                        title="شروع از زمان فعلی"
+                      >
+                        S
+                      </button>
+                      <button
+                        onClick={() => {
+                          snapshot()
+                          updateSeg(i, { end: time }, false)
+                        }}
+                        className="rounded-md bg-white/10 px-1.5 py-0.5 text-white/70 hover:bg-white/20"
+                        title="پایان در زمان فعلی"
+                      >
+                        E
+                      </button>
                     </div>
                   </div>
 
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]" onClick={(e) => e.stopPropagation()}>
-                    <select value={s.fx || 'none'} onChange={(e) => updateSeg(i, { fx: e.target.value as Fx })} className="rounded-md border border-white/10 bg-black/40 p-0.5 text-white/60">
+                  <div
+                    className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <select
+                      value={s.fx || 'none'}
+                      onChange={(e) => updateSeg(i, { fx: e.target.value as Fx })}
+                      className="rounded-md border border-white/10 bg-black/40 p-0.5 text-white/60"
+                    >
                       <option value="none">بدون افکت</option>
                       <option value="pop">پاپ</option>
                       <option value="zoomIn">زوم این</option>
@@ -902,12 +1205,40 @@ export default function SubtitleStudio({
                     </select>
                     <div className="flex items-center gap-1">
                       {HL_COLORS.map((c) => (
-                        <button key={c || 'none'} onClick={() => updateSeg(i, { hl: c || undefined })} className={`h-3.5 w-3.5 rounded-full border ${(s.hl || '') === c ? 'border-white' : 'border-white/20'}`} style={{ backgroundColor: c || 'transparent' }} />
+                        <button
+                          key={c || 'none'}
+                          onClick={() => updateSeg(i, { hl: c || undefined })}
+                          className={`h-3.5 w-3.5 rounded-full border ${
+                            (s.hl || '') === c ? 'border-white' : 'border-white/20'
+                          }`}
+                          style={{ backgroundColor: c || 'transparent' }}
+                        />
                       ))}
                     </div>
-                    <button title="تقسیم" onClick={() => splitSeg(i)} className="rounded-md bg-white/10 px-1.5 text-white/60 hover:text-white">✂️</button>
-                    <button title="ادغام با بعدی" onClick={() => mergeSeg(i)} className="rounded-md bg-white/10 px-1.5 text-white/60 hover:text-white">🔗</button>
-                    <button title="حذف" onClick={() => { snapshot(); dispatchSegments(segments.filter((_, idx) => idx !== i)) }} className="mr-auto rounded-md bg-white/10 px-1.5 text-red-400 hover:text-red-300">✕</button>
+                    <button
+                      title="تقسیم"
+                      onClick={() => splitSeg(i)}
+                      className="rounded-md bg-white/10 px-1.5 text-white/60 hover:text-white"
+                    >
+                      ✂️
+                    </button>
+                    <button
+                      title="ادغام با بعدی"
+                      onClick={() => mergeSeg(i)}
+                      className="rounded-md bg-white/10 px-1.5 text-white/60 hover:text-white"
+                    >
+                      🔗
+                    </button>
+                    <button
+                      title="حذف"
+                      onClick={() => {
+                        snapshot()
+                        dispatchSegments(segments.filter((_, idx) => idx !== i))
+                      }}
+                      className="mr-auto rounded-md bg-white/10 px-1.5 text-red-400 hover:text-red-300"
+                    >
+                      ✕
+                    </button>
                   </div>
 
                   <textarea
@@ -929,7 +1260,15 @@ export default function SubtitleStudio({
         <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-3 select-none mt-4" dir="rtl">
           <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px] text-white/40">
             <span className="font-bold text-white/70">تایم‌لاین</span>
-            <input type="range" min={15} max={120} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} className="w-24 accent-amber-500" title="بزرگ‌نمایی" />
+            <input
+              type="range"
+              min={15}
+              max={120}
+              value={zoom}
+              onChange={(e) => setZoom(Number(e.target.value))}
+              className="w-24 accent-amber-500"
+              title="بزرگ‌نمایی"
+            />
 
             <button
               onClick={endActiveSegmentHere}
@@ -941,7 +1280,9 @@ export default function SubtitleStudio({
 
             <div className="flex items-center gap-1">
               <input
-                type="number" step="0.1" placeholder="عدد دقیق"
+                type="number"
+                step="0.1"
+                placeholder="عدد دقیق"
                 value={manualEnd}
                 onChange={(e) => setManualEnd(e.target.value)}
                 className="w-20 rounded-md border border-white/10 bg-black/40 px-1.5 py-1 font-mono text-[10px] text-white/80 focus:border-amber-500/50 focus:outline-none"
@@ -955,7 +1296,9 @@ export default function SubtitleStudio({
               </button>
             </div>
 
-            <span className="ms-auto font-mono text-amber-300/80">{fmt(time)} / {fmt(duration)}</span>
+            <span className="ms-auto font-mono text-amber-300/80">
+              {fmt(time)} / {fmt(duration)}
+            </span>
           </div>
 
           <div className="overflow-x-auto rounded-xl bg-black/50 p-2 touch-pan-x" dir="ltr">
@@ -988,7 +1331,14 @@ export default function SubtitleStudio({
                       if (nextSeg && Math.abs(nextStart + segLen - nextSeg.start) < 0.15) nextStart = nextSeg.start - segLen
                       if (Math.abs(nextStart - time) < 0.12) nextStart = time
 
-                      updateSeg(i, { start: Number(nextStart.toFixed(2)), end: Number((nextStart + segLen).toFixed(2)) }, false)
+                      updateSeg(
+                        i,
+                        {
+                          start: Number(nextStart.toFixed(2)),
+                          end: Number((nextStart + segLen).toFixed(2)),
+                        },
+                        false
+                      )
                     }
 
                     const up = () => {
@@ -1008,7 +1358,10 @@ export default function SubtitleStudio({
                       ? 'border-amber-500/60 bg-amber-500/20 text-amber-100'
                       : 'border-white/10 bg-white/10 text-white/60 hover:bg-white/20'
                   }`}
-                  style={{ left: s.start * zoom, width: Math.max(16, (s.end - s.start) * zoom) }}
+                  style={{
+                    left: s.start * zoom,
+                    width: Math.max(16, (s.end - s.start) * zoom),
+                  }}
                 >
                   <span className="truncate block px-2 pointer-events-none">{s.text}</span>
 
@@ -1070,6 +1423,124 @@ export default function SubtitleStudio({
                 className="pointer-events-none absolute top-0 h-full w-0.5 bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.8)] z-20"
                 style={{ left: time * zoom }}
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── پنل خروجی، دانلود و تولید کپشن اینستاگرام ── */}
+      <div className="mt-8 rounded-2xl border border-white/10 bg-zinc-950/80 p-5 shadow-2xl" dir="rtl">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
+          <div>
+            <h3 className="text-sm font-black text-white">خروجی و دانلود</h3>
+            <p className="text-[11px] text-white/40 mt-0.5">
+              دانلود مستقیم فایل یا رندر ویدیو با زیرنویس چسبیده
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={exportSRT}
+              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/80 hover:border-amber-500/40 hover:text-white transition"
+            >
+              📄 دانلود فایل SRT
+            </button>
+            <button
+              onClick={exportVTT}
+              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/80 hover:border-amber-500/40 hover:text-white transition"
+            >
+              📑 دانلود فایل VTT
+            </button>
+            <button
+              onClick={exportTXT}
+              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/80 hover:border-amber-500/40 hover:text-white transition"
+            >
+              📝 متن خام (TXT)
+            </button>
+          </div>
+        </div>
+
+        {/* دکمه اصلی خروجی MP4 با وضعیت رندر و درصد زنده */}
+        <div className="space-y-2">
+          <button
+            onClick={() => exportVideo(videoUrl, segments, style, baseName)}
+            disabled={exporting || !videoUrl}
+            className="w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 py-3.5 text-sm font-black text-black shadow-lg shadow-amber-500/20 hover:from-amber-400 hover:to-orange-400 active:scale-[0.99] transition disabled:opacity-50"
+          >
+            <span>📹</span>
+            <span>
+              {exporting ? `در حال ساخت ویدیو... (${progress}%)` : 'خروجی MP4 با زیرنویس'}
+            </span>
+          </button>
+
+          {exporting && (
+            <div className="flex items-center gap-3">
+              <div className="h-2 flex-1 rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-full bg-amber-500 transition-all duration-150"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <button
+                onClick={cancelExport}
+                className="text-[11px] text-red-400 hover:underline"
+              >
+                لغو رندر
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* دکمه تولید کپشن اینستاگرام با AI */}
+        <div className="mt-4 pt-3 border-t border-white/5 flex justify-end">
+          <button
+            onClick={generateInstagramCaption}
+            disabled={generatingCaption}
+            className="flex items-center gap-2 rounded-xl border border-pink-500/30 bg-pink-500/10 px-4 py-2 text-xs font-bold text-pink-300 hover:bg-pink-500/20 transition disabled:opacity-50"
+          >
+            <span>📸</span>
+            <span>
+              {generatingCaption ? 'در حال نگارش کپشن...' : 'تولید کپشن اینستاگرام با AI'}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* مودال نمایش و کپی کپشن اینستاگرام */}
+      {showIgModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" dir="rtl">
+          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-neutral-900 p-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-3">
+              <strong className="text-sm text-white">کپشن پیشنهادی برای اینستاگرام</strong>
+              <button
+                onClick={() => setShowIgModal(false)}
+                className="text-white/40 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+            <textarea
+              readOnly
+              rows={8}
+              value={igCaptionResult}
+              className="w-full rounded-xl border border-white/10 bg-black/50 p-3 text-xs leading-relaxed text-white/90 outline-none"
+            />
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(igCaptionResult)
+                  alert('کپشن کپی شد!')
+                }}
+                className="rounded-xl bg-amber-500 px-4 py-1.5 text-xs font-bold text-black hover:bg-amber-400"
+              >
+                کپی در کلیپ‌بورد
+              </button>
+              <button
+                onClick={() => setShowIgModal(false)}
+                className="rounded-xl bg-white/10 px-4 py-1.5 text-xs text-white/70 hover:bg-white/20"
+              >
+                بستن
+              </button>
             </div>
           </div>
         </div>
