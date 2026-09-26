@@ -11,7 +11,7 @@ import {
 
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
 
-function wrapTextSafe(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+export function wrapTextSafe(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const words = text.trim().split(/\s+/).filter(Boolean)
   if (!words.length) return ['']
   const lines: string[] = []
@@ -30,7 +30,7 @@ function wrapTextSafe(ctx: CanvasRenderingContext2D, text: string, maxWidth: num
   return lines.length ? lines : ['']
 }
 
-function fitSubtitle(
+export function fitSubtitle(
   ctx: CanvasRenderingContext2D,
   text: string,
   desiredFontSize: number,
@@ -70,7 +70,7 @@ export function drawSubtitleOnCanvas(
   mediaTime: number,
   duration: number,
   segments: Seg[],
-  activeStyle: Style,
+  activeStyle: any,
 ) {
   const t = clamp(mediaTime, 0, duration)
   const seg = segments.find((item) => t >= item.start && t <= item.end)
@@ -103,6 +103,29 @@ export function drawSubtitleOnCanvas(
   ctx.scale(anim.scale, anim.scale)
   ctx.translate(-anchorX, -anchorY)
 
+  // ── رسم کادر پس‌زمینه (Background Box / Radius / Opacity) ──
+  const bgOpacity = s.bgOpacity ?? 0.6
+  if (seg.hl || bgOpacity > 0) {
+    const padX = finalFontSize * 0.6
+    const padY = finalFontSize * 0.3
+    const boxW = fitted.maxLineWidth + padX * 2
+    const boxH = fitted.totalHeight + padY * 2
+    const boxX = anchorX - boxW / 2
+    const boxY = anchorY - boxH / 2
+    const radius = s.bgRadius ?? 10
+
+    ctx.save()
+    ctx.fillStyle = seg.hl || `rgba(0, 0, 0, ${bgOpacity})`
+    ctx.beginPath()
+    if (ctx.roundRect) {
+      ctx.roundRect(boxX, boxY, boxW, boxH, radius)
+    } else {
+      ctx.rect(boxX, boxY, boxW, boxH)
+    }
+    ctx.fill()
+    ctx.restore()
+  }
+
   ctx.font = `800 ${finalFontSize}px "${fontFamily}", -apple-system, sans-serif`
   ctx.textBaseline = 'middle'
   ctx.textAlign = align
@@ -112,8 +135,8 @@ export function drawSubtitleOnCanvas(
   if (!s.karaoke || !seg.words || !seg.words.length) {
     lines.forEach((line, index) => {
       const y = anchorY + (index - (lines.length - 1) / 2) * lineHeight
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.85)'
-      ctx.shadowBlur = Math.max(6, finalFontSize * 0.2)
+      ctx.shadowColor = s.textShadowColor || 'rgba(0, 0, 0, 0.85)'
+      ctx.shadowBlur = s.textShadowBlur ?? Math.max(6, finalFontSize * 0.2)
       ctx.strokeStyle = '#000000'
       ctx.lineWidth = strokeWidth
       ctx.strokeText(line, anchorX, y)
@@ -147,8 +170,8 @@ export function drawSubtitleOnCanvas(
 
         const prevAlign = ctx.textAlign
         ctx.textAlign = 'center'
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.85)'
-        ctx.shadowBlur = Math.max(6, finalFontSize * 0.2)
+        ctx.shadowColor = s.textShadowColor || 'rgba(0, 0, 0, 0.85)'
+        ctx.shadowBlur = s.textShadowBlur ?? Math.max(6, finalFontSize * 0.2)
         ctx.strokeStyle = '#000000'
         ctx.lineWidth = strokeWidth
         ctx.strokeText(word, wordX, y)
@@ -187,11 +210,11 @@ export function useVideoExport() {
     const video = document.createElement('video')
     video.src = videoUrl
     video.crossOrigin = 'anonymous'
-    video.muted = true
     video.playsInline = true
+    video.preload = 'auto'
 
     await new Promise((resolve, reject) => {
-      video.onloadedmetadata = resolve
+      video.onloadeddata = resolve
       video.onerror = reject
     })
 
@@ -208,8 +231,9 @@ export function useVideoExport() {
       return
     }
 
-    const stream = canvas.captureStream(30)
-    let combinedStream: MediaStream = stream
+    // ── انتقال بدون افت صدا ──
+    const canvasStream = canvas.captureStream(30)
+    let outputStream = canvasStream
 
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
@@ -218,15 +242,17 @@ export function useVideoExport() {
         const source = audioCtx.createMediaElementSource(video)
         const dest = audioCtx.createMediaStreamDestination()
         source.connect(dest)
-        source.connect(audioCtx.destination)
+        
         if (dest.stream.getAudioTracks().length > 0) {
-          combinedStream = new MediaStream([
-            ...stream.getVideoTracks(),
+          outputStream = new MediaStream([
+            ...canvasStream.getVideoTracks(),
             ...dest.stream.getAudioTracks(),
           ])
         }
       }
-    } catch {}
+    } catch (e) {
+      console.warn('Audio capture fallback', e)
+    }
 
     const mime = MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.42E01E, mp4a.40.2"')
       ? 'video/mp4; codecs="avc1.42E01E, mp4a.40.2"'
@@ -234,9 +260,9 @@ export function useVideoExport() {
       ? 'video/webm; codecs=vp9,opus'
       : 'video/webm'
 
-    const recorder = new MediaRecorder(combinedStream, {
+    const recorder = new MediaRecorder(outputStream, {
       mimeType: mime,
-      videoBitsPerSecond: 4_500_000,
+      videoBitsPerSecond: 6_000_000,
     })
 
     const chunks: Blob[] = []
@@ -244,7 +270,7 @@ export function useVideoExport() {
       if (e.data.size > 0) chunks.push(e.data)
     }
 
-    const finished = new Promise<void>((resolve) => {
+    const finishPromise = new Promise<void>((resolve) => {
       recorder.onstop = () => resolve()
     })
 
@@ -253,22 +279,22 @@ export function useVideoExport() {
     await video.play()
 
     await new Promise<void>((resolve) => {
-      const renderFrame = () => {
+      const step = () => {
         if (cancelRef.current || video.ended || video.currentTime >= duration) {
           resolve()
           return
         }
         drawSubtitleOnCanvas(ctx, video, W, H, video.currentTime, duration, segments, style)
         setProgress(Math.min(99, Math.round((video.currentTime / duration) * 100)))
-        requestAnimationFrame(renderFrame)
+        requestAnimationFrame(step)
       }
-      requestAnimationFrame(renderFrame)
+      requestAnimationFrame(step)
     })
 
     if (!cancelRef.current) {
       recorder.stop()
       video.pause()
-      await finished
+      await finishPromise
 
       setProgress(100)
       const ext = mime.includes('mp4') ? 'mp4' : 'webm'
@@ -278,7 +304,7 @@ export function useVideoExport() {
       a.href = url
       a.download = `${baseName}.subtitled.${ext}`
       a.click()
-      setTimeout(() => URL.revokeObjectURL(url), 5000)
+      setTimeout(() => URL.revokeObjectURL(url), 4000)
     }
 
     setExporting(false)
