@@ -26,7 +26,6 @@ export default function VideoSubtitleClient() {
   const [selectedSegId, setSelectedSegId] = useState<string | null>(null)
 
   const { status, progress, busy, segments, setSegments, run, stop } = useVideoTranscribe()
-
   const [styleConfig, setStyleConfig] = useState<StudioStyleConfig>(() => getStoredStyle())
   const updateStyle = (patch: Partial<StudioStyleConfig>) => {
     setStyleConfig((prev) => {
@@ -57,7 +56,7 @@ export default function VideoSubtitleClient() {
     if (!file.type.startsWith('video/') && !isMov) return
     if (file.size > MAX_FILE_SIZE_BYTES) {
       const sizeInMB = (file.size / (1024 * 1024)).toFixed(1)
-      alert(`❌ حجم فایل انتخابی (${sizeInMB} مگابایت) بیش از سقف مجاز ۵۰ مگابایت است.`)
+      alert(`❌ حجم فایل انتخابی (${sizeInMB} مگابایت) بیش از سقف مجاز ۲۵۰ مگابایت است.`)
       e.target.value = ''
       return
     }
@@ -94,14 +93,13 @@ export default function VideoSubtitleClient() {
     if (!ctx) return
     let targetW = video.videoWidth || 1080
     let targetH = video.videoHeight || 1920
-    if (styleConfig.aspectRatio === '9:16') { targetW = 1080; targetH = 1920 } 
-    else if (styleConfig.aspectRatio === '16:9') { targetW = 1920; targetH = 1080 } 
-    else if (styleConfig.aspectRatio === '1:1') { targetW = 1080; targetH = 1080 } 
+    if (styleConfig.aspectRatio === '9:16') { targetW = 1080; targetH = 1920 }
+    else if (styleConfig.aspectRatio === '16:9') { targetW = 1920; targetH = 1080 }
+    else if (styleConfig.aspectRatio === '1:1') { targetW = 1080; targetH = 1080 }
     else if (styleConfig.aspectRatio === '4:5') { targetW = 1080; targetH = 1350 }
     const clamped = clampCanvasDimensions(targetW, targetH, 1920)
     if (canvas.width !== clamped.width || canvas.height !== clamped.height) {
-      canvas.width = clamped.width
-      canvas.height = clamped.height
+      canvas.width = clamped.width; canvas.height = clamped.height
     }
     renderStudioFrame({
       ctx,
@@ -116,15 +114,9 @@ export default function VideoSubtitleClient() {
 
   useEffect(() => {
     if (!fontLoaded) return
-    if (!isPlaying) {
-      drawCurrentFrame()
-      return
-    }
+    if (!isPlaying) { drawCurrentFrame(); return }
     let animId: number
-    const loop = () => {
-      drawCurrentFrame()
-      animId = requestAnimationFrame(loop)
-    }
+    const loop = () => { drawCurrentFrame(); animId = requestAnimationFrame(loop) }
     animId = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(animId)
   }, [isPlaying, fontLoaded, drawCurrentFrame])
@@ -162,7 +154,6 @@ export default function VideoSubtitleClient() {
 
   if (auth === 'checking')
     return <div className="p-10 text-center text-sm text-white/40">در حال بررسی…</div>
-    
   if (auth === 'no')
     return (
       <div className="container-app py-16" dir="rtl">
@@ -182,7 +173,6 @@ export default function VideoSubtitleClient() {
   return (
     <div className="min-h-screen bg-[#070605] text-white flex flex-col select-none" dir="rtl">
       <video ref={videoRef} src={videoUrl} className="hidden" playsInline />
-      
       <header className="h-14 border-b border-stone-800 bg-[#110f0d] px-4 flex items-center justify-between z-30">
         <div className="flex items-center gap-3">
           <Link href="/" className="flex h-9 w-9 items-center justify-center rounded-xl bg-stone-900 border border-stone-800 text-stone-400 hover:text-white">✕</Link>
@@ -258,14 +248,12 @@ export default function VideoSubtitleClient() {
                 </div>
               </div>
             )}
-            
             <div
               onClick={togglePlay}
               className="relative flex items-center justify-center max-h-[50vh] md:max-h-[76vh] w-full max-w-full overflow-hidden rounded-2xl shadow-2xl bg-black cursor-pointer border border-stone-800"
             >
               <canvas ref={canvasRef} className="max-h-[48vh] md:max-h-[74vh] w-auto max-w-full object-contain pointer-events-auto" />
             </div>
-            
             <div className="w-full max-w-xl mt-3 flex items-center gap-3 bg-[#110f0d] p-2 sm:p-2.5 rounded-2xl border border-stone-800">
               <button
                 type="button"
@@ -376,7 +364,7 @@ export default function VideoSubtitleClient() {
 
       {showExportModal && (
         <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
-          <div className="w-full max-w-lg rounded-3xl bg-[#14120f] border border-stone-800 p-6 shadow-2xl">
+          <div className="w-full max-w-2xl rounded-3xl bg-[#14120f] border border-stone-800 p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4 border-b border-stone-800 pb-3">
               <h3 className="text-base font-bold text-white">خروجی نهایی ویدیو</h3>
               <button type="button" onClick={() => setShowExportModal(false)} className="text-stone-400 hover:text-white">✕</button>
@@ -385,7 +373,8 @@ export default function VideoSubtitleClient() {
               videoUrl={videoUrl}
               sourceFile={sourceFile}
               segments={segments as any}
-              styleConfig={styleConfig}
+              setSegments={setSegments as any}
+              style={styleConfig as any}
               baseName={baseName}
             />
           </div>
