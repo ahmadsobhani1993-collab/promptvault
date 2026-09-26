@@ -14,7 +14,6 @@ export type ExportQuality = 'balanced' | 'high'
 
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
 
-// صف انحصاری (Mutex) برای جلوگیری از تداخل عملیات روی یک نمونه Singleton
 let ffmpegLock: Promise<any> = Promise.resolve()
 function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
   const result = ffmpegLock.then(fn, fn)
@@ -212,7 +211,7 @@ async function extractAudioSafe(
     await ff.exec(['-i', inputName, '-vn', '-c:a', 'copy', ...durationArgs, outputName])
     return true
   } catch (err) {
-    console.warn('[AudioPrep] Stream-copy failed (likely PCM in MOV), falling back to AAC:', err)
+    console.warn('[AudioPrep] Stream-copy failed, falling back to AAC:', err)
     try {
       await ff.exec(['-i', inputName, '-vn', '-c:a', 'aac', '-b:a', '192k', ...durationArgs, outputName])
       return true
@@ -230,16 +229,16 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
   const cancelRef = useRef(false)
   const preppedAudioRef = useRef<{ name: string; ready: boolean } | null>(null)
 
-  const prepAudioInBackground = useCallback(async () => {
-    if (!sourceFile || preppedAudioRef.current?.ready) return
+  const prepAudio = useCallback(async (fileOrBlob: File | Blob) => {
+    if (preppedAudioRef.current?.ready) return
     try {
       await runExclusive(async () => {
         const ff = await loadFFmpeg()
-        const ext = (sourceFile as File)?.name?.match(/\.[^.]+$/)?.[0] || '.mp4'
+        const ext = (fileOrBlob as File)?.name?.match(/\.[^.]+$/)?.[0] || '.mp4'
         const inName = `prep_in_${Date.now()}${ext}`
         const outAudio = `prep_audio_${Date.now()}.m4a`
 
-        await ff.writeFile(inName, new Uint8Array(await sourceFile.arrayBuffer()))
+        await ff.writeFile(inName, new Uint8Array(await fileOrBlob.arrayBuffer()))
         const success = await extractAudioSafe(ff, inName, outAudio)
         await ff.deleteFile(inName)
 
@@ -248,13 +247,12 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
         }
       })
     } catch (e) {
-      console.warn('[Background Audio Prep Mutex Warn]', e)
+      console.warn('[Background Audio Prep Warn]', e)
     }
-  }, [sourceFile])
+  }, [])
 
-  // رفع باگ ریست نشدن preppedAudioRef هنگام تعویض فایل منبع
   useEffect(() => {
-    prepAudioInBackground()
+    if (sourceFile) prepAudio(sourceFile)
     return () => {
       const stale = preppedAudioRef.current
       if (stale?.ready) {
@@ -265,7 +263,7 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
         })
       }
     }
-  }, [prepAudioInBackground])
+  }, [sourceFile, prepAudio])
 
   const exportVideo = async (
     videoUrl: string,
@@ -276,17 +274,9 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
   ) => {
     if (!videoUrl || exporting) return
 
-    // اخطار به کاربر در صورتی که فایل صدا موجود نباشد
-    if (!sourceFile && !preppedAudioRef.current?.ready) {
-      const proceed = window.confirm(
-        'فایل صوتی منبع در دسترس نیست و ویدیو بدون صدا خروجی گرفته خواهد شد. آیا مایل به ادامه هستید؟'
-      )
-      if (!proceed) return
-    }
-
     setExporting(true)
     setProgress(0)
-    setStageText('آماده‌سازی رندر ویدیو...')
+    setStageText('آماده‌سازی لایه‌ها...')
     cancelRef.current = false
 
     const container = document.createElement('div')
@@ -297,6 +287,11 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
     video.crossOrigin = 'anonymous'
     video.playsInline = true
     video.preload = 'auto'
+    
+    // قطع قطعی صدای المنت برای جلوگیری از پخش از اسپیکر
+    video.muted = true
+    video.volume = 0
+
     container.appendChild(video)
     document.body.appendChild(container)
 
@@ -306,10 +301,9 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
     try {
       await new Promise<void>((resolve, reject) => {
         video.onloadedmetadata = () => resolve()
-        video.onerror = () => reject(new Error('خطا در خواندن مشخصات ویدیو'))
+        video.onerror = () => reject(new Error('خطا در بارگذاری اولیه ویدیو'))
       })
 
-      // محاسبه مطمئن طول ویدیو
       let duration = video.duration
       if (!duration || !Number.isFinite(duration) || duration <= 0) {
         try {
@@ -333,7 +327,6 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
         duration = segments.length > 0 ? Math.max(...segments.map((s) => s.end)) : 10
       }
 
-      // تشخیص فریم‌ریت منبع
       let targetFps = 30
       try {
         const probeStream = (video as any).captureStream?.()
@@ -355,7 +348,7 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
       canvas.width = W
       canvas.height = H
       const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true })
-      if (!ctx) throw new Error('امکان ایجاد بافت Canvas وجود ندارد')
+      if (!ctx) throw new Error('امکان ایجاد Canvas وجود ندارد')
 
       canvasStream = canvas.captureStream(targetFps)
 
@@ -365,7 +358,6 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
         ? 'video/mp4; codecs="avc1.640028"'
         : 'video/webm'
 
-      // مدیریت داینامیک بیت‌ریت میانی برای جلوگیری از OOM
       const intermediateBitrate = duration > 120 ? 9_000_000 : 15_000_000
 
       recorder = new MediaRecorder(canvasStream, {
@@ -389,7 +381,7 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
       recorder.start(250)
       await video.play()
 
-      // فاز ۱: رندر فریم‌به‌فریم کانویس
+      // فاز ۱: رندر فریم‌به‌فریم کانویس تا ۵۰٪
       await new Promise<void>((resolve) => {
         const startTime = Date.now()
         const maxRealTimeMs = (duration + 2) * 1000
@@ -402,7 +394,9 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
           drawSubtitleOnCanvas(ctx, video, W, H, metadata.mediaTime, duration, segments, style)
           const p = Math.min(50, Math.round((metadata.mediaTime / duration) * 50))
           setProgress(p)
-          setStageText(`رندر لایه‌ها: ${Math.round((p / 50) * 100)}%`)
+          
+          const remainingSec = Math.max(0, duration - metadata.mediaTime)
+          setStageText(`رندر کانویس (${Math.ceil(remainingSec)}s باقی‌مانده)`)
 
           if ('requestVideoFrameCallback' in video) {
             video.requestVideoFrameCallback(onFrame)
@@ -421,12 +415,12 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
             drawSubtitleOnCanvas(ctx, video, W, H, video.currentTime, duration, segments, style)
             const p = Math.min(50, Math.round((video.currentTime / duration) * 50))
             setProgress(p)
-            setStageText(`رندر لایه‌ها: ${Math.round((p / 50) * 100)}%`)
+            const remainingSec = Math.max(0, duration - video.currentTime)
+            setStageText(`رندر کانویس (${Math.ceil(remainingSec)}s باقی‌مانده)`)
           }, 1000 / targetFps)
         }
       })
 
-      // بررسی لغو در پایان مرحله کانویس و آزادسازی فوری مدیا
       if (cancelRef.current) {
         try { recorder.stop() } catch {}
         video.pause()
@@ -438,30 +432,36 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
       video.pause()
       await recorderStopped
 
-      // بررسی مجدد لغو دقیقاً قبل از ورود به پردازش سنگین FFmpeg
       if (cancelRef.current) return
 
-      // فاز ۲: فشرده‌سازی هوشمند CRF و ادغام صدا
-      setStageText('فشرده‌سازی هوشمند CRF و ادغام صدا...')
+      // فاز ۲: استخراج خودکار صدا و فشرده‌سازی با FFmpeg
+      setStageText('آماده‌سازی استخراج صدا و ساخت کانتینر...')
       setProgress(55)
 
       const finalBlob = await runExclusive(async () => {
         const ff = await loadFFmpeg()
-        const rawBlob = new Blob(rawChunks, { type: mime })
-        const rawVideoName = `raw_${Date.now()}.webm`
-        const finalOutputName = `final_${Date.now()}.mp4`
 
-        await ff.writeFile(rawVideoName, new Uint8Array(await rawBlob.arrayBuffer()))
+        // استخراج مستقیم از videoUrl در صورت غیبت منبع دستی
+        let workingSource = sourceFile
+        if (!workingSource) {
+          try {
+            setStageText('دریافت بایت‌های ویدیوی اصلی...')
+            const resp = await fetch(videoUrl)
+            workingSource = await resp.blob()
+          } catch (fetchErr) {
+            console.warn('[VideoExport] Fetching videoUrl blob failed:', fetchErr)
+          }
+        }
 
         let audioFileToUse = preppedAudioRef.current?.name || null
 
-        // استخراج تاخیری صدا در صورتی که آماده نبوده باشد
-        if (!audioFileToUse && sourceFile) {
-          const inExt = (sourceFile as File)?.name?.match(/\.[^.]+$/)?.[0] || '.mp4'
+        if (!audioFileToUse && workingSource) {
+          setStageText('استخراج صدای اورجینال...')
+          const inExt = (workingSource as File)?.name?.match(/\.[^.]+$/)?.[0] || '.mp4'
           const tmpSrc = `src_late_${Date.now()}${inExt}`
           const tmpOut = `audio_late_${Date.now()}.m4a`
 
-          await ff.writeFile(tmpSrc, new Uint8Array(await sourceFile.arrayBuffer()))
+          await ff.writeFile(tmpSrc, new Uint8Array(await workingSource.arrayBuffer()))
           const ok = await extractAudioSafe(ff, tmpSrc, tmpOut, duration)
           await ff.deleteFile(tmpSrc)
 
@@ -470,8 +470,17 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
           }
         }
 
+        setStageText('فشرده‌سازی هوشمند CRF و Muxing...')
+        setProgress(65)
+
+        const rawBlob = new Blob(rawChunks, { type: mime })
+        const rawVideoName = `raw_${Date.now()}.webm`
+        const finalOutputName = `final_${Date.now()}.mp4`
+
+        await ff.writeFile(rawVideoName, new Uint8Array(await rawBlob.arrayBuffer()))
+
         const audioArgs = audioFileToUse ? ['-i', audioFileToUse, '-c:a', 'copy'] : []
-        const crfValue = quality === 'high' ? '19' : '23'
+        const crfValue = quality === 'high' ? '20' : '23'
         const presetValue = quality === 'high' ? 'medium' : 'veryfast'
 
         await ff.exec([
@@ -487,7 +496,6 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
         setProgress(95)
         const finalData = await ff.readFile(finalOutputName)
 
-        // پاکسازی فایل‌های واسط روی MEMFS
         await ff.deleteFile(rawVideoName)
         await ff.deleteFile(finalOutputName)
         if (audioFileToUse && audioFileToUse !== preppedAudioRef.current?.name) {
@@ -497,10 +505,7 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
         return new Blob([finalData], { type: 'video/mp4' })
       })
 
-      // 🔴 رفع باگ لغو در مرحله FFmpeg: جلوگیری قطعی از شروع دانلود
-      if (cancelRef.current) {
-        return
-      }
+      if (cancelRef.current) return
 
       setProgress(100)
       setStageText('آماده دانلود!')
