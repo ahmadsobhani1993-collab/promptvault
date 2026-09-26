@@ -549,17 +549,25 @@ export default function SubtitleStudio({
               onClick={() => setShowTransMenu((v) => !v)}
               disabled={translating}
               title="ترجمه هوشمند زیرنویس"
-              className={`${iconBtn} ${translating ? '!border-amber-500 text-amber-400 animate-pulse' : ''}`}
+              className={`${iconBtn} flex items-center justify-center ${translating ? '!border-amber-500 text-amber-400 animate-pulse' : ''}`}
             >
-              🌐
+              {/* علامت استاندارد جهانی ترجمه (Translate SVG Icon) */}
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m5 8 6 6" />
+                <path d="m4 14 6-6 2-3" />
+                <path d="M2 5h12" />
+                <path d="M7 2h1" />
+                <path d="m22 22-5-10-5 10" />
+                <path d="M14 18h6" />
+              </svg>
             </button>
             {showTransMenu && (
-              <div className="absolute top-full mt-1.5 z-50 flex flex-col gap-1 rounded-xl border border-white/10 bg-neutral-900 p-1.5 shadow-2xl min-w-[130px]" dir="rtl">
+              <div className="absolute top-full mt-1.5 z-50 flex flex-col gap-1 rounded-xl border border-white/10 bg-neutral-900 p-1.5 shadow-2xl min-w-[140px]" dir="rtl">
                 <button onClick={() => translateSubtitles('fa')} className="rounded-lg px-2.5 py-1.5 text-right text-xs text-white/80 transition hover:bg-amber-500 hover:text-black font-medium">
-                  انگلیسی ➔ فارسی
+                  انگلیسی ← فارسی
                 </button>
                 <button onClick={() => translateSubtitles('en')} className="rounded-lg px-2.5 py-1.5 text-right text-xs text-white/80 transition hover:bg-amber-500 hover:text-black font-medium">
-                  فارسی ➔ انگلیسی
+                  فارسی ← انگلیسی
                 </button>
               </div>
             )}
@@ -700,7 +708,7 @@ export default function SubtitleStudio({
         </div>
       )}
 
-      {/* ─── محیط ادیتور ویدیو ── */}
+      {/* ─── Workspace (نمایش ویدیو و ادیتور) ── */}
       <div className="grid gap-4 lg:grid-cols-5 mt-2">
         <div className="space-y-3 lg:col-span-3">
           <div className="sticky top-2 z-20 -mx-4 bg-neutral-950/95 px-4 pb-2 backdrop-blur lg:static lg:mx-0 lg:bg-transparent lg:px-0 lg:pb-0">
