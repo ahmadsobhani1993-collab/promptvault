@@ -1,10 +1,11 @@
-﻿'use client'
+'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   FONTS, PRESETS, HL_COLORS, DEFAULT_STYLE,
   type Seg, type Style, type Fx, mkWords, loadFont,
 } from '@/lib/subtitle-studio'
+import { useVideoExport } from './export/useVideoExport'
 
 export type SubtitleStudioProps = {
   videoUrl: string
@@ -15,7 +16,7 @@ export type SubtitleStudioProps = {
 }
 
 type AspectRatio = 'original' | '9:16' | '1:1' | '16:9' | '4:5'
-type ActiveTab = 'none' | 'style' | 'text' | 'canvas' | 'audio'
+type ActiveTab = 'none' | 'style' | 'text' | 'canvas'
 
 interface ExtendedStyle extends Style {
   bold?: boolean
@@ -68,11 +69,13 @@ export default function SubtitleStudio({
   const [timeDrafts, setTimeDrafts] = useState<Record<string, string>>({})
   const [timeError, setTimeError] = useState<number | null>(null)
 
-  const [volume, setVolume] = useState(100)
-  const [denoise, setDenoise] = useState(false)
-  const audioCtxRef = useRef<AudioContext | null>(null)
-  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null)
-  const filterNodesRef = useRef<{ hp: BiquadFilterNode; notch: BiquadFilterNode } | null>(null)
+  // هوک رندر MP4 با کانویس
+  const { exporting, progress, exportVideo, cancelExport } = useVideoExport()
+
+  // بخش تولید کپشن اینستاگرام
+  const [generatingCaption, setGeneratingCaption] = useState(false)
+  const [igCaptionResult, setIgCaptionResult] = useState('')
+  const [showIgModal, setShowIgModal] = useState(false)
 
   const transMenuRef = useRef<HTMLDivElement>(null)
 
@@ -86,65 +89,6 @@ export default function SubtitleStudio({
     document.addEventListener('mousedown', onDocClick)
     return () => document.removeEventListener('mousedown', onDocClick)
   }, [showTransMenu])
-
-  useEffect(() => {
-    const v = videoRef.current
-    if (!v) return
-
-    const setupAudio = () => {
-      if (!audioCtxRef.current) {
-        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
-        if (!AudioCtx) return
-        const ctx = new AudioCtx()
-        const source = ctx.createMediaElementSource(v)
-
-        const hp = ctx.createBiquadFilter()
-        hp.type = 'highpass'
-        hp.frequency.value = 120
-
-        const notch = ctx.createBiquadFilter()
-        notch.type = 'notch'
-        notch.frequency.value = 50
-
-        audioCtxRef.current = ctx
-        sourceNodeRef.current = source
-        filterNodesRef.current = { hp, notch }
-      }
-
-      const ctx = audioCtxRef.current
-      const source = sourceNodeRef.current
-      const filters = filterNodesRef.current
-      if (!ctx || !source || !filters) return
-
-      try {
-        source.disconnect()
-        filters.hp.disconnect()
-        filters.notch.disconnect()
-
-        if (denoise) {
-          source.connect(filters.hp)
-          filters.hp.connect(filters.notch)
-          filters.notch.connect(ctx.destination)
-        } else {
-          source.connect(ctx.destination)
-        }
-      } catch (err) {
-        console.warn('Audio routing error:', err)
-      }
-    }
-
-    const onPlay = () => {
-      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-        audioCtxRef.current.resume()
-      }
-    }
-
-    setupAudio()
-    v.addEventListener('play', onPlay)
-    return () => {
-      v.removeEventListener('play', onPlay)
-    }
-  }, [denoise])
 
   const translateSubtitles = async (targetLang: 'fa' | 'en') => {
     if (!segments || segments.length === 0 || translating) return
@@ -202,10 +146,80 @@ export default function SubtitleStudio({
         }))
       }
     } catch (e: any) {
-      console.error('[TRANSLATE RUNTIME ERROR]:', e)
       alert('خطا در فرآیند ترجمه: ' + (e.message || 'پاسخی از سرور دریافت نشد'))
     } finally {
       setTranslating(false)
+    }
+  }
+
+  const downloadFile = (filename: string, content: string, type: string) => {
+    const blob = new Blob([content], { type: `${type};charset=utf-8` })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 4000)
+  }
+
+  const exportSRT = () => {
+    const pad = (n: number, z = 2) => String(Math.floor(n)).padStart(z, '0')
+    const fmtT = (sec: number) => {
+      const s = Math.max(0, Number(sec) || 0)
+      const h = pad(s / 3600)
+      const m = pad((s % 3600) / 60)
+      const sc = pad(s % 60)
+      const ms = pad((s % 1) * 1000, 3)
+      return `${h}:${m}:${sc},${ms}`
+    }
+    const content = segments.map((s, i) => `${i + 1}\n${fmtT(s.start)} --> ${fmtT(s.end)}\n${s.text}`).join('\n\n')
+    downloadFile(`${baseName}.srt`, '\uFEFF' + content, 'text/plain')
+  }
+
+  const exportVTT = () => {
+    const pad = (n: number, z = 2) => String(Math.floor(n)).padStart(z, '0')
+    const fmtT = (sec: number) => {
+      const s = Math.max(0, Number(sec) || 0)
+      const h = pad(s / 3600)
+      const m = pad((s % 3600) / 60)
+      const sc = pad(s % 60)
+      const ms = pad((s % 1) * 1000, 3)
+      return `${h}:${m}:${sc}.${ms}`
+    }
+    const content = 'WEBVTT\n\n' + segments.map((s, i) => `${i + 1}\n${fmtT(s.start)} --> ${fmtT(s.end)}\n${s.text}`).join('\n\n')
+    downloadFile(`${baseName}.vtt`, '\uFEFF' + content, 'text/vtt')
+  }
+
+  const exportTXT = () => {
+    const content = segments.map((s) => s.text).join('\n')
+    downloadFile(`${baseName}.txt`, '\uFEFF' + content, 'text/plain')
+  }
+
+  const generateInstagramCaption = async () => {
+    if (!segments.length) {
+      alert('ابتدا باید زیرنویسی در ویدیو وجود داشته باشد.')
+      return
+    }
+    setGeneratingCaption(true)
+    setShowIgModal(true)
+    try {
+      const fullText = segments.map((s) => s.text).join(' ')
+      const res = await fetch('/api/generate-caption', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript: fullText, target: 'instagram' }),
+      })
+      const data = await res.json()
+      if (data.caption) {
+        setIgCaptionResult(data.caption)
+      } else {
+        setIgCaptionResult(fullText + '\n\n#آموزش #ویدیو #ریلز #اکسپلور')
+      }
+    } catch {
+      const fallback = segments.map((s) => s.text).join(' ')
+      setIgCaptionResult(fallback + '\n\n#آموزش #ریلز #ویدیو')
+    } finally {
+      setGeneratingCaption(false)
     }
   }
 
@@ -516,7 +530,7 @@ export default function SubtitleStudio({
         @keyframes subSlide { from { transform: translateX(-40px); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
       `}</style>
 
-      {/* ─── Toolbar ── */}
+      {/* ─── Toolbar (نوار ابزار بالا - بدون نویزگیر) ── */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-3">
         <div className="relative flex items-center gap-1.5">
           <button onClick={undo} title="واگرد (Ctrl+Z)" className={iconBtn}>↩</button>
@@ -545,7 +559,7 @@ export default function SubtitleStudio({
           </div>
         </div>
 
-        {/* منوهای تب برای امکانات جدید */}
+        {/* دکمه‌های ناوبری تب‌های تنظیمات */}
         <div className="flex items-center gap-1 overflow-x-auto rounded-xl border border-white/10 bg-zinc-900/80 p-1 text-xs">
           <button
             onClick={() => setActiveTab(activeTab === 'canvas' ? 'none' : 'canvas')}
@@ -564,12 +578,6 @@ export default function SubtitleStudio({
             className={`rounded-lg px-2.5 py-1 transition ${activeTab === 'text' ? 'bg-amber-500 font-bold text-black' : 'text-white/70 hover:bg-white/5'}`}
           >
             🔤 فونت و متن
-          </button>
-          <button
-            onClick={() => setActiveTab(activeTab === 'audio' ? 'none' : 'audio')}
-            className={`rounded-lg px-2.5 py-1 transition ${activeTab === 'audio' ? 'bg-amber-500 font-bold text-black' : 'text-white/70 hover:bg-white/5'}`}
-          >
-            🔊 نویزگیر و صدا
           </button>
         </div>
 
@@ -685,35 +693,7 @@ export default function SubtitleStudio({
         </div>
       )}
 
-      {activeTab === 'audio' && (
-        <div className="flex flex-wrap items-center gap-6 rounded-xl border border-white/10 bg-zinc-900/90 p-3 my-2 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-white/60">حجم صدا:</span>
-            <input
-              type="range" min={0} max={100} value={volume}
-              onChange={(e) => {
-                const v = Number(e.target.value)
-                setVolume(v)
-                if (videoRef.current) videoRef.current.volume = v / 100
-              }}
-              className="w-28 accent-amber-500"
-            />
-            <span className="font-mono text-white/80">{volume}%</span>
-          </div>
-
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={denoise}
-              onChange={(e) => setDenoise(e.target.checked)}
-              className="accent-amber-500 h-4 w-4 rounded"
-            />
-            <span className="text-white/80">هوش مصنوعی حذف نویز (AI Denoise)</span>
-          </label>
-        </div>
-      )}
-
-      {/* ─── Workspace ── */}
+      {/* ─── Workspace (نمایش ویدیو و ادیتور) ── */}
       <div className="grid gap-4 lg:grid-cols-5 mt-2">
         <div className="space-y-3 lg:col-span-3">
           <div className="sticky top-2 z-20 -mx-4 bg-neutral-950/95 px-4 pb-2 backdrop-blur lg:static lg:mx-0 lg:bg-transparent lg:px-0 lg:pb-0">
@@ -1065,6 +1045,113 @@ export default function SubtitleStudio({
                 className="pointer-events-none absolute top-0 h-full w-0.5 bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.8)] z-20"
                 style={{ left: time * zoom }}
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── پنل خروجی، دانلود و تولید کپشن اینستاگرام ── */}
+      <div className="mt-8 rounded-2xl border border-white/10 bg-zinc-950/80 p-5 shadow-2xl" dir="rtl">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
+          <div>
+            <h3 className="text-sm font-black text-white">خروجی و دانلود</h3>
+            <p className="text-[11px] text-white/40 mt-0.5">دانلود مستقیم فایل یا رندر ویدیو با زیرنویس چسبیده</p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={exportSRT}
+              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/80 hover:border-amber-500/40 hover:text-white transition"
+            >
+              📄 دانلود فایل SRT
+            </button>
+            <button
+              onClick={exportVTT}
+              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/80 hover:border-amber-500/40 hover:text-white transition"
+            >
+              📑 دانلود فایل VTT
+            </button>
+            <button
+              onClick={exportTXT}
+              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/80 hover:border-amber-500/40 hover:text-white transition"
+            >
+              📝 متن خام (TXT)
+            </button>
+          </div>
+        </div>
+
+        {/* دکمه اصلی خروجی MP4 با پروگرس‌بار زنده */}
+        <div className="space-y-2">
+          <button
+            onClick={() => exportVideo(videoUrl, segments, style, baseName)}
+            disabled={exporting || !videoUrl}
+            className="w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 py-3.5 text-sm font-black text-black shadow-lg shadow-amber-500/20 hover:from-amber-400 hover:to-orange-400 active:scale-[0.99] transition disabled:opacity-50"
+          >
+            <span>📹</span>
+            <span>{exporting ? `در حال ساخت ویدیو... (${progress}%)` : 'خروجی MP4 با زیرنویس'}</span>
+          </button>
+
+          {exporting && (
+            <div className="flex items-center gap-3">
+              <div className="h-2 flex-1 rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-full bg-amber-500 transition-all duration-150"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <button
+                onClick={cancelExport}
+                className="text-[11px] text-red-400 hover:underline"
+              >
+                لغو رندر
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* دکمه کپشن اینستاگرام */}
+        <div className="mt-4 pt-3 border-t border-white/5 flex justify-end">
+          <button
+            onClick={generateInstagramCaption}
+            disabled={generatingCaption}
+            className="flex items-center gap-2 rounded-xl border border-pink-500/30 bg-pink-500/10 px-4 py-2 text-xs font-bold text-pink-300 hover:bg-pink-500/20 transition disabled:opacity-50"
+          >
+            <span>📸</span>
+            <span>{generatingCaption ? 'در حال نگارش کپشن...' : 'تولید کپشن اینستاگرام با AI'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* مودال نمایش کپشن اینستاگرام */}
+      {showIgModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" dir="rtl">
+          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-neutral-900 p-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-3">
+              <strong className="text-sm text-white">کپشن پیشنهادی برای اینستاگرام</strong>
+              <button onClick={() => setShowIgModal(false)} className="text-white/40 hover:text-white">✕</button>
+            </div>
+            <textarea
+              readOnly
+              rows={8}
+              value={igCaptionResult}
+              className="w-full rounded-xl border border-white/10 bg-black/50 p-3 text-xs leading-relaxed text-white/90 outline-none"
+            />
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(igCaptionResult)
+                  alert('کپشن کپی شد!')
+                }}
+                className="rounded-xl bg-amber-500 px-4 py-1.5 text-xs font-bold text-black hover:bg-amber-400"
+              >
+                کپی در کلیپ‌بورد
+              </button>
+              <button
+                onClick={() => setShowIgModal(false)}
+                className="rounded-xl bg-white/10 px-4 py-1.5 text-xs text-white/70 hover:bg-white/20"
+              >
+                بستن
+              </button>
             </div>
           </div>
         </div>
