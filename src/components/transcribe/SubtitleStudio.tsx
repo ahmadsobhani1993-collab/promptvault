@@ -5,10 +5,11 @@ import {
   FONTS, PRESETS, HL_COLORS, DEFAULT_STYLE,
   type Seg, type Style, type Fx, mkWords, loadFont,
 } from '@/lib/subtitle-studio'
-import { useVideoExport } from './export/useVideoExport'
+import { useVideoExport, type ExportQuality } from './export/useVideoExport'
 
 export type SubtitleStudioProps = {
   videoUrl: string
+  sourceFile?: File | Blob | null
   baseName?: string
   segments: Seg[]
   setSegments?: (s: Seg[]) => void
@@ -36,6 +37,7 @@ const fmt = (t: number) => {
 
 export default function SubtitleStudio({
   videoUrl,
+  sourceFile,
   baseName = 'video',
   segments = [],
   setSegments,
@@ -70,8 +72,9 @@ export default function SubtitleStudio({
   const [timeDrafts, setTimeDrafts] = useState<Record<string, string>>({})
   const [timeError, setTimeError] = useState<number | null>(null)
 
-  // هوک رندر MP4 با کانویس
-  const { exporting, progress, exportVideo, cancelExport } = useVideoExport()
+  // هوک رندر MP4 با معماری دوپاسه و استخراج صدا در پس‌زمینه
+  const [exportQuality, setExportQuality] = useState<ExportQuality>('balanced')
+  const { exporting, progress, stageText, exportVideo, cancelExport } = useVideoExport(sourceFile)
 
   // بخش تولید کپشن هوش مصنوعی منطبق با api/generate-caption
   const [captionTone, setCaptionTone] = useState<CaptionTone>('engaging')
@@ -197,7 +200,6 @@ export default function SubtitleStudio({
     downloadFile(`${baseName}.txt`, '\uFEFF' + content, 'text/plain')
   }
 
-  // فراخوانی مستقیم API با فیلد text و tone که بک‌اند انتظار دارد
   const generateInstagramCaption = async (selectedTone: CaptionTone = captionTone) => {
     if (!segments.length) {
       alert('ابتدا باید زیرنویسی در ویدیو وجود داشته باشد.')
@@ -551,7 +553,6 @@ export default function SubtitleStudio({
               title="ترجمه هوشمند زیرنویس"
               className={`${iconBtn} flex items-center justify-center ${translating ? '!border-amber-500 text-amber-400 animate-pulse' : ''}`}
             >
-              {/* علامت استاندارد جهانی ترجمه (Translate SVG Icon) */}
               <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="m5 8 6 6" />
                 <path d="m4 14 6-6 2-3" />
@@ -574,7 +575,7 @@ export default function SubtitleStudio({
           </div>
         </div>
 
-        {/* دکمه‌های ناوبری تب‌های تنظیمات (بدون تب نویزگیر) */}
+        {/* دکمه‌های ناوبری تب‌های تنظیمات */}
         <div className="flex items-center gap-1 overflow-x-auto rounded-xl border border-white/10 bg-zinc-900/80 p-1 text-xs">
           <button
             onClick={() => setActiveTab(activeTab === 'canvas' ? 'none' : 'canvas')}
@@ -708,7 +709,7 @@ export default function SubtitleStudio({
         </div>
       )}
 
-      {/* ─── Workspace (نمایش ویدیو و ادیتور) ── */}
+      {/* ─── محیط ادیتور ویدیو ── */}
       <div className="grid gap-4 lg:grid-cols-5 mt-2">
         <div className="space-y-3 lg:col-span-3">
           <div className="sticky top-2 z-20 -mx-4 bg-neutral-950/95 px-4 pb-2 backdrop-blur lg:static lg:mx-0 lg:bg-transparent lg:px-0 lg:pb-0">
@@ -1095,15 +1096,55 @@ export default function SubtitleStudio({
           </div>
         </div>
 
+        {/* سلکتور کیفیت رندر و حجم فایل */}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/[0.03] p-2.5 border border-white/5">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-white/60 font-bold">کیفیت خروجی:</span>
+            <div className="flex items-center gap-1 bg-black/40 p-1 rounded-lg border border-white/10 text-xs">
+              <button
+                type="button"
+                onClick={() => setExportQuality('balanced')}
+                className={`px-3 py-1 rounded-md transition font-semibold ${
+                  exportQuality === 'balanced'
+                    ? 'bg-amber-500 text-black shadow-md'
+                    : 'text-white/60 hover:text-white'
+                }`}
+              >
+                حجم بهینه (استاندارد)
+              </button>
+              <button
+                type="button"
+                onClick={() => setExportQuality('high')}
+                className={`px-3 py-1 rounded-md transition font-semibold ${
+                  exportQuality === 'high'
+                    ? 'bg-amber-500 text-black shadow-md'
+                    : 'text-white/60 hover:text-white'
+                }`}
+              >
+                کیفیت حداکثری
+              </button>
+            </div>
+          </div>
+          {exportQuality === 'high' && (
+            <span className="text-[11px] text-amber-400/90 font-medium">
+              ⚠️ حجم فایل خروجی تا ۲ الی ۳ برابر افزایش می‌یابد.
+            </span>
+          )}
+        </div>
+
         {/* دکمه اصلی خروجی MP4 با پروگرس‌بار زنده */}
         <div className="space-y-2">
           <button
-            onClick={() => exportVideo(videoUrl, segments, style, baseName)}
+            onClick={() => exportVideo(videoUrl, segments, style, baseName, exportQuality)}
             disabled={exporting || !videoUrl}
             className="w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 py-3.5 text-sm font-black text-black shadow-lg shadow-amber-500/20 hover:from-amber-400 hover:to-orange-400 active:scale-[0.99] transition disabled:opacity-50"
           >
             <span>📹</span>
-            <span>{exporting ? `در حال ساخت ویدیو... (${progress}%)` : 'خروجی MP4 با زیرنویس'}</span>
+            <span>
+              {exporting
+                ? `${stageText || 'در حال ساخت ویدیو...'} (${progress}%)`
+                : 'خروجی MP4 با زیرنویس'}
+            </span>
           </button>
 
           {exporting && (
