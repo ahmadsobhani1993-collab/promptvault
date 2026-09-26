@@ -1,7 +1,7 @@
 'use client'
 
 export default function LocaleSwitcher() {
-  const current = document.cookie.match(/locale=(fa|en)/)?.[1] || 'fa'
+  const current = typeof document !== 'undefined' ? document.cookie.match(/locale=(fa|en)/)?.[1] || 'fa' : 'fa'
 
   const set = (v: string) => {
     document.cookie = 'locale=' + v + '; path=/; max-age=31536000'
@@ -10,7 +10,7 @@ export default function LocaleSwitcher() {
 
   return (
     <>
-      {/* دسکتاپ: دو دکمه جدا */}
+      {/* دسکتاپ */}
       <div className="hidden md:flex items-center gap-1 rounded-full border border-line bg-elevated px-1.5 py-1 text-xs">
         <button
           type="button"
@@ -32,7 +32,7 @@ export default function LocaleSwitcher() {
         </button>
       </div>
 
-      {/* موبایل: دکمه فشرده FA/EN */}
+      {/* موبایل */}
       <button
         type="button"
         onClick={() => set(current === 'fa' ? 'en' : 'fa')}

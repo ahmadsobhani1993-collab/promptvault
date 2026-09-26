@@ -28,7 +28,6 @@ export default async function Header() {
           Prompts<span className="text-gold-bright">FA</span>
         </Link>
 
-        {/* Desktop Navigation */}
         <nav className="hidden lg:flex items-center gap-4 xl:gap-6 text-sm text-ink-muted">
           <Link href="/explore" className="transition-colors hover:text-gold-bright whitespace-nowrap">
             {L(locale, 'کاوش', 'Explore')}
@@ -71,7 +70,6 @@ export default async function Header() {
         </nav>
 
         <div className="flex items-center gap-1 md:gap-2">
-          {/* دکمه ارسال پرامپت - فقط دسکتاپ */}
           <Link 
             href="/submit" 
             className="hidden md:inline-flex rounded-lg bg-gold-bright/15 border border-gold-bright/35 px-3 py-1.5 text-sm font-bold text-gold-bright transition-all hover:bg-gold-bright/25 hover:border-gold-bright whitespace-nowrap"
@@ -79,10 +77,7 @@ export default async function Header() {
             ✨ {L(locale, 'ارسال پرامپت', 'Submit')}
           </Link>
 
-          {/* LocaleSwitcher - در موبایل کوچک‌تر */}
-          <div className="[&_button]:!text-[10px] [&_button]:!px-2 [&_button]:!py-1 [&_div]:!p-0.5">
-            <LocaleSwitcher />
-          </div>
+          <LocaleSwitcher />
 
           {session?.user ? (
             <div className="flex items-center gap-1 md:gap-2">
@@ -92,10 +87,9 @@ export default async function Header() {
                 </Link>
               )}
 
-              {/* آواتار کاربر - در موبایل کوچک‌تر */}
               <Link
-                href="/profile"
-                className="group relative flex items-center gap-1 md:gap-2 rounded-full transition-all hover:scale-105"
+                href="/account"
+                className="group relative flex items-center"
                 title={session.user.name || 'پروفایل من'}
               >
                 <div className="relative h-7 w-7 md:h-9 md:w-9 overflow-hidden rounded-full border-2 border-gold-bright/50 bg-[#120f09] shadow-[0_0_12px_rgba(212,175,55,0.15)] transition-all group-hover:border-gold-bright group-hover:shadow-[0_0_16px_rgba(212,175,55,0.35)]">

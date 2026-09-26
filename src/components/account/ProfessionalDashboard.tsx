@@ -15,54 +15,6 @@ const ANIME_AVATARS = [
   'https://api.dicebear.com/7.x/bottts/svg?seed=Coco',
 ]
 
-function isVideoMedia(url?: string | null, type?: string | null) {
-  if (!url) return false
-  if (type === 'VIDEO' || type === 'video') return true
-  return /\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(url)
-}
-
-function PromptMediaPreview({ prompt }: { prompt: any }) {
-  const mediaUrl = prompt.img || prompt.videoUrl || prompt.mediaUrl || ''
-  const isVideo = isVideoMedia(mediaUrl, prompt.type)
-
-  if (isVideo) {
-    return (
-      <div className="relative h-full w-full bg-black/90">
-        <video
-          src={mediaUrl}
-          muted
-          loop
-          playsInline
-          onMouseEnter={(e) => (e.target as HTMLVideoElement).play().catch(() => {})}
-          onMouseLeave={(e) => {
-            const v = e.target as HTMLVideoElement
-            v.pause()
-            v.currentTime = 0
-          }}
-          className="h-full w-full object-cover"
-        />
-        <div className="pointer-events-none absolute bottom-2 right-2 rounded-full bg-black/60 p-1.5 text-gold-bright backdrop-blur-md">
-          <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
-            <path d="M8 5v14l11-7z" />
-          </svg>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <img
-      src={mediaUrl || '/placeholder.png'}
-      alt={prompt.titleFa || 'Prompt'}
-      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-      onError={(e) => {
-        ;(e.target as HTMLImageElement).src =
-          'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="%23111"><text x="50%" y="50%" fill="%23d4af37" font-size="3" text-anchor="middle" dominant-baseline="middle">Media</text></svg>'
-      }}
-    />
-  )
-}
-
 export default function ProfessionalDashboard({
   user,
   likedPrompts,
@@ -70,12 +22,10 @@ export default function ProfessionalDashboard({
   myPrompts,
   myComments,
   cartItems = [],
-  locale = 'fa',
 }: any) {
   const [activeTab, setActiveTab] = useState<'prompts' | 'saved' | 'likes' | 'comments' | 'cart'>('prompts')
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false)
   
-  // ← اضافه شدن telegramHandle به state اولیه
   const [profileData, setProfileData] = useState({
     name: user?.name || '',
     username: user?.username || '',
@@ -89,20 +39,10 @@ export default function ProfessionalDashboard({
   const [savingProfile, setSavingProfile] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const modalRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsEditProfileOpen(false)
-    }
-    if (isEditProfileOpen) window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isEditProfileOpen])
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-
     const reader = new FileReader()
     reader.onload = (event) => {
       const img = new Image()
@@ -158,8 +98,6 @@ export default function ProfessionalDashboard({
       <div className="relative overflow-hidden rounded-2xl border border-line bg-gradient-to-r from-elevated via-surface to-elevated p-6 md:p-8">
         <div className="flex flex-col md:flex-row items-center gap-6 justify-between">
           <div className="flex flex-col md:flex-row items-center gap-5 text-center md:text-right">
-            
-            {/* ← آواتار لینک‌دار به صفحه عمومی */}
             {publicUrl ? (
               <Link href={publicUrl} className="relative h-24 w-24 rounded-full border-2 border-gold/40 bg-black/60 overflow-hidden shadow-xl flex items-center justify-center shrink-0 hover:border-gold transition-all">
                 {user.image ? (
@@ -184,7 +122,6 @@ export default function ProfessionalDashboard({
 
             <div>
               <div className="flex items-center gap-3 justify-center md:justify-start">
-                {/* ← نام لینک‌دار به صفحه عمومی */}
                 {publicUrl ? (
                   <Link href={publicUrl} className="font-display text-2xl font-black text-ink hover:text-gold-bright transition-colors">
                     {user.name || 'کاربر PromptsFA'}
@@ -214,9 +151,7 @@ export default function ProfessionalDashboard({
                 {user.bio || 'هنوز بیوگرافی اضافه نشده است.'}
               </p>
 
-              {/* آیدی شبکه‌های اجتماعی */}
               <div className="mt-3 flex flex-wrap items-center justify-center md:justify-start gap-3">
-                {/* ← نمایش telegramHandle (آیدی عمومی) */}
                 {user.telegramHandle && (
                   <a
                     href={`https://t.me/${user.telegramHandle}`}
@@ -226,18 +161,6 @@ export default function ProfessionalDashboard({
                   >
                     <span>✈️</span>
                     <span dir="ltr">@{user.telegramHandle}</span>
-                  </a>
-                )}
-                
-                {user.telegram && (
-                  <a
-                    href={`https://t.me/${user.telegram.replace(/^@/, '')}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 rounded-full border border-sky-500/40 bg-sky-500/10 px-3 py-1 text-xs text-sky-400 hover:bg-sky-500/20 hover:border-sky-400 transition-all"
-                  >
-                    <span>🔒</span>
-                    <span dir="ltr">@{user.telegram.replace(/^@/, '')}</span>
                   </a>
                 )}
                 {user.instagram && (
@@ -271,11 +194,6 @@ export default function ProfessionalDashboard({
             >
               ⚙️ ویرایش مشخصات
             </button>
-            {user.role === 'ADMIN' && (
-              <Link href="/admin" className="btn-primary rounded-xl px-4 py-2 text-xs font-bold">
-                پنل مدیریت
-              </Link>
-            )}
           </div>
         </div>
       </div>
@@ -283,11 +201,11 @@ export default function ProfessionalDashboard({
       {/* تب‌ها */}
       <div className="flex flex-wrap items-center gap-2 border-b border-line pb-3">
         {[
-          { key: 'prompts', label: 'پرامپت‌های من', count: myPrompts.length, icon: '⚡' },
-          { key: 'saved', label: 'ذخیره‌شده‌ها', count: savedPrompts.length, icon: '🔖' },
-          { key: 'likes', label: 'لایک‌ها', count: likedPrompts.length, icon: '❤️' },
-          { key: 'comments', label: 'نظرات', count: myComments.length, icon: '💬' },
-          { key: 'cart', label: 'سبد خرید', count: cartItems.length, icon: '🛒' },
+          { key: 'prompts', label: 'پرامپت‌های من', count: myPrompts?.length || 0, icon: '' },
+          { key: 'saved', label: 'ذخیره‌شده‌ها', count: savedPrompts?.length || 0, icon: '🔖' },
+          { key: 'likes', label: 'لایک‌ها', count: likedPrompts?.length || 0, icon: '❤️' },
+          { key: 'comments', label: 'نظرات', count: myComments?.length || 0, icon: '💬' },
+          { key: 'cart', label: 'سبد خرید', count: cartItems?.length || 0, icon: '🛒' },
         ].map((tab) => (
           <button
             key={tab.key}
@@ -305,32 +223,138 @@ export default function ProfessionalDashboard({
         ))}
       </div>
 
-      {/* محتوای تب‌ها (بدون تغییر نسبت به کد اصلی شما برای اختصار، همان کدهای قبلی را اینجا قرار دهید) */}
+      {/* محتوای تب‌ها */}
       <div>
         {activeTab === 'prompts' && (
           <div className="card divide-y divide-line overflow-hidden">
-            {myPrompts.map((p: any) => (
-              <div key={p.id} className="flex items-center justify-between p-4 hover:bg-surface/50 transition-colors">
-                <div>
-                  <Link href={`/prompts/${p.slug}`} className="text-sm font-bold text-ink hover:text-gold-bright">
-                    {p.titleFa}
-                  </Link>
-                  <p className="mt-1 text-[10px] text-ink-faint">مدل: {p.model || 'نامشخص'}</p>
+            {myPrompts && myPrompts.length > 0 ? (
+              myPrompts.map((p: any) => (
+                <div key={p.id} className="flex items-center justify-between p-4 hover:bg-surface/50 transition-colors">
+                  <div>
+                    <Link href={`/prompts/${p.slug}`} className="text-sm font-bold text-ink hover:text-gold-bright">
+                      {p.titleFa}
+                    </Link>
+                    <p className="mt-1 text-[10px] text-ink-faint">مدل: {p.model || 'نامشخص'}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <EditPromptModal prompt={p} />
+                    <span className="rounded-full bg-green-500/10 px-2.5 py-1 text-[10px] font-bold text-green-400">
+                      {p.status}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <EditPromptModal prompt={p} />
-                  <span className="rounded-full bg-green-500/10 px-2.5 py-1 text-[10px] font-bold text-green-400">
-                    {p.status}
-                  </span>
-                </div>
-              </div>
-            ))}
-            {myPrompts.length === 0 && (
+              ))
+            ) : (
               <p className="p-8 text-center text-sm text-ink-muted">هنوز پرامپتی ارسال نکرده‌اید.</p>
             )}
           </div>
         )}
-        {/* ... سایر تب‌ها (saved, likes, comments, cart) دقیقاً مانند کد اصلی شما باقی می‌مانند ... */}
+
+        {activeTab === 'saved' && (
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            {savedPrompts && savedPrompts.length > 0 ? (
+              savedPrompts.map((b: any) => (
+                b.prompt && (
+                  <Link
+                    key={b.id || b.prompt.id}
+                    href={`/prompts/${b.prompt.slug}`}
+                    className="group card overflow-hidden transition-all hover:border-gold/40"
+                  >
+                    <div className="aspect-square overflow-hidden bg-black/80">
+                      <img src={b.prompt.img || '/placeholder.png'} alt={b.prompt.titleFa} className="h-full w-full object-cover" />
+                    </div>
+                    <div className="p-3">
+                      <p className="line-clamp-1 text-xs font-bold">{b.prompt.titleFa}</p>
+                      <p className="mt-1 text-[10px] text-ink-muted">{b.prompt.category?.nameFa}</p>
+                    </div>
+                  </Link>
+                )
+              ))
+            ) : (
+              <p className="col-span-full p-8 text-center text-sm text-ink-muted">پرامپتی ذخیره نشده است.</p>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'likes' && (
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            {likedPrompts && likedPrompts.length > 0 ? (
+              likedPrompts.map((l: any) => (
+                l.prompt && (
+                  <Link
+                    key={l.id || l.prompt.id}
+                    href={`/prompts/${l.prompt.slug}`}
+                    className="group card overflow-hidden transition-all hover:border-gold/40"
+                  >
+                    <div className="aspect-square overflow-hidden bg-black/80">
+                      <img src={l.prompt.img || '/placeholder.png'} alt={l.prompt.titleFa} className="h-full w-full object-cover" />
+                    </div>
+                    <div className="p-3">
+                      <p className="line-clamp-1 text-xs font-bold">{l.prompt.titleFa}</p>
+                      <p className="mt-1 text-[10px] text-ink-muted">{l.prompt.category?.nameFa}</p>
+                    </div>
+                  </Link>
+                )
+              ))
+            ) : (
+              <p className="col-span-full p-8 text-center text-sm text-ink-muted">پرامپتی لایک نشده است.</p>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'comments' && (
+          <div className="card divide-y divide-line overflow-hidden">
+            {myComments && myComments.length > 0 ? (
+              myComments.map((c: any) => (
+                <div key={c.id} className="p-4">
+                  <p className="text-xs text-ink leading-relaxed">{c.text}</p>
+                  <div className="mt-2 flex items-center justify-between text-[10px]">
+                    {c.prompt && (
+                      <Link href={`/prompts/${c.prompt.slug}`} className="text-gold-bright hover:underline">
+                        {c.prompt.titleFa}
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="p-8 text-center text-sm text-ink-muted">هنوز نظری ثبت نکرده‌اید.</p>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'cart' && (
+          <div className="card p-6">
+            <h3 className="font-display text-lg font-bold text-gold-bright mb-4">سبد خرید شما</h3>
+            {cartItems && cartItems.length > 0 ? (
+              <div className="space-y-4">
+                {cartItems.map((item: any) => (
+                  <div key={item.id} className="flex items-center justify-between border-b border-line pb-3">
+                    <div>
+                      <p className="text-sm font-bold">{item.product?.titleFa}</p>
+                      <p className="text-xs text-ink-muted">{item.product?.price?.toLocaleString('fa-IR')} تومان</p>
+                    </div>
+                    <span className="text-xs">تعداد: {item.quantity}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between items-center pt-4">
+                  <span className="font-bold text-sm">مجموع پرداختی:</span>
+                  <span className="font-bold text-base text-gold-bright">
+                    {cartTotal.toLocaleString('fa-IR')} تومان
+                  </span>
+                </div>
+                <button className="btn-primary w-full py-3 mt-4 rounded-xl font-bold text-sm">
+                  💳 تسویه حساب
+                </button>
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <div className="text-4xl mb-2">🛒</div>
+                <p className="text-sm text-ink-muted">سبد خرید شما در حال حاضر خالی است.</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* مودال ویرایش پروفایل */}
@@ -340,7 +364,6 @@ export default function ProfessionalDashboard({
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md"
         >
           <div
-            ref={modalRef}
             onClick={(e) => e.stopPropagation()}
             className="card w-full max-w-lg border-gold/40 bg-[#12100d] p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
           >
@@ -348,11 +371,7 @@ export default function ProfessionalDashboard({
               <h3 className="font-display text-base font-bold text-gold-bright">
                 ویرایش اطلاعات حساب کاربری
               </h3>
-              <button
-                type="button"
-                onClick={() => setIsEditProfileOpen(false)}
-                className="text-ink-muted hover:text-ink text-sm p-1"
-              >
+              <button type="button" onClick={() => setIsEditProfileOpen(false)} className="text-ink-muted hover:text-ink text-sm p-1">
                 ✕
               </button>
             </div>
@@ -386,36 +405,28 @@ export default function ProfessionalDashboard({
                 </div>
               </div>
 
-              {/* بخش آپلود آواتار شخصی */}
               <div>
                 <label className="block text-xs text-ink-muted mb-2 font-bold">تصویر آواتار</label>
                 <div className="flex items-center gap-4">
-                  <div className="relative group/avatar h-16 w-16 overflow-hidden rounded-full border-2 border-gold/50 bg-black/60 shrink-0">
+                  <div className="relative h-16 w-16 overflow-hidden rounded-full border-2 border-gold/50 bg-black/60 shrink-0">
                     {profileData.image ? (
                       <img src={profileData.image} alt="Preview" className="h-full w-full object-cover" />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center text-xs text-ink-muted">بدون عکس</div>
                     )}
                   </div>
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleImageUpload}
-                    accept="image/*"
-                    className="hidden"
-                  />
+                  <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     className="flex items-center gap-2 rounded-xl border border-gold/40 bg-gold/10 px-4 py-2.5 text-xs font-bold text-gold-bright hover:bg-gold/20 transition-all"
                   >
                     <span>📁</span>
-                    <span>انتخاب عکس از سیستم</span>
+                    <span>انتخاب عکس</span>
                   </button>
                 </div>
               </div>
 
-              {/* آواتارهای کارتونی آماده */}
               <div>
                 <label className="block text-xs text-ink-muted mb-2 font-bold">یا انتخاب آواتار انیمیشنی</label>
                 <div className="flex items-center gap-2.5 overflow-x-auto pb-2">
@@ -436,10 +447,9 @@ export default function ProfessionalDashboard({
                 </div>
               </div>
 
-              {/* ← بخش جدید: آیدی تلگرام عمومی و اینستاگرام */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-ink-muted mb-1 font-bold">آیدی تلگرام (شخصی یا کانال)</label>
+                  <label className="block text-xs text-ink-muted mb-1 font-bold">آیدی تلگرام (برای اتصال به حساب)</label>
                   <input
                     type="text"
                     placeholder="username (بدون @)"
@@ -447,7 +457,7 @@ export default function ProfessionalDashboard({
                     onChange={(e) => setProfileData({ ...profileData, telegramHandle: e.target.value })}
                     className="w-full rounded-lg border border-line bg-surface p-2.5 text-xs text-ink focus:border-gold/60 focus:outline-none dir-ltr text-left"
                   />
-                  <p className="mt-1 text-[10px] text-ink-faint">برای نمایش در پروفایل عمومی شما</p>
+                  <p className="mt-1 text-[10px] text-ink-faint">برای اتصال حساب تلگرام به ایمیل خود</p>
                 </div>
                 <div>
                   <label className="block text-xs text-ink-muted mb-1 font-bold">آیدی اینستاگرام</label>
@@ -472,11 +482,7 @@ export default function ProfessionalDashboard({
               </div>
 
               <div className="flex justify-end gap-3 pt-3 border-t border-line">
-                <button
-                  type="button"
-                  onClick={() => setIsEditProfileOpen(false)}
-                  className="rounded-lg border border-line px-4 py-2 text-xs text-ink-muted hover:bg-surface"
-                >
+                <button type="button" onClick={() => setIsEditProfileOpen(false)} className="rounded-lg border border-line px-4 py-2 text-xs text-ink-muted hover:bg-surface">
                   انصراف
                 </button>
                 <button type="submit" disabled={savingProfile} className="btn-primary px-5 py-2 text-xs font-bold">
