@@ -6,7 +6,7 @@ import { useVideoTranscribe } from '@/lib/use-video-transcribe'
 import { StudioSegment, StudioStyleConfig, getStoredStyle, saveStoredStyle } from '@/lib/studio/unified-style'
 import { renderStudioFrame, clampCanvasDimensions } from '@/lib/studio/universal-renderer'
 import { ensureFontLoaded } from '@/lib/studio/font-loader'
-import TemplatePanel from '../studio/panels/TemplatePanel'
+import TemplatePanel from './studio/panels/TemplatePanel'
 import SubtitleVideoExport from './SubtitleVideoExport'
 
 const MAX_FILE_SIZE_MB = 250
@@ -158,7 +158,7 @@ export default function VideoSubtitleClient() {
     return (
       <div className="container-app py-16" dir="rtl">
         <div className="mx-auto max-w-xl overflow-hidden rounded-3xl border border-white/10 bg-[#12100d]/90 p-8 text-center shadow-2xl backdrop-blur-xl">
-          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-500/40 bg-amber-500/10 text-2xl shadow-inner">🔒</div>
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-500/40 bg-amber-500/10 text-2xl shadow-inner"></div>
           <h2 className="text-xl md:text-2xl font-black text-white mb-3">ورود به حساب کاربری الزامی است</h2>
           <p className="text-xs md:text-sm text-stone-400 leading-relaxed mb-8 max-w-md mx-auto">
             برای استفاده از استودیو زیرنویس هوشمند با هوش مصنوعی جمینای، لطفاً وارد حساب خود شوید.
@@ -173,6 +173,8 @@ export default function VideoSubtitleClient() {
   return (
     <div className="min-h-screen bg-[#070605] text-white flex flex-col select-none" dir="rtl">
       <video ref={videoRef} src={videoUrl} className="hidden" playsInline />
+      
+      {/* Header */}
       <header className="h-14 border-b border-stone-800 bg-[#110f0d] px-4 flex items-center justify-between z-30">
         <div className="flex items-center gap-3">
           <Link href="/" className="flex h-9 w-9 items-center justify-center rounded-xl bg-stone-900 border border-stone-800 text-stone-400 hover:text-white">✕</Link>
@@ -190,7 +192,7 @@ export default function VideoSubtitleClient() {
                 onClick={() => setShowStylePanel(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-xs font-bold hover:bg-amber-500/20 transition"
               >
-                <span>🎨</span>
+                <span></span>
                 <span>قالب و استایل</span>
               </button>
               <button
@@ -235,8 +237,9 @@ export default function VideoSubtitleClient() {
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
-          <div className="flex-1 flex flex-col bg-black items-center justify-center p-2 sm:p-4 relative overflow-hidden">
+        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+          {/* ستون ویدیو (دسکتاپ: چپ، موبایل: بالا) */}
+          <div className="flex-1 flex flex-col bg-black items-center justify-center p-2 sm:p-4 relative overflow-hidden lg:border-l border-stone-800">
             {busy && (
               <div className="absolute top-3 inset-x-4 max-w-md mx-auto z-20 bg-stone-900/90 border border-amber-500/40 p-3 rounded-2xl backdrop-blur-md">
                 <div className="flex justify-between items-center text-xs mb-1.5">
@@ -248,12 +251,14 @@ export default function VideoSubtitleClient() {
                 </div>
               </div>
             )}
+            
             <div
               onClick={togglePlay}
-              className="relative flex items-center justify-center max-h-[50vh] md:max-h-[76vh] w-full max-w-full overflow-hidden rounded-2xl shadow-2xl bg-black cursor-pointer border border-stone-800"
+              className="relative flex items-center justify-center max-h-[50vh] lg:max-h-[76vh] w-full max-w-full overflow-hidden rounded-2xl shadow-2xl bg-black cursor-pointer border border-stone-800"
             >
-              <canvas ref={canvasRef} className="max-h-[48vh] md:max-h-[74vh] w-auto max-w-full object-contain pointer-events-auto" />
+              <canvas ref={canvasRef} className="max-h-[48vh] lg:max-h-[74vh] w-auto max-w-full object-contain pointer-events-auto" />
             </div>
+            
             <div className="w-full max-w-xl mt-3 flex items-center gap-3 bg-[#110f0d] p-2 sm:p-2.5 rounded-2xl border border-stone-800">
               <button
                 type="button"
@@ -277,7 +282,8 @@ export default function VideoSubtitleClient() {
             </div>
           </div>
 
-          <div className="h-[40vh] md:h-auto md:w-[380px] lg:w-[420px] flex flex-col bg-[#0e0d0b] border-t md:border-t-0 md:border-r border-stone-800 overflow-hidden shrink-0">
+          {/* ستون کپشن‌ها (دسکتاپ: راست، موبایل: پایین) */}
+          <div className="h-[40vh] lg:h-auto lg:w-[380px] xl:w-[420px] flex flex-col bg-[#0e0d0b] border-t lg:border-t-0 border-stone-800 overflow-hidden shrink-0">
             <div className="p-3 border-b border-stone-800 flex items-center justify-between bg-[#12100d]">
               <span className="text-xs font-bold text-white">کپشن‌های هوشمند ({segments.length})</span>
               <button
@@ -351,7 +357,7 @@ export default function VideoSubtitleClient() {
           </div>
 
           {showStylePanel && (
-            <div className="fixed md:absolute inset-0 md:inset-auto md:left-0 md:top-0 md:bottom-0 md:w-84 bg-[#12100d] border-r border-stone-800 shadow-2xl z-50 overflow-y-auto">
+            <div className="fixed lg:absolute inset-0 lg:inset-auto lg:left-0 lg:top-0 lg:bottom-0 lg:w-84 bg-[#12100d] border-r border-stone-800 shadow-2xl z-50 overflow-y-auto">
               <TemplatePanel
                 config={styleConfig}
                 onChange={updateStyle}
@@ -364,7 +370,7 @@ export default function VideoSubtitleClient() {
 
       {showExportModal && (
         <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl rounded-3xl bg-[#14120f] border border-stone-800 p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div className="w-full max-w-lg rounded-3xl bg-[#14120f] border border-stone-800 p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-4 border-b border-stone-800 pb-3">
               <h3 className="text-base font-bold text-white">خروجی نهایی ویدیو</h3>
               <button type="button" onClick={() => setShowExportModal(false)} className="text-stone-400 hover:text-white">✕</button>
@@ -373,7 +379,6 @@ export default function VideoSubtitleClient() {
               videoUrl={videoUrl}
               sourceFile={sourceFile}
               segments={segments as any}
-              setSegments={setSegments as any}
               style={styleConfig as any}
               baseName={baseName}
             />
