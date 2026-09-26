@@ -7,11 +7,10 @@ async function toBlobURL(url: string, type: string): Promise<string> {
   return URL.createObjectURL(new Blob([buf], { type }))
 }
 
-async function fetchFile(f: File): Promise<Uint8Array> {
+async function fetchFile(f: File | Blob): Promise<Uint8Array> {
   return new Uint8Array(await f.arrayBuffer())
 }
 
-// اول self-host (سریع و مطمئن)، بعد CDN ها
 const CORE_SOURCES = [
   '/ffmpeg',
   'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm',
@@ -19,6 +18,7 @@ const CORE_SOURCES = [
 ]
 
 let ffmpeg: FFmpeg | null = null
+let activeProgressCallback: ((percent: number) => void) | null = null
 
 export async function loadFFmpeg(): Promise<FFmpeg> {
   if (ffmpeg) return ffmpeg
@@ -31,11 +31,17 @@ export async function loadFFmpeg(): Promise<FFmpeg> {
         coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
         wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
       })
+      
+      // ثبت لیسنر فقط یک‌بار برای کل طول عمر اینستنس سراسری
+      ff.on('progress', ({ progress }) => {
+        if (activeProgressCallback) {
+          activeProgressCallback(Math.round(progress * 100))
+        }
+      })
+
       ffmpeg = ff
-      console.log('[ffmpeg] loaded from:', base)
       return ffmpeg
     } catch (e) {
-      console.warn('[ffmpeg] source failed:', base, e)
       lastErr = e
     }
   }
@@ -43,46 +49,45 @@ export async function loadFFmpeg(): Promise<FFmpeg> {
 }
 
 /**
- * استخراج صدا از ویدیو به صورت WAV mono 16kHz
+ * استخراج صوت بدون نشت لیسنر و با ایمن‌سازی کامل
  */
 export async function extractAudioFromVideo(
-  videoFile: File,
+  videoFile: File | Blob,
   onProgress?: (percent: number) => void
 ): Promise<Blob> {
   const ff = await loadFFmpeg()
 
-  if (onProgress) {
-    ff.on('progress', ({ progress }) => {
-      onProgress(Math.round(progress * 100))
-    })
+  // جایگزینی کالبک جاری بدون افزودن event listener تکراری
+  activeProgressCallback = onProgress || null
+
+  const name = (videoFile as File)?.name || 'input.mov'
+  const ext = name.match(/\.[^.]+$/)?.[0] || '.mov'
+  const inputName = `input_${Date.now()}${ext}`
+  const outputName = `output_${Date.now()}.wav`
+
+  try {
+    await ff.writeFile(inputName, await fetchFile(videoFile))
+
+    await ff.exec([
+      '-i', inputName,
+      '-vn',
+      '-acodec', 'pcm_s16le',
+      '-ar', '16000',
+      '-ac', '1',
+      outputName,
+    ])
+
+    const data = await ff.readFile(outputName)
+
+    await ff.deleteFile(inputName)
+    await ff.deleteFile(outputName)
+
+    return new Blob([data], { type: 'audio/wav' })
+  } finally {
+    activeProgressCallback = null
   }
-
-  const inputName = 'input' + ((videoFile?.name || 'video.mp4').match(/\.[^.]+$/)?.[0] || '.mp4')
-  const outputName = 'output.wav'
-
-  await ff.writeFile(inputName, await fetchFile(videoFile))
-
-  await ff.exec([
-    '-i', inputName,
-    '-vn',
-    '-acodec', 'pcm_s16le',
-    '-ar', '16000',
-    '-ac', '1',
-    outputName,
-  ])
-
-  const data = await ff.readFile(outputName)
-
-  await ff.deleteFile(inputName)
-  await ff.deleteFile(outputName)
-
-  return new Blob([data], { type: 'audio/wav' })
 }
 
 export function isVideoFile(file: File): boolean {
-  return file.type.startsWith('video/')
-}
-
-export function isAudioFile(file: File): boolean {
-  return file.type.startsWith('audio/')
+  return file.type.startsWith('video/') || /\.(mov|mp4|m4v|mkv|webm|avi)$/i.test(file.name)
 }
