@@ -23,8 +23,8 @@ export default async function Header() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-line/60 bg-[#070503]/85 backdrop-blur">
-      <div className="container-app flex h-16 items-center justify-between gap-2 md:gap-4">
-        <Link href="/" className="font-display text-lg font-extrabold tracking-tight whitespace-nowrap">
+      <div className="container-app flex h-14 md:h-16 items-center justify-between gap-1.5 md:gap-4">
+        <Link href="/" className="font-display text-base md:text-lg font-extrabold tracking-tight whitespace-nowrap">
           Prompts<span className="text-gold-bright">FA</span>
         </Link>
 
@@ -70,8 +70,8 @@ export default async function Header() {
           </Link>
         </nav>
 
-        <div className="flex items-center gap-2 md:gap-3">
-          {/* دکمه ارسال پرامپت */}
+        <div className="flex items-center gap-1 md:gap-2">
+          {/* دکمه ارسال پرامپت - فقط دسکتاپ */}
           <Link 
             href="/submit" 
             className="hidden md:inline-flex rounded-lg bg-gold-bright/15 border border-gold-bright/35 px-3 py-1.5 text-sm font-bold text-gold-bright transition-all hover:bg-gold-bright/25 hover:border-gold-bright whitespace-nowrap"
@@ -79,33 +79,36 @@ export default async function Header() {
             ✨ {L(locale, 'ارسال پرامپت', 'Submit')}
           </Link>
 
-          <LocaleSwitcher />
+          {/* LocaleSwitcher - در موبایل کوچک‌تر */}
+          <div className="[&_button]:!text-[10px] [&_button]:!px-2 [&_button]:!py-1 [&_div]:!p-0.5">
+            <LocaleSwitcher />
+          </div>
 
           {session?.user ? (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 md:gap-2">
               {session.user.role === 'ADMIN' && (
-                <Link href="/admin" className="btn-secondary text-xs px-2.5 py-1.5">
+                <Link href="/admin" className="btn-secondary text-[10px] md:text-xs px-1.5 md:px-2.5 py-1 md:py-1.5">
                   Admin
                 </Link>
               )}
 
-              {/* آواتار کاربر با هدایت مستقیم به پروفایل */}
+              {/* آواتار کاربر - در موبایل کوچک‌تر */}
               <Link
                 href="/profile"
-                className="group relative flex items-center gap-2 rounded-full p-0.5 transition-all hover:scale-105"
+                className="group relative flex items-center gap-1 md:gap-2 rounded-full transition-all hover:scale-105"
                 title={session.user.name || 'پروفایل من'}
               >
-                <div className="relative h-9 w-9 overflow-hidden rounded-full border-2 border-gold-bright/50 bg-[#120f09] shadow-[0_0_12px_rgba(212,175,55,0.15)] transition-all group-hover:border-gold-bright group-hover:shadow-[0_0_16px_rgba(212,175,55,0.35)]">
+                <div className="relative h-7 w-7 md:h-9 md:w-9 overflow-hidden rounded-full border-2 border-gold-bright/50 bg-[#120f09] shadow-[0_0_12px_rgba(212,175,55,0.15)] transition-all group-hover:border-gold-bright group-hover:shadow-[0_0_16px_rgba(212,175,55,0.35)]">
                   {session.user.image ? (
                     <Image
                       src={session.user.image}
                       alt={session.user.name || 'User'}
                       fill
-                      sizes="36px"
+                      sizes="(max-width: 768px) 28px, 36px"
                       className="object-cover"
                     />
                   ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#1c160c] to-[#2c2211] font-display text-sm font-bold text-gold-bright">
+                    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#1c160c] to-[#2c2211] font-display text-xs md:text-sm font-bold text-gold-bright">
                       {userInitial}
                     </div>
                   )}
@@ -113,7 +116,7 @@ export default async function Header() {
               </Link>
             </div>
           ) : (
-            <Link href="/login" className="btn-primary text-xs md:text-sm">
+            <Link href="/login" className="btn-primary text-[10px] md:text-sm px-2 md:px-4 py-1 md:py-1.5">
               {L(locale, 'ورود', 'Login')}
             </Link>
           )}

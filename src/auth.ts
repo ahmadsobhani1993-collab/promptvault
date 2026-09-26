@@ -35,17 +35,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: { signIn: '/login' },
   callbacks: {
     async session({ session, user }) {
-      if (session.user) {
+      if (session.user && user) {
         session.user.id = user.id
-        let role = (user as any).role ?? 'USER'
+        
+        const dbUser = await prisma.user.findUnique({ 
+          where: { id: user.id }, 
+          select: { role: true, email: true } 
+        })
+        
+        let role = dbUser?.role ?? 'USER'
+        
         if (
           process.env.ADMIN_EMAIL &&
-          session.user.email === process.env.ADMIN_EMAIL &&
+          dbUser?.email === process.env.ADMIN_EMAIL &&
           role !== 'ADMIN'
         ) {
           await prisma.user.update({ where: { id: user.id }, data: { role: 'ADMIN' } })
           role = 'ADMIN'
         }
+        
         session.user.role = role
       }
       return session
