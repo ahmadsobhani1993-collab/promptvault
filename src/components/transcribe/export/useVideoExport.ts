@@ -103,7 +103,7 @@ export function drawSubtitleOnCanvas(
   ctx.scale(anim.scale, anim.scale)
   ctx.translate(-anchorX, -anchorY)
 
-  // هایلایت کادر پشت زمینه
+  // رسم کادر پس‌زمینه
   const bgOpacity = s.bgOpacity ?? 0.6
   if (seg.hl || bgOpacity > 0) {
     const padX = finalFontSize * 0.6
@@ -191,21 +191,33 @@ export function drawSubtitleOnCanvas(
   ctx.restore()
 }
 
-// تابع تزریق متادیتای مدت‌زمان برای امکان عقب و جلو کردن ویدیو در پلیر
-function injectDurationToBlob(blob: Blob, durationSeconds: number): Promise<Blob> {
-  return new Promise((resolve) => {
-    // اگر متادیتا قابل تزریق نباشد، خود بلاب بازگردانده می‌شود
-    try {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        const buffer = reader.result as ArrayBuffer
-        resolve(new Blob([buffer], { type: blob.type }))
+// اصلاح ساختار هدر EBML به صورت اختصاصی برای WebM
+async function fixWebmDuration(blob: Blob, durationSec: number): Promise<Blob> {
+  try {
+    const buffer = await blob.arrayBuffer()
+    const view = new DataView(buffer)
+    const maxSearch = Math.min(buffer.byteLength - 12, 8192)
+
+    for (let i = 0; i < maxSearch; i++) {
+      // شناسه المنت Duration: 0x44 0x89
+      if (view.getUint8(i) === 0x44 && view.getUint8(i + 1) === 0x89) {
+        const sizeByte = view.getUint8(i + 2)
+        const durationMs = durationSec * 1000
+
+        if (sizeByte === 0x84) {
+          view.setFloat32(i + 3, durationMs, false)
+          return new Blob([buffer], { type: blob.type })
+        } else if (sizeByte === 0x88) {
+          view.setFloat64(i + 3, durationMs, false)
+          return new Blob([buffer], { type: blob.type })
+        }
       }
-      reader.readAsArrayBuffer(blob)
-    } catch {
-      resolve(blob)
     }
-  })
+    console.warn('[VideoExport] EBML Duration header was not found within 8KB window.')
+  } catch (err) {
+    console.error('[VideoExport] Error patching EBML header:', err)
+  }
+  return blob
 }
 
 export function useVideoExport() {
@@ -224,13 +236,8 @@ export function useVideoExport() {
     setProgress(0)
     cancelRef.current = false
 
-    // ساخت المنتی که در صفحه DOM قرار می‌گیرد تا رندر پس‌زمینه توسط مرورگر فریز نشود
     const container = document.createElement('div')
-    container.style.position = 'fixed'
-    container.style.top = '-9999px'
-    container.style.left = '-9999px'
-    container.style.opacity = '0'
-    container.style.pointerEvents = 'none'
+    container.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none;'
 
     const video = document.createElement('video')
     video.src = videoUrl
@@ -241,26 +248,49 @@ export function useVideoExport() {
     document.body.appendChild(container)
 
     try {
-      await new Promise((resolve, reject) => {
-        video.onloadeddata = resolve
-        video.onerror = reject
+      await new Promise<void>((resolve, reject) => {
+        video.onloadedmetadata = () => resolve()
+        video.onerror = () => reject(new Error('خطا در بارگذاری اولیه فایل ویدیویی'))
       })
+
+      // محاسبه مطمئن طول ویدیو با ترفند پرش به بی‌نهایت (برای رفع باگ Infinity / NaN)
+      let duration = video.duration
+      if (!duration || !Number.isFinite(duration) || duration <= 0) {
+        try {
+          video.currentTime = 1e101
+          await new Promise<void>((r) => {
+            const onTime = () => {
+              video.removeEventListener('timeupdate', onTime)
+              r()
+            }
+            video.addEventListener('timeupdate', onTime, { once: true })
+            setTimeout(r, 800)
+          })
+          duration = video.duration
+          video.currentTime = 0
+        } catch {
+          video.currentTime = 0
+        }
+      }
+
+      // پشتیبان در صورت عدم ارائه طول ویدیو توسط مرورگر
+      if (!duration || !Number.isFinite(duration) || duration <= 0) {
+        duration = segments.length > 0 ? Math.max(...segments.map((s) => s.end)) : 10
+      }
 
       const W = video.videoWidth || 1080
       const H = video.videoHeight || 1920
-      const duration = video.duration || 1
 
       const canvas = document.createElement('canvas')
       canvas.width = W
       canvas.height = H
       const ctx = canvas.getContext('2d', { alpha: false })
-      if (!ctx) throw new Error('خطا در بارگذاری Canvas')
+      if (!ctx) throw new Error('عدم امکان مقداردهی Canvas')
 
-      // گرفتن استریم ویدیوی ۳۰ فریم بر ثانیه
       const canvasStream = canvas.captureStream(30)
       let combinedStream = canvasStream
 
-      // دریافت صدای باکیفیت مستقیم
+      // تفکیک ترک صدا و ارسال به رکوردر بدون ایجاد خروجی در بلندگوی کاربر
       let audioCtx: AudioContext | null = null
       try {
         const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
@@ -269,7 +299,6 @@ export function useVideoExport() {
           const source = audioCtx.createMediaElementSource(video)
           const dest = audioCtx.createMediaStreamDestination()
           source.connect(dest)
-          source.connect(audioCtx.destination)
           if (dest.stream.getAudioTracks().length > 0) {
             combinedStream = new MediaStream([
               ...canvasStream.getVideoTracks(),
@@ -278,55 +307,70 @@ export function useVideoExport() {
           }
         }
       } catch (err) {
-        console.warn('Audio capture failed, falling back to silent stream:', err)
+        console.warn('Audio capture warning:', err)
       }
 
-      // تعیین فرمت خروجی با بیت‌ریت پایدار
+      // تنظیم بیت‌ریت بهینه برای کنترل حجم فایل نهایی
+      const optimalBitrate = W * H > 1920 * 1080 ? 3_000_000 : 1_800_000
+
       const mime = MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.42E01E, mp4a.40.2"')
         ? 'video/mp4; codecs="avc1.42E01E, mp4a.40.2"'
         : MediaRecorder.isTypeSupported('video/webm; codecs=vp9,opus')
         ? 'video/webm; codecs=vp9,opus'
         : 'video/webm'
 
+      const isWebm = mime.includes('webm')
+      const ext = isWebm ? 'webm' : 'mp4'
+
       const recorder = new MediaRecorder(combinedStream, {
         mimeType: mime,
-        videoBitsPerSecond: 4_500_000,
+        videoBitsPerSecond: optimalBitrate,
+        audioBitsPerSecond: 128_000,
       })
 
       const chunks: Blob[] = []
       recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data)
+        if (e.data && e.data.size > 0) chunks.push(e.data)
       }
 
       const recorderStopped = new Promise<void>((resolve) => {
         recorder.onstop = () => resolve()
       })
 
-      // رسم اولین فریم قبل از رکورد برای جلوگیری از صفحه سیاه
       video.currentTime = 0
       drawSubtitleOnCanvas(ctx, video, W, H, 0, duration, segments, style)
 
-      recorder.start(1000)
+      recorder.start(500)
       if (audioCtx && audioCtx.state === 'suspended') {
         await audioCtx.resume()
       }
       await video.play()
 
-      // حلقه رندر با گام زمانی مطمئن برای رفع لگ و فریز
+      // حلقه همگام رندر با سقف زمانی قطعی (Hard Timeout) برای جلوگیری از حجم کاذب
       await new Promise<void>((resolve) => {
+        const startTime = Date.now()
+        const maxRealTimeMs = (duration + 2) * 1000
         let lastTime = -1
-        const interval = setInterval(() => {
-          if (cancelRef.current || video.ended || video.currentTime >= duration) {
-            clearInterval(interval)
+
+        const timer = setInterval(() => {
+          const elapsedReal = Date.now() - startTime
+          if (
+            cancelRef.current ||
+            video.ended ||
+            video.currentTime >= duration ||
+            elapsedReal > maxRealTimeMs
+          ) {
+            clearInterval(timer)
             resolve()
             return
           }
+
           if (video.currentTime !== lastTime) {
             drawSubtitleOnCanvas(ctx, video, W, H, video.currentTime, duration, segments, style)
             lastTime = video.currentTime
             setProgress(Math.min(99, Math.round((video.currentTime / duration) * 100)))
           }
-        }, 1000 / 30) // دقیقاً ۳۰ فریم بر ثانیه
+        }, 1000 / 30)
       })
 
       if (!cancelRef.current) {
@@ -335,9 +379,12 @@ export function useVideoExport() {
         await recorderStopped
 
         setProgress(100)
-        const ext = mime.includes('mp4') ? 'mp4' : 'webm'
-        const rawBlob = new Blob(chunks, { type: mime })
-        const finalBlob = await injectDurationToBlob(rawBlob, duration)
+        let finalBlob = new Blob(chunks, { type: mime })
+
+        // اعمال اصلاح متادیتا صرفاً در ساختار WebM
+        if (isWebm) {
+          finalBlob = await fixWebmDuration(finalBlob, duration)
+        }
 
         const url = URL.createObjectURL(finalBlob)
         const a = document.createElement('a')
