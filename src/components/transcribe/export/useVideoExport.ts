@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   getAnimationState,
   resolveAlign,
@@ -8,8 +8,19 @@ import {
   type Seg,
   type Style,
 } from '@/lib/subtitle-studio'
+import { loadFFmpeg } from '@/lib/video-extract'
+
+export type ExportQuality = 'balanced' | 'high'
 
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
+
+// صف انحصاری (Mutex) برای جلوگیری از تداخل عملیات روی یک نمونه Singleton
+let ffmpegLock: Promise<any> = Promise.resolve()
+function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+  const result = ffmpegLock.then(fn, fn)
+  ffmpegLock = result.catch(() => {})
+  return result
+}
 
 export function wrapTextSafe(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const words = text.trim().split(/\s+/).filter(Boolean)
@@ -103,7 +114,6 @@ export function drawSubtitleOnCanvas(
   ctx.scale(anim.scale, anim.scale)
   ctx.translate(-anchorX, -anchorY)
 
-  // رسم کادر پس‌زمینه
   const bgOpacity = s.bgOpacity ?? 0.6
   if (seg.hl || bgOpacity > 0) {
     const padX = finalFontSize * 0.6
@@ -191,49 +201,92 @@ export function drawSubtitleOnCanvas(
   ctx.restore()
 }
 
-// اصلاح ساختار هدر EBML به صورت اختصاصی برای WebM
-async function fixWebmDuration(blob: Blob, durationSec: number): Promise<Blob> {
+async function extractAudioSafe(
+  ff: any,
+  inputName: string,
+  outputName: string,
+  limitDuration?: number
+): Promise<boolean> {
+  const durationArgs = limitDuration ? ['-t', String(limitDuration)] : []
   try {
-    const buffer = await blob.arrayBuffer()
-    const view = new DataView(buffer)
-    const maxSearch = Math.min(buffer.byteLength - 12, 8192)
-
-    for (let i = 0; i < maxSearch; i++) {
-      // شناسه المنت Duration: 0x44 0x89
-      if (view.getUint8(i) === 0x44 && view.getUint8(i + 1) === 0x89) {
-        const sizeByte = view.getUint8(i + 2)
-        const durationMs = durationSec * 1000
-
-        if (sizeByte === 0x84) {
-          view.setFloat32(i + 3, durationMs, false)
-          return new Blob([buffer], { type: blob.type })
-        } else if (sizeByte === 0x88) {
-          view.setFloat64(i + 3, durationMs, false)
-          return new Blob([buffer], { type: blob.type })
-        }
-      }
-    }
-    console.warn('[VideoExport] EBML Duration header was not found within 8KB window.')
+    await ff.exec(['-i', inputName, '-vn', '-c:a', 'copy', ...durationArgs, outputName])
+    return true
   } catch (err) {
-    console.error('[VideoExport] Error patching EBML header:', err)
+    console.warn('[AudioPrep] Stream-copy failed (likely PCM in MOV), falling back to AAC:', err)
+    try {
+      await ff.exec(['-i', inputName, '-vn', '-c:a', 'aac', '-b:a', '192k', ...durationArgs, outputName])
+      return true
+    } catch (fallbackErr) {
+      console.error('[AudioPrep] Audio fallback failed:', fallbackErr)
+      return false
+    }
   }
-  return blob
 }
 
-export function useVideoExport() {
+export function useVideoExport(sourceFile?: File | Blob | null) {
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [stageText, setStageText] = useState('')
   const cancelRef = useRef(false)
+  const preppedAudioRef = useRef<{ name: string; ready: boolean } | null>(null)
+
+  const prepAudioInBackground = useCallback(async () => {
+    if (!sourceFile || preppedAudioRef.current?.ready) return
+    try {
+      await runExclusive(async () => {
+        const ff = await loadFFmpeg()
+        const ext = (sourceFile as File)?.name?.match(/\.[^.]+$/)?.[0] || '.mp4'
+        const inName = `prep_in_${Date.now()}${ext}`
+        const outAudio = `prep_audio_${Date.now()}.m4a`
+
+        await ff.writeFile(inName, new Uint8Array(await sourceFile.arrayBuffer()))
+        const success = await extractAudioSafe(ff, inName, outAudio)
+        await ff.deleteFile(inName)
+
+        if (success) {
+          preppedAudioRef.current = { name: outAudio, ready: true }
+        }
+      })
+    } catch (e) {
+      console.warn('[Background Audio Prep Mutex Warn]', e)
+    }
+  }, [sourceFile])
+
+  // رفع باگ ریست نشدن preppedAudioRef هنگام تعویض فایل منبع
+  useEffect(() => {
+    prepAudioInBackground()
+    return () => {
+      const stale = preppedAudioRef.current
+      if (stale?.ready) {
+        preppedAudioRef.current = null
+        runExclusive(async () => {
+          const ff = await loadFFmpeg()
+          await ff.deleteFile(stale.name).catch(() => {})
+        })
+      }
+    }
+  }, [prepAudioInBackground])
 
   const exportVideo = async (
     videoUrl: string,
     segments: Seg[],
     style: Style,
-    baseName: string = 'video'
+    baseName: string = 'video',
+    quality: ExportQuality = 'balanced'
   ) => {
     if (!videoUrl || exporting) return
+
+    // اخطار به کاربر در صورتی که فایل صدا موجود نباشد
+    if (!sourceFile && !preppedAudioRef.current?.ready) {
+      const proceed = window.confirm(
+        'فایل صوتی منبع در دسترس نیست و ویدیو بدون صدا خروجی گرفته خواهد شد. آیا مایل به ادامه هستید؟'
+      )
+      if (!proceed) return
+    }
+
     setExporting(true)
     setProgress(0)
+    setStageText('آماده‌سازی رندر ویدیو...')
     cancelRef.current = false
 
     const container = document.createElement('div')
@@ -247,13 +300,16 @@ export function useVideoExport() {
     container.appendChild(video)
     document.body.appendChild(container)
 
+    let canvasStream: MediaStream | null = null
+    let recorder: MediaRecorder | null = null
+
     try {
       await new Promise<void>((resolve, reject) => {
         video.onloadedmetadata = () => resolve()
-        video.onerror = () => reject(new Error('خطا در بارگذاری اولیه فایل ویدیویی'))
+        video.onerror = () => reject(new Error('خطا در خواندن مشخصات ویدیو'))
       })
 
-      // محاسبه مطمئن طول ویدیو با ترفند پرش به بی‌نهایت (برای رفع باگ Infinity / NaN)
+      // محاسبه مطمئن طول ویدیو
       let duration = video.duration
       if (!duration || !Number.isFinite(duration) || duration <= 0) {
         try {
@@ -273,9 +329,23 @@ export function useVideoExport() {
         }
       }
 
-      // پشتیبان در صورت عدم ارائه طول ویدیو توسط مرورگر
       if (!duration || !Number.isFinite(duration) || duration <= 0) {
         duration = segments.length > 0 ? Math.max(...segments.map((s) => s.end)) : 10
+      }
+
+      // تشخیص فریم‌ریت منبع
+      let targetFps = 30
+      try {
+        const probeStream = (video as any).captureStream?.()
+        const track = probeStream?.getVideoTracks?.()[0]
+        const settings = track?.getSettings?.()
+        if (settings?.frameRate && settings.frameRate > 45) {
+          targetFps = 60
+        }
+        track?.stop()
+        probeStream?.getTracks().forEach((t: MediaStreamTrack) => t.stop())
+      } catch {
+        targetFps = 30
       }
 
       const W = video.videoWidth || 1080
@@ -284,138 +354,195 @@ export function useVideoExport() {
       const canvas = document.createElement('canvas')
       canvas.width = W
       canvas.height = H
-      const ctx = canvas.getContext('2d', { alpha: false })
-      if (!ctx) throw new Error('عدم امکان مقداردهی Canvas')
+      const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true })
+      if (!ctx) throw new Error('امکان ایجاد بافت Canvas وجود ندارد')
 
-      const canvasStream = canvas.captureStream(30)
-      let combinedStream = canvasStream
+      canvasStream = canvas.captureStream(targetFps)
 
-      // تفکیک ترک صدا و ارسال به رکوردر بدون ایجاد خروجی در بلندگوی کاربر
-      let audioCtx: AudioContext | null = null
-      try {
-        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
-        if (AudioCtx) {
-          audioCtx = new AudioCtx()
-          const source = audioCtx.createMediaElementSource(video)
-          const dest = audioCtx.createMediaStreamDestination()
-          source.connect(dest)
-          if (dest.stream.getAudioTracks().length > 0) {
-            combinedStream = new MediaStream([
-              ...canvasStream.getVideoTracks(),
-              ...dest.stream.getAudioTracks(),
-            ])
-          }
-        }
-      } catch (err) {
-        console.warn('Audio capture warning:', err)
-      }
-
-      // تنظیم بیت‌ریت بهینه برای کنترل حجم فایل نهایی
-      const optimalBitrate = W * H > 1920 * 1080 ? 3_000_000 : 1_800_000
-
-      const mime = MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.42E01E, mp4a.40.2"')
-        ? 'video/mp4; codecs="avc1.42E01E, mp4a.40.2"'
-        : MediaRecorder.isTypeSupported('video/webm; codecs=vp9,opus')
-        ? 'video/webm; codecs=vp9,opus'
+      const mime = MediaRecorder.isTypeSupported('video/webm; codecs=vp9')
+        ? 'video/webm; codecs=vp9'
+        : MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.640028"')
+        ? 'video/mp4; codecs="avc1.640028"'
         : 'video/webm'
 
-      const isWebm = mime.includes('webm')
-      const ext = isWebm ? 'webm' : 'mp4'
+      // مدیریت داینامیک بیت‌ریت میانی برای جلوگیری از OOM
+      const intermediateBitrate = duration > 120 ? 9_000_000 : 15_000_000
 
-      const recorder = new MediaRecorder(combinedStream, {
+      recorder = new MediaRecorder(canvasStream, {
         mimeType: mime,
-        videoBitsPerSecond: optimalBitrate,
-        audioBitsPerSecond: 128_000,
+        videoBitsPerSecond: intermediateBitrate,
       })
 
-      const chunks: Blob[] = []
+      const rawChunks: Blob[] = []
       recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) chunks.push(e.data)
+        if (e.data?.size > 0) rawChunks.push(e.data)
       }
 
       const recorderStopped = new Promise<void>((resolve) => {
+        if (!recorder) return resolve()
         recorder.onstop = () => resolve()
       })
 
       video.currentTime = 0
       drawSubtitleOnCanvas(ctx, video, W, H, 0, duration, segments, style)
 
-      recorder.start(500)
-      if (audioCtx && audioCtx.state === 'suspended') {
-        await audioCtx.resume()
-      }
+      recorder.start(250)
       await video.play()
 
-      // حلقه همگام رندر با سقف زمانی قطعی (Hard Timeout) برای جلوگیری از حجم کاذب
+      // فاز ۱: رندر فریم‌به‌فریم کانویس
       await new Promise<void>((resolve) => {
         const startTime = Date.now()
         const maxRealTimeMs = (duration + 2) * 1000
-        let lastTime = -1
 
-        const timer = setInterval(() => {
-          const elapsedReal = Date.now() - startTime
-          if (
-            cancelRef.current ||
-            video.ended ||
-            video.currentTime >= duration ||
-            elapsedReal > maxRealTimeMs
-          ) {
-            clearInterval(timer)
+        const onFrame = (_now: DOMHighResTimeStamp, metadata: { mediaTime: number }) => {
+          if (cancelRef.current || video.ended || metadata.mediaTime >= duration || (Date.now() - startTime) > maxRealTimeMs) {
             resolve()
             return
           }
+          drawSubtitleOnCanvas(ctx, video, W, H, metadata.mediaTime, duration, segments, style)
+          const p = Math.min(50, Math.round((metadata.mediaTime / duration) * 50))
+          setProgress(p)
+          setStageText(`رندر لایه‌ها: ${Math.round((p / 50) * 100)}%`)
 
-          if (video.currentTime !== lastTime) {
-            drawSubtitleOnCanvas(ctx, video, W, H, video.currentTime, duration, segments, style)
-            lastTime = video.currentTime
-            setProgress(Math.min(99, Math.round((video.currentTime / duration) * 100)))
+          if ('requestVideoFrameCallback' in video) {
+            video.requestVideoFrameCallback(onFrame)
           }
-        }, 1000 / 30)
-      })
-
-      if (!cancelRef.current) {
-        recorder.stop()
-        video.pause()
-        await recorderStopped
-
-        setProgress(100)
-        let finalBlob = new Blob(chunks, { type: mime })
-
-        // اعمال اصلاح متادیتا صرفاً در ساختار WebM
-        if (isWebm) {
-          finalBlob = await fixWebmDuration(finalBlob, duration)
         }
 
-        const url = URL.createObjectURL(finalBlob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `${baseName}.subtitled.${ext}`
-        document.body.appendChild(a)
-        a.click()
-        setTimeout(() => {
-          document.body.removeChild(a)
-          URL.revokeObjectURL(url)
-        }, 6000)
+        if ('requestVideoFrameCallback' in video) {
+          video.requestVideoFrameCallback(onFrame)
+        } else {
+          const timer = setInterval(() => {
+            if (cancelRef.current || video.ended || video.currentTime >= duration || (Date.now() - startTime) > maxRealTimeMs) {
+              clearInterval(timer)
+              resolve()
+              return
+            }
+            drawSubtitleOnCanvas(ctx, video, W, H, video.currentTime, duration, segments, style)
+            const p = Math.min(50, Math.round((video.currentTime / duration) * 50))
+            setProgress(p)
+            setStageText(`رندر لایه‌ها: ${Math.round((p / 50) * 100)}%`)
+          }, 1000 / targetFps)
+        }
+      })
+
+      // بررسی لغو در پایان مرحله کانویس و آزادسازی فوری مدیا
+      if (cancelRef.current) {
+        try { recorder.stop() } catch {}
+        video.pause()
+        canvasStream.getTracks().forEach((t) => t.stop())
+        return
       }
+
+      recorder.stop()
+      video.pause()
+      await recorderStopped
+
+      // بررسی مجدد لغو دقیقاً قبل از ورود به پردازش سنگین FFmpeg
+      if (cancelRef.current) return
+
+      // فاز ۲: فشرده‌سازی هوشمند CRF و ادغام صدا
+      setStageText('فشرده‌سازی هوشمند CRF و ادغام صدا...')
+      setProgress(55)
+
+      const finalBlob = await runExclusive(async () => {
+        const ff = await loadFFmpeg()
+        const rawBlob = new Blob(rawChunks, { type: mime })
+        const rawVideoName = `raw_${Date.now()}.webm`
+        const finalOutputName = `final_${Date.now()}.mp4`
+
+        await ff.writeFile(rawVideoName, new Uint8Array(await rawBlob.arrayBuffer()))
+
+        let audioFileToUse = preppedAudioRef.current?.name || null
+
+        // استخراج تاخیری صدا در صورتی که آماده نبوده باشد
+        if (!audioFileToUse && sourceFile) {
+          const inExt = (sourceFile as File)?.name?.match(/\.[^.]+$/)?.[0] || '.mp4'
+          const tmpSrc = `src_late_${Date.now()}${inExt}`
+          const tmpOut = `audio_late_${Date.now()}.m4a`
+
+          await ff.writeFile(tmpSrc, new Uint8Array(await sourceFile.arrayBuffer()))
+          const ok = await extractAudioSafe(ff, tmpSrc, tmpOut, duration)
+          await ff.deleteFile(tmpSrc)
+
+          if (ok) {
+            audioFileToUse = tmpOut
+          }
+        }
+
+        const audioArgs = audioFileToUse ? ['-i', audioFileToUse, '-c:a', 'copy'] : []
+        const crfValue = quality === 'high' ? '19' : '23'
+        const presetValue = quality === 'high' ? 'medium' : 'veryfast'
+
+        await ff.exec([
+          '-i', rawVideoName,
+          ...audioArgs,
+          '-c:v', 'libx264',
+          '-crf', crfValue,
+          '-preset', presetValue,
+          '-shortest',
+          finalOutputName,
+        ])
+
+        setProgress(95)
+        const finalData = await ff.readFile(finalOutputName)
+
+        // پاکسازی فایل‌های واسط روی MEMFS
+        await ff.deleteFile(rawVideoName)
+        await ff.deleteFile(finalOutputName)
+        if (audioFileToUse && audioFileToUse !== preppedAudioRef.current?.name) {
+          await ff.deleteFile(audioFileToUse).catch(() => {})
+        }
+
+        return new Blob([finalData], { type: 'video/mp4' })
+      })
+
+      // 🔴 رفع باگ لغو در مرحله FFmpeg: جلوگیری قطعی از شروع دانلود
+      if (cancelRef.current) {
+        return
+      }
+
+      setProgress(100)
+      setStageText('آماده دانلود!')
+
+      const url = URL.createObjectURL(finalBlob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${baseName}.subtitled.mp4`
+      document.body.appendChild(a)
+      a.click()
+      setTimeout(() => {
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      }, 5000)
+
     } catch (e: any) {
-      console.error('Export Error:', e)
-      alert('خطا در رندر ویدیو: ' + (e?.message || 'مشکل در خروجی'))
+      if (!cancelRef.current) {
+        console.error('[Export Error]', e)
+        alert('خطا در رندر خروجی: ' + (e?.message || 'عملیات ناموفق بود'))
+      }
     } finally {
+      if (canvasStream) {
+        canvasStream.getTracks().forEach((t) => t.stop())
+      }
       if (document.body.contains(container)) {
         document.body.removeChild(container)
       }
       setExporting(false)
+      setStageText('')
     }
   }
 
   const cancelExport = () => {
     cancelRef.current = true
     setExporting(false)
+    setStageText('')
   }
 
   return {
     exporting,
     progress,
+    stageText,
     exportVideo,
     cancelExport,
   }
