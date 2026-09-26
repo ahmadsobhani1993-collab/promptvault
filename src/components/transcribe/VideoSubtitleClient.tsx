@@ -1,5 +1,4 @@
 ﻿'use client'
-
 import Link from 'next/link'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useAuth } from '@/lib/use-auth'
@@ -7,8 +6,8 @@ import { useVideoTranscribe } from '@/lib/use-video-transcribe'
 import { StudioSegment, StudioStyleConfig, getStoredStyle, saveStoredStyle } from '@/lib/studio/unified-style'
 import { renderStudioFrame, clampCanvasDimensions } from '@/lib/studio/universal-renderer'
 import { ensureFontLoaded } from '@/lib/studio/font-loader'
-import TemplatePanel from './studio/panels/TemplatePanel'
-import SubtitleVideoExport from './transcribe/SubtitleVideoExport'
+import TemplatePanel from '../studio/panels/TemplatePanel'
+import SubtitleVideoExport from './SubtitleVideoExport'
 
 const MAX_FILE_SIZE_MB = 250
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
@@ -17,7 +16,7 @@ export default function VideoSubtitleClient() {
   const auth = useAuth()
   const [videoUrl, setVideoUrl] = useState('')
   const [fileName, setFileName] = useState('')
-  const [sourceFile, setSourceFile] = useState<File | null>(null) // ← فایل اصلی برای استخراج صدا
+  const [sourceFile, setSourceFile] = useState<File | null>(null)
   const [speed, setSpeed] = useState<1 | 2 | 4 | 8>(4)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -27,7 +26,7 @@ export default function VideoSubtitleClient() {
   const [selectedSegId, setSelectedSegId] = useState<string | null>(null)
 
   const { status, progress, busy, segments, setSegments, run, stop } = useVideoTranscribe()
-  
+
   const [styleConfig, setStyleConfig] = useState<StudioStyleConfig>(() => getStoredStyle())
   const updateStyle = (patch: Partial<StudioStyleConfig>) => {
     setStyleConfig((prev) => {
@@ -54,19 +53,16 @@ export default function VideoSubtitleClient() {
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    
     const isMov = file.name.toLowerCase().endsWith('.mov')
     if (!file.type.startsWith('video/') && !isMov) return
-    
     if (file.size > MAX_FILE_SIZE_BYTES) {
       const sizeInMB = (file.size / (1024 * 1024)).toFixed(1)
-      alert(`❌ حجم فایل انتخابی (${sizeInMB} مگابایت) بیش از سقف مجاز ۲۵۰ مگابایت است.`)
+      alert(`❌ حجم فایل انتخابی (${sizeInMB} مگابایت) بیش از سقف مجاز ۵۰ مگابایت است.`)
       e.target.value = ''
       return
     }
-
     setFileName(file.name)
-    setSourceFile(file) // ← ذخیره فایل اصلی برای FFmpeg
+    setSourceFile(file)
     setVideoUrl(URL.createObjectURL(file))
     await run(file, speed)
   }
@@ -78,12 +74,10 @@ export default function VideoSubtitleClient() {
     const handleLoaded = () => setDuration(video.duration || 0)
     const handlePlay = () => setIsPlaying(true)
     const handlePause = () => setIsPlaying(false)
-    
     video.addEventListener('timeupdate', handleTimeUpdate)
     video.addEventListener('loadedmetadata', handleLoaded)
     video.addEventListener('play', handlePlay)
     video.addEventListener('pause', handlePause)
-    
     return () => {
       video.removeEventListener('timeupdate', handleTimeUpdate)
       video.removeEventListener('loadedmetadata', handleLoaded)
@@ -96,24 +90,19 @@ export default function VideoSubtitleClient() {
     const video = videoRef.current
     const canvas = canvasRef.current
     if (!video || !canvas || video.readyState < 2) return
-    
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-
     let targetW = video.videoWidth || 1080
     let targetH = video.videoHeight || 1920
-    
     if (styleConfig.aspectRatio === '9:16') { targetW = 1080; targetH = 1920 } 
     else if (styleConfig.aspectRatio === '16:9') { targetW = 1920; targetH = 1080 } 
     else if (styleConfig.aspectRatio === '1:1') { targetW = 1080; targetH = 1080 } 
     else if (styleConfig.aspectRatio === '4:5') { targetW = 1080; targetH = 1350 }
-
     const clamped = clampCanvasDimensions(targetW, targetH, 1920)
     if (canvas.width !== clamped.width || canvas.height !== clamped.height) {
       canvas.width = clamped.width
       canvas.height = clamped.height
     }
-
     renderStudioFrame({
       ctx,
       canvasWidth: clamped.width,
@@ -194,7 +183,6 @@ export default function VideoSubtitleClient() {
     <div className="min-h-screen bg-[#070605] text-white flex flex-col select-none" dir="rtl">
       <video ref={videoRef} src={videoUrl} className="hidden" playsInline />
       
-      {/* ۱. هدر اصلی استودیو */}
       <header className="h-14 border-b border-stone-800 bg-[#110f0d] px-4 flex items-center justify-between z-30">
         <div className="flex items-center gap-3">
           <Link href="/" className="flex h-9 w-9 items-center justify-center rounded-xl bg-stone-900 border border-stone-800 text-stone-400 hover:text-white">✕</Link>
@@ -228,7 +216,6 @@ export default function VideoSubtitleClient() {
         </div>
       </header>
 
-      {/* ۲. نوار آپلود و ترنسکرایب در صورت نبود ویدیو */}
       {!videoUrl ? (
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
           <div className="max-w-md w-full rounded-3xl border border-stone-800 bg-[#12100d] p-8 shadow-2xl">
@@ -258,9 +245,7 @@ export default function VideoSubtitleClient() {
           </div>
         </div>
       ) : (
-        /* ۳. چیدمان کاملاً ریسپانسیو */
         <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
-          {/* ستون ویدیو و پلیر */}
           <div className="flex-1 flex flex-col bg-black items-center justify-center p-2 sm:p-4 relative overflow-hidden">
             {busy && (
               <div className="absolute top-3 inset-x-4 max-w-md mx-auto z-20 bg-stone-900/90 border border-amber-500/40 p-3 rounded-2xl backdrop-blur-md">
@@ -304,7 +289,6 @@ export default function VideoSubtitleClient() {
             </div>
           </div>
 
-          {/* ستون یا پنل زیرنویس‌ها */}
           <div className="h-[40vh] md:h-auto md:w-[380px] lg:w-[420px] flex flex-col bg-[#0e0d0b] border-t md:border-t-0 md:border-r border-stone-800 overflow-hidden shrink-0">
             <div className="p-3 border-b border-stone-800 flex items-center justify-between bg-[#12100d]">
               <span className="text-xs font-bold text-white">کپشن‌های هوشمند ({segments.length})</span>
@@ -378,7 +362,6 @@ export default function VideoSubtitleClient() {
             </div>
           </div>
 
-          {/* پنل مودال استایل */}
           {showStylePanel && (
             <div className="fixed md:absolute inset-0 md:inset-auto md:left-0 md:top-0 md:bottom-0 md:w-84 bg-[#12100d] border-r border-stone-800 shadow-2xl z-50 overflow-y-auto">
               <TemplatePanel
@@ -391,7 +374,6 @@ export default function VideoSubtitleClient() {
         </div>
       )}
 
-      {/* مودال خروجی */}
       {showExportModal && (
         <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
           <div className="w-full max-w-lg rounded-3xl bg-[#14120f] border border-stone-800 p-6 shadow-2xl">
@@ -401,7 +383,7 @@ export default function VideoSubtitleClient() {
             </div>
             <SubtitleVideoExport
               videoUrl={videoUrl}
-              sourceFile={sourceFile} // ← فایل اصلی برای استخراج صدای باکیفیت
+              sourceFile={sourceFile}
               segments={segments as any}
               styleConfig={styleConfig}
               baseName={baseName}
