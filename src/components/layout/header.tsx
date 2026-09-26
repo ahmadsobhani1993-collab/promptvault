@@ -1,135 +1,171 @@
 import Link from 'next/link'
-import { auth } from '@/auth'
+import Image from 'next/image'
 import { cookies } from 'next/headers'
-import { L, getCategories } from '@/lib/data'
+import { auth } from '@/auth'
 import { type Locale } from '@/lib/i18n'
+import { getCategories, L } from '@/lib/data'
+import LocaleSwitcher from '@/components/locale-switcher'
 import MobileMenu from '@/components/mobile-menu'
-import NotifBell from '@/components/notif-bell'
-import ToolsMenu from '@/components/layout/ToolsMenu'
-import LangSwitch from '@/components/layout/LangSwitch'
 
-export default async function Header({ locale: propLocale }: { locale?: Locale }) {
+export default async function Header() {
   const cookieStore = await cookies()
-  const locale: Locale = propLocale || (cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa')
+  const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
   const session = await auth()
   const categories = await getCategories()
-  const isAdmin = session?.user?.role === 'ADMIN'
 
   const mobileLinks = [
     { href: '/explore', label: L(locale, 'کاوش', 'Explore') },
-    { href: '/categories', label: L(locale, 'دسته‌بندی‌ها', 'Categories') },
-    { href: '/blog', label: L(locale, 'وبلاگ', 'Blog') },
+    { href: '/blog', label: L(locale, 'مقالات', 'Blog') },
     { href: '/submit', label: L(locale, 'ارسال پرامپت', 'Submit') },
-    { href: '/transcribe', label: L(locale, '🎙 تبدیل صوت به متن', '🎙 Transcribe') },
-    { href: '/subtitle', label: L(locale, '🎬 استودیو زیرنویس', '🎬 Subtitle Studio') },
-    { href: '/audio-enhancer', label: L(locale, '🔊 تقویت و شفاف‌ساز صدا', '🔊 Audio Enhancer') },
   ]
 
-  if (session?.user) {
-    mobileLinks.push({ href: '/account', label: L(locale, 'حساب کاربری', 'Account') })
-  }
-
-  const userImage = session?.user?.image
-  const userName = session?.user?.name || session?.user?.email || 'کاربر'
-  const userInitial = userName.charAt(0).toUpperCase()
+  const userInitial = session?.user?.name ? session.user.name.charAt(0).toUpperCase() : 'U'
 
   return (
-    <header className="sticky top-0 z-40 border-b border-line/60 bg-[#070503]/85 backdrop-blur">
-      <div className="container-app flex h-16 items-center justify-between gap-4">
-
-        {/* لوگو */}
-        <div className="flex items-center gap-3">
-          <MobileMenu links={mobileLinks} admin={!!isAdmin} isLoggedIn={!!session?.user} />
-          <Link href={locale === 'en' ? '/en' : '/'} className="font-display text-lg font-extrabold tracking-tight whitespace-nowrap">
+    <>
+      {/* ================= هدر موبایل ================= */}
+      <header className="sticky top-0 z-40 border-b border-line/60 bg-[#070503]/95 backdrop-blur md:hidden">
+        <div className="container-app flex h-14 items-center justify-between gap-2 px-3">
+          {/* لوگو */}
+          <Link href="/" className="font-display text-base font-extrabold tracking-tight whitespace-nowrap">
             Prompts<span className="text-gold-bright">FA</span>
           </Link>
-        </div>
 
-        {/* منوی ناوبری دسکتاپ */}
-        <nav className="hidden items-center gap-6 text-sm text-ink-muted lg:flex">
-          <Link href={locale === 'en' ? '/en/explore' : '/explore'} className="transition-colors hover:text-gold-bright whitespace-nowrap">
-            {L(locale, 'کاوش', 'Explore')}
+          {/* آیتم‌های سمت چپ موبایل */}
+          <div className="flex items-center gap-2">
+            <LocaleSwitcher />
+
+            {session?.user ? (
+              <Link
+                href="/account"
+                className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full border-2 border-gold-bright/50 bg-[#120f09] shadow-[0_0_8px_rgba(212,175,55,0.2)]"
+                title={session.user.name || 'پروفایل'}
+              >
+                {session.user.image ? (
+                  <Image
+                    src={session.user.image}
+                    alt={session.user.name || 'User'}
+                    fill
+                    sizes="32px"
+                    className="object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#1c160c] to-[#2c2211] font-display text-xs font-bold text-gold-bright">
+                    {userInitial}
+                  </div>
+                )}
+              </Link>
+            ) : (
+              <Link href="/login" className="btn-primary text-[10px] px-3 py-1.5">
+                {L(locale, 'ورود', 'Login')}
+              </Link>
+            )}
+
+            <MobileMenu
+              links={mobileLinks}
+              admin={session?.user?.role === 'ADMIN'}
+              isLoggedIn={!!session?.user}
+            />
+          </div>
+        </div>
+      </header>
+
+      {/* ================= هدر دسکتاپ ================= */}
+      <header className="sticky top-0 z-40 border-b border-line/60 bg-[#070503]/85 backdrop-blur hidden md:block">
+        <div className="container-app flex h-16 items-center justify-between gap-4">
+          <Link href="/" className="font-display text-lg font-extrabold tracking-tight whitespace-nowrap">
+            Prompts<span className="text-gold-bright">FA</span>
           </Link>
 
-          {/* Categories Dropdown */}
-          <div className="group relative">
-            <button type="button" className="transition-colors hover:text-gold-bright whitespace-nowrap flex items-center gap-1">
-              {L(locale, 'دسته‌بندی‌ها', 'Categories')} <span className="text-xs">▾</span>
-            </button>
-            <div className={`invisible absolute top-full z-50 w-[26rem] pt-3 opacity-0 transition-all group-hover:visible group-hover:opacity-100 ${
-              locale === 'fa' ? 'right-0' : 'left-0'
-            }`}>
-              <div className="card grid grid-cols-2 gap-3 p-4 bg-[#120f0c] border border-line/80 rounded-2xl shadow-2xl">
-                {categories.map((c) => (
-                  <div key={c.id} className="rounded-xl border border-line/40 bg-elevated/40 p-2.5 transition-colors hover:border-gold/40">
-                    <Link href={(locale === 'en' ? '/en/categories/' : '/categories/') + c.slug} className="flex items-center gap-2 text-xs font-bold text-ink transition-colors hover:text-gold-bright">
-                      <span className="text-gold-bright [&_svg]:h-4 [&_svg]:w-4">
-                        <CategoryIcon name={c.icon} />
-                      </span>
-                      {L(locale, c.nameFa, c.nameEn)}
-                    </Link>
-                  </div>
-                ))}
+          <nav className="flex items-center gap-6 text-sm text-ink-muted">
+            <Link href="/explore" className="transition-colors hover:text-gold-bright whitespace-nowrap">
+              {L(locale, 'کاوش', 'Explore')}
+            </Link>
+
+            <div className="group relative">
+              <button type="button" className="transition-colors hover:text-gold-bright whitespace-nowrap">
+                {L(locale, 'دسته‌بندی‌ها', 'Categories')} ▾
+              </button>
+              <div className="invisible absolute left-1/2 top-full z-50 w-80 -translate-x-1/2 pt-3 opacity-0 transition-all group-hover:visible group-hover:opacity-100">
+                <div className="card max-h-[70vh] overflow-auto p-4">
+                  {categories.map((c) => (
+                    <div key={c.id} className="mb-4 last:mb-0">
+                      <Link
+                        href={'/categories/' + c.slug}
+                        className="block rounded-lg px-3 py-1.5 text-sm font-bold text-ink transition-colors hover:bg-elevated hover:text-gold-bright"
+                      >
+                        {c.icon} {L(locale, c.nameFa, c.nameEn)}
+                      </Link>
+                      <div className="mt-2 flex flex-wrap gap-1.5 px-3">
+                        {c.subs.map((s) => (
+                          <Link
+                            key={s.id}
+                            href={'/categories/' + c.slug + '?sub=' + s.slug}
+                            className="rounded-full border border-line bg-elevated px-2.5 py-1 text-[10px] text-ink-muted transition-colors hover:border-gold/50 hover:text-gold-bright"
+                          >
+                            {L(locale, s.fa, s.en)}
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
 
-          <Link href={locale === 'en' ? '/en/blog' : '/blog'} className="transition-colors hover:text-gold-bright whitespace-nowrap">
-            {L(locale, 'وبلاگ', 'Blog')}
-          </Link>
+            <Link href="/blog" className="transition-colors hover:text-gold-bright whitespace-nowrap">
+              {L(locale, 'مقالات', 'Blog')}
+            </Link>
+          </nav>
 
-          {/* منوی ابزارها */}
-          <ToolsMenu locale={locale} />
-        </nav>
-
-        {/* دکمه‌های عملیاتی و سوییچر زبان */}
-        <div className="flex items-center gap-3">
-          <LangSwitch currentLocale={locale} />
-
-          <NotifBell />
-
-          {/* آواتار دایره‌ای شیک متصل به صفحه حساب */}
-          {session?.user ? (
-            <Link
-              href={locale === 'en' ? '/en/account' : '/account'}
-              title={userName}
-              className="relative hidden md:flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border-2 border-gold/50 bg-[#15120e] shadow-md transition-all hover:scale-105 hover:border-gold-bright"
+          <div className="flex items-center gap-3">
+            <Link 
+              href="/submit" 
+              className="inline-flex rounded-lg bg-gold-bright/15 border border-gold-bright/35 px-4 py-2 text-sm font-bold text-gold-bright transition-all hover:bg-gold-bright/25 hover:border-gold-bright whitespace-nowrap"
             >
-              {userImage ? (
-                <img src={userImage} alt={userName} className="h-full w-full object-cover" />
-              ) : (
-                <span className="font-display text-xs font-bold text-gold-bright">{userInitial}</span>
-              )}
+              ✨ {L(locale, 'ارسال پرامپت', 'Submit')}
             </Link>
-          ) : (
-            <Link href={locale === 'en' ? '/en/login' : '/login'} className="btn-secondary hidden md:inline-flex text-xs">
-              {L(locale, 'ورود', 'Login')}
-            </Link>
-          )}
 
-          <Link href={locale === 'en' ? '/en/submit' : '/submit'} className="btn-primary hidden md:inline-flex text-xs whitespace-nowrap">
-            ✨ {L(locale, 'ارسال پرامپت', 'Submit')}
-          </Link>
+            <LocaleSwitcher />
 
-          {session?.user && (
-            <Link href="/api/auth/signout" className="btn-secondary hidden lg:inline-flex text-xs">
-              {L(locale, 'خروج', 'Logout')}
-            </Link>
-          )}
+            {session?.user ? (
+              <div className="flex items-center gap-3">
+                {session.user.role === 'ADMIN' && (
+                  <Link href="/admin" className="btn-secondary text-xs px-3 py-1.5">
+                    Admin
+                  </Link>
+                )}
+
+                <Link
+                  href="/account"
+                  className="group relative flex items-center gap-2 rounded-full p-0.5 transition-all hover:scale-105"
+                  title={session.user.name || 'پروفایل من'}
+                >
+                  <div className="relative h-9 w-9 overflow-hidden rounded-full border-2 border-gold-bright/50 bg-[#120f09] shadow-[0_0_12px_rgba(212,175,55,0.15)] transition-all group-hover:border-gold-bright group-hover:shadow-[0_0_16px_rgba(212,175,55,0.35)]">
+                    {session.user.image ? (
+                      <Image
+                        src={session.user.image}
+                        alt={session.user.name || 'User'}
+                        fill
+                        sizes="36px"
+                        className="object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#1c160c] to-[#2c2211] font-display text-sm font-bold text-gold-bright">
+                        {userInitial}
+                      </div>
+                    )}
+                  </div>
+                </Link>
+              </div>
+            ) : (
+              <Link href="/login" className="btn-primary text-sm">
+                {L(locale, 'ورود', 'Login')}
+              </Link>
+            )}
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
+    </>
   )
-}
-
-function CategoryIcon({ name }: { name: string }) {
-  const icons: Record<string, JSX.Element> = {
-    image: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>,
-    code: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg>,
-    music: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>,
-    video: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>,
-    writing: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>,
-    productivity: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M2 12h20" /></svg>,
-  }
-  return icons[name] || icons.image
 }
