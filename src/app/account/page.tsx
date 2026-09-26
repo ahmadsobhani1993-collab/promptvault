@@ -15,7 +15,18 @@ export default async function AccountPage() {
   const [user, likedPrompts, savedPrompts, myPrompts, myComments] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, name: true, email: true, image: true, role: true, bio: true } as any,
+      select: { 
+        id: true, 
+        name: true, 
+        email: true, 
+        image: true, 
+        role: true, 
+        bio: true,
+        username: true,          // ← اضافه شد
+        telegram: true,          // ← اضافه شد
+        instagram: true,         // ← اضافه شد
+        telegramHandle: true     // ← اضافه شد
+      } as any,
     }),
     prisma.like.findMany({
       where: { userId },

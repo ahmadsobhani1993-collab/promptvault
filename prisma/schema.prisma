@@ -43,10 +43,12 @@ model User {
   image             String?
   role              Role               @default(USER)
   bio               String?
-  telegram          String?
+  telegram          String?            @unique  // آیدی عددی برای لاگین
+  telegramHandle    String?            @unique  // آیدی متنی/کانال برای نمایش
   instagram         String?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @default(now()) @updatedAt
+  
   accounts          Account[]
   sessions          Session[]
   prompts           Prompt[]
@@ -58,6 +60,7 @@ model User {
   cartItems         CartItem[]
   orders            Order[]
   pushSubscriptions PushSubscription[]
+  loginTokens       LoginToken[]
 }
 
 model Account {
@@ -300,10 +303,13 @@ model AnalyticsBuffer {
 }
 
 model LoginToken {
-  token      String   @id
+  token      String    @id
+  userId     String?
   telegramId String?
-  status     String   @default("PENDING")
-  createdAt  DateTime @default(now())
+  status     String    @default("PENDING")
+  createdAt  DateTime  @default(now())
+  
+  user       User?     @relation(fields: [userId], references: [id])
 }
 
 model Product {
