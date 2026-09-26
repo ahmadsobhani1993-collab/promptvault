@@ -6,7 +6,7 @@ import { useVideoTranscribe } from '@/lib/use-video-transcribe'
 import { StudioSegment, StudioStyleConfig, getStoredStyle, saveStoredStyle } from '@/lib/studio/unified-style'
 import { renderStudioFrame, clampCanvasDimensions } from '@/lib/studio/universal-renderer'
 import { ensureFontLoaded } from '@/lib/studio/font-loader'
-import TemplatePanel from './studio/panels/TemplatePanel'
+import TemplatePanel from '../studio/panels/TemplatePanel'
 import SubtitleVideoExport from './SubtitleVideoExport'
 
 const MAX_FILE_SIZE_MB = 250
@@ -102,13 +102,9 @@ export default function VideoSubtitleClient() {
       canvas.width = clamped.width; canvas.height = clamped.height
     }
     renderStudioFrame({
-      ctx,
-      canvasWidth: clamped.width,
-      canvasHeight: clamped.height,
-      video,
-      currentTime: video.currentTime || currentTime,
-      segments: segments as StudioSegment[],
-      style: styleConfig,
+      ctx, canvasWidth: clamped.width, canvasHeight: clamped.height,
+      video, currentTime: video.currentTime || currentTime,
+      segments: segments as StudioSegment[], style: styleConfig,
     })
   }, [currentTime, segments, styleConfig])
 
@@ -123,8 +119,7 @@ export default function VideoSubtitleClient() {
 
   const togglePlay = () => {
     if (!videoRef.current) return
-    if (isPlaying) videoRef.current.pause()
-    else videoRef.current.play()
+    isPlaying ? videoRef.current.pause() : videoRef.current.play()
   }
 
   const seek = (time: number) => {
@@ -152,6 +147,12 @@ export default function VideoSubtitleClient() {
     setSegments((prev: any[]) => prev.filter((s) => s.id !== id))
   }
 
+  const fmt = (t: number) => {
+    const m = Math.floor(t / 60)
+    const s = Math.floor(t % 60)
+    return `${m}:${s.toString().padStart(2, '0')}`
+  }
+
   if (auth === 'checking')
     return <div className="p-10 text-center text-sm text-white/40">در حال بررسی…</div>
   if (auth === 'no')
@@ -175,7 +176,7 @@ export default function VideoSubtitleClient() {
       <video ref={videoRef} src={videoUrl} className="hidden" playsInline />
       
       {/* Header */}
-      <header className="h-14 border-b border-stone-800 bg-[#110f0d] px-4 flex items-center justify-between z-30">
+      <header className="h-14 border-b border-stone-800 bg-[#110f0d] px-4 flex items-center justify-between z-30 shrink-0">
         <div className="flex items-center gap-3">
           <Link href="/" className="flex h-9 w-9 items-center justify-center rounded-xl bg-stone-900 border border-stone-800 text-stone-400 hover:text-white">✕</Link>
           <div className="min-w-0">
@@ -192,8 +193,8 @@ export default function VideoSubtitleClient() {
                 onClick={() => setShowStylePanel(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-xs font-bold hover:bg-amber-500/20 transition"
               >
-                <span></span>
-                <span>قالب و استایل</span>
+                <span>🎨</span>
+                <span className="hidden sm:inline">قالب و استایل</span>
               </button>
               <button
                 type="button"
@@ -211,7 +212,7 @@ export default function VideoSubtitleClient() {
       {!videoUrl ? (
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
           <div className="max-w-md w-full rounded-3xl border border-stone-800 bg-[#12100d] p-8 shadow-2xl">
-            <div className="h-16 w-16 mx-auto mb-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-3xl">🎬</div>
+            <div className="h-16 w-16 mx-auto mb-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-3xl"></div>
             <h2 className="text-lg font-black text-white mb-2">ویدیوی خود را وارد کنید</h2>
             <p className="text-xs text-stone-400 leading-relaxed mb-6">
               فایل ویدیوی خود را انتخاب کنید تا با هوش مصنوعی جمینای ترنسکرایب و زیرنویس دقیق کلمه‌ای برای آن ساخته شود.
@@ -237,9 +238,10 @@ export default function VideoSubtitleClient() {
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-          {/* ستون ویدیو (دسکتاپ: چپ، موبایل: بالا) */}
-          <div className="flex-1 flex flex-col bg-black items-center justify-center p-2 sm:p-4 relative overflow-hidden lg:border-l border-stone-800">
+        /* لی‌اوت اصلی: موبایل تک‌ستونه، دسکتاپ دو ستونه */
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* ستون ویدیو */}
+          <div className="flex-1 flex flex-col bg-black items-center justify-center p-2 sm:p-4 relative overflow-hidden min-h-0">
             {busy && (
               <div className="absolute top-3 inset-x-4 max-w-md mx-auto z-20 bg-stone-900/90 border border-amber-500/40 p-3 rounded-2xl backdrop-blur-md">
                 <div className="flex justify-between items-center text-xs mb-1.5">
@@ -254,12 +256,13 @@ export default function VideoSubtitleClient() {
             
             <div
               onClick={togglePlay}
-              className="relative flex items-center justify-center max-h-[50vh] lg:max-h-[76vh] w-full max-w-full overflow-hidden rounded-2xl shadow-2xl bg-black cursor-pointer border border-stone-800"
+              className="relative flex items-center justify-center max-h-[45vh] sm:max-h-[76vh] w-full max-w-full overflow-hidden rounded-2xl shadow-2xl bg-black cursor-pointer border border-stone-800"
             >
-              <canvas ref={canvasRef} className="max-h-[48vh] lg:max-h-[74vh] w-auto max-w-full object-contain pointer-events-auto" />
+              <canvas ref={canvasRef} className="max-h-[43vh] sm:max-h-[74vh] w-auto max-w-full object-contain pointer-events-auto" />
             </div>
             
-            <div className="w-full max-w-xl mt-3 flex items-center gap-3 bg-[#110f0d] p-2 sm:p-2.5 rounded-2xl border border-stone-800">
+            {/* کنترلر پلیر */}
+            <div className="w-full max-w-xl mt-2 sm:mt-3 flex items-center gap-3 bg-[#110f0d] p-2 sm:p-2.5 rounded-2xl border border-stone-800">
               <button
                 type="button"
                 onClick={togglePlay}
@@ -276,101 +279,129 @@ export default function VideoSubtitleClient() {
                 onChange={(e) => seek(Number(e.target.value))}
                 className="flex-1 accent-amber-500 cursor-pointer"
               />
-              <span className="font-mono text-[11px] text-stone-400 shrink-0">
-                {currentTime.toFixed(1)}s / {duration.toFixed(1)}s
+              <span className="font-mono text-[10px] sm:text-[11px] text-stone-400 shrink-0">
+                {fmt(currentTime)} / {fmt(duration)}
               </span>
             </div>
           </div>
 
-          {/* ستون کپشن‌ها (دسکتاپ: راست، موبایل: پایین) */}
-          <div className="h-[40vh] lg:h-auto lg:w-[380px] xl:w-[420px] flex flex-col bg-[#0e0d0b] border-t lg:border-t-0 border-stone-800 overflow-hidden shrink-0">
-            <div className="p-3 border-b border-stone-800 flex items-center justify-between bg-[#12100d]">
-              <span className="text-xs font-bold text-white">کپشن‌های هوشمند ({segments.length})</span>
-              <button
-                type="button"
-                onClick={() => {
-                  const newSeg: StudioSegment = {
-                    id: `seg_${Date.now()}`,
-                    start: currentTime,
-                    end: currentTime + 2.5,
-                    text: 'متن جدید زیرنویس',
-                  }
-                  setSegments((prev: any[]) => [...prev, newSeg])
-                }}
-                className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-lg text-xs font-bold hover:bg-amber-500/20"
-              >
-                + افزودن کپشن
-              </button>
+          {/* TIMELINE - در موبایل زیر ویدیو، در دسکتاپ کنار ویدیو */}
+          <div className="h-[35vh] sm:h-[30vh] lg:h-auto lg:flex-1 lg:w-[400px] xl:w-[450px] flex flex-col bg-[#0e0d0b] border-t border-stone-800 overflow-hidden shrink-0">
+            {/* هدر Timeline */}
+            <div className="p-2 sm:p-3 border-b border-stone-800 flex items-center justify-between bg-[#12100d] shrink-0">
+              <span className="text-xs font-bold text-white">تایم‌لاین ({segments.length})</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newSeg: StudioSegment = {
+                      id: `seg_${Date.now()}`,
+                      start: currentTime,
+                      end: currentTime + 2.5,
+                      text: 'متن جدید',
+                    }
+                    setSegments((prev: any[]) => [...prev, newSeg])
+                  }}
+                  className="px-2 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-lg text-xs font-bold hover:bg-amber-500/20"
+                >
+                  + افزودن
+                </button>
+              </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-2.5 sm:p-3 flex flex-col gap-2">
-              {segments.map((seg: any) => {
-                const isCurrent = currentTime >= seg.start && currentTime <= seg.end
-                return (
-                  <div
-                    key={seg.id}
-                    onClick={() => {
-                      setSelectedSegId(seg.id)
-                      seek(seg.start)
-                    }}
-                    className={`p-2.5 rounded-xl border transition-all ${
-                      isCurrent ? 'bg-amber-500/10 border-amber-500/60 shadow-lg' : 'bg-stone-900/60 border-stone-800'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="bg-stone-800 px-2 py-0.5 rounded text-amber-400 font-mono text-[10px]">
-                        {seg.start.toFixed(1)}s - {seg.end.toFixed(1)}s
-                      </span>
-                      <div className="flex items-center gap-1">
+
+            {/* محتوای Timeline - اسکرول‌پذیر */}
+            <div className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-1.5 sm:space-y-2">
+              {segments.length === 0 ? (
+                <div className="text-center text-stone-500 text-xs py-8">
+                  هنوز کپشنی وجود ندارد
+                </div>
+              ) : (
+                segments.map((seg: any) => {
+                  const isCurrent = currentTime >= seg.start && currentTime <= seg.end
+                  return (
+                    <div
+                      key={seg.id}
+                      className={`rounded-lg border transition-all ${
+                        isCurrent
+                          ? 'bg-amber-500/10 border-amber-500/60 shadow-lg'
+                          : 'bg-stone-900/60 border-stone-800 hover:border-stone-700'
+                      }`}
+                    >
+                      {/* ردیف زمان و دکمه‌ها */}
+                      <div className="flex items-center justify-between px-2 py-1.5 border-b border-stone-800/50">
                         <button
                           type="button"
-                          onClick={(e) => { e.stopPropagation(); handleAdjustTime(seg.id, -0.5, 0) }}
-                          className="px-1.5 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-[10px] text-stone-300"
+                          onClick={() => seek(seg.start)}
+                          className="bg-stone-800 px-2 py-0.5 rounded text-amber-400 font-mono text-[10px] hover:bg-stone-700"
                         >
-                          0.5-
+                          {fmt(seg.start)} - {fmt(seg.end)}
                         </button>
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); handleAdjustTime(seg.id, 0.5, 0) }}
-                          className="px-1.5 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-[10px] text-stone-300"
-                        >
-                          0.5+
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); handleDeleteSeg(seg.id) }}
-                          className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 text-[10px] ml-1"
-                        >
-                          ✕
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleAdjustTime(seg.id, -0.5, 0)}
+                            className="px-1.5 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-[10px] text-stone-300"
+                          >
+                            -0.5
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAdjustTime(seg.id, 0.5, 0)}
+                            className="px-1.5 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-[10px] text-stone-300"
+                          >
+                            +0.5
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSeg(seg.id)}
+                            className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 text-[10px]"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* ادیت متن inline */}
+                      <div className="p-2">
+                        <textarea
+                          rows={2}
+                          value={seg.text}
+                          onChange={(e) => handleTextChange(seg.id, e.target.value)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedSegId(seg.id)
+                            seek(seg.start)
+                          }}
+                          placeholder="متن زیرنویس را اینجا بنویسید..."
+                          className="w-full bg-black/40 border border-stone-800/80 rounded-lg p-2 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500/50 resize-none"
+                        />
                       </div>
                     </div>
-                    <textarea
-                      rows={2}
-                      value={seg.text}
-                      onChange={(e) => handleTextChange(seg.id, e.target.value)}
-                      className="w-full bg-black/40 border border-stone-800/80 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-amber-500/50 resize-none"
-                    />
-                  </div>
-                )
-              })}
+                  )
+                })
+              )}
             </div>
           </div>
 
+          {/* پنل استایل (کشویی) */}
           {showStylePanel && (
-            <div className="fixed lg:absolute inset-0 lg:inset-auto lg:left-0 lg:top-0 lg:bottom-0 lg:w-84 bg-[#12100d] border-r border-stone-800 shadow-2xl z-50 overflow-y-auto">
-              <TemplatePanel
-                config={styleConfig}
-                onChange={updateStyle}
-                onClose={() => setShowStylePanel(false)}
-              />
+            <div className="fixed inset-0 z-50 bg-black/80 flex items-end sm:items-center justify-center sm:justify-end">
+              <div className="w-full sm:w-84 bg-[#12100d] border-t sm:border-t-0 sm:border-r border-stone-800 shadow-2xl max-h-[80vh] sm:max-h-full overflow-y-auto rounded-t-2xl sm:rounded-none">
+                <TemplatePanel
+                  config={styleConfig}
+                  onChange={updateStyle}
+                  onClose={() => setShowStylePanel(false)}
+                />
+              </div>
             </div>
           )}
         </div>
       )}
 
+      {/* مودال خروجی */}
       {showExportModal && (
         <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
-          <div className="w-full max-w-lg rounded-3xl bg-[#14120f] border border-stone-800 p-6 shadow-2xl">
+          <div className="w-full max-w-lg rounded-3xl bg-[#14120f] border border-stone-800 p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4 border-b border-stone-800 pb-3">
               <h3 className="text-base font-bold text-white">خروجی نهایی ویدیو</h3>
               <button type="button" onClick={() => setShowExportModal(false)} className="text-stone-400 hover:text-white">✕</button>

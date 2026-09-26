@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import Link from 'next/link'
 import EditPromptModal from './EditPromptModal'
 
@@ -396,12 +396,12 @@ export default function ProfessionalDashboard({
                   </span>
                 </div>
                 <button className="btn-primary w-full py-3 mt-4 rounded-xl font-bold text-sm">
-                   تسویه حساب
+                  💳 تسویه حساب
                 </button>
               </div>
             ) : (
               <div className="text-center py-12">
-                <div className="text-4xl mb-2"></div>
+                <div className="text-4xl mb-2">🛒</div>
                 <p className="text-sm text-ink-muted">سبد خرید شما در حال حاضر خالی است.</p>
               </div>
             )}
@@ -447,13 +447,20 @@ export default function ProfessionalDashboard({
                 </div>
                 <div>
                   <label className="block text-xs text-ink-muted mb-1 font-bold">نام کاربری یکتا (URL)</label>
-                  <input
-                    type="text"
-                    placeholder="username"
-                    value={profileData.username}
-                    onChange={(e) => setProfileData({ ...profileData, username: e.target.value })}
-                    className="w-full rounded-lg border border-line bg-surface p-2.5 text-xs text-ink focus:border-gold/60 focus:outline-none dir-ltr text-left font-mono"
-                  />
+                  {profileData.username ? (
+                    <div className="w-full rounded-lg border border-line/30 bg-surface/50 p-2.5 text-xs text-ink-muted cursor-not-allowed" dir="ltr">
+                      {profileData.username}
+                      <span className="block text-[10px] mt-1">غیرقابل تغییر</span>
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="username"
+                      value={profileData.username}
+                      onChange={(e) => setProfileData({ ...profileData, username: e.target.value })}
+                      className="w-full rounded-lg border border-line bg-surface p-2.5 text-xs text-ink focus:border-gold/60 focus:outline-none dir-ltr text-left font-mono"
+                    />
+                  )}
                 </div>
               </div>
 
@@ -503,14 +510,23 @@ export default function ProfessionalDashboard({
               <div className="space-y-3">
                 <div>
                   <label className="block text-xs text-ink-muted mb-1 font-bold">آیدی تلگرام (برای اتصال به حساب)</label>
-                  <input
-                    type="text"
-                    placeholder="username (بدون @)"
-                    value={profileData.telegram}
-                    onChange={(e) => setProfileData({ ...profileData, telegram: e.target.value })}
-                    className="w-full rounded-lg border border-line bg-surface p-2.5 text-xs text-ink focus:border-gold/60 focus:outline-none dir-ltr text-left"
-                  />
-                  <p className="mt-1 text-[10px] text-ink-faint">برای اتصال حساب تلگرام به ایمیل خود (اگر با تلگرام وارد شدید، به جای این فیلد ایمیل وارد کنید)</p>
+                  {profileData.telegram ? (
+                    <div className="w-full rounded-lg border border-line/30 bg-surface/50 p-2.5 text-xs text-ink-muted cursor-not-allowed" dir="ltr">
+                      @{profileData.telegram}
+                      <span className="block text-[10px] mt-1">غیرقابل تغییر - برای تغییر با پشتیبانی تماس بگیرید</span>
+                    </div>
+                  ) : (
+                    <>
+                      <input
+                        type="text"
+                        placeholder="username (بدون @)"
+                        value={profileData.telegram}
+                        onChange={(e) => setProfileData({ ...profileData, telegram: e.target.value })}
+                        className="w-full rounded-lg border border-line bg-surface p-2.5 text-xs text-ink focus:border-gold/60 focus:outline-none dir-ltr text-left"
+                      />
+                      <p className="mt-1 text-[10px] text-ink-faint">برای اتصال حساب تلگرام به ایمیل خود</p>
+                    </>
+                  )}
                 </div>
                 
                 <div>
