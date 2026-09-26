@@ -1,14 +1,19 @@
-﻿import { useState, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { decodeToPcm16k, bufferToBase64Chunks } from './audio'
 import { mkWords, type Seg } from './subtitle-studio'
 import { VideoLiveTranscriber, type VideoTranscriptSegment } from './video-live-transcribe'
+import { extractAudioFromVideo } from './video-extract'
 
 const SESSION_SECONDS = 60
 const WORDS_PER_SEG = 5
 
-// این تابع فقط برای پخش یک تکه‌ی کوچک متن (چند کلمه‌ی تازه) روی یک
-// بازه‌ی زمانی واقعی و کوچک استفاده می‌شود — نه برای کل ویدیو مثل قبل.
-// خطای احتمالی حالا محدود به همین چند کلمه است، نه کل کلیپ.
+const withTimeout = <T>(promise: Promise<T>, ms: number, errorMsg: string): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(errorMsg)), ms)),
+  ])
+}
+
 const splitTextToWindow = (text: string, windowStart: number, windowEnd: number): Seg[] => {
   const tokens = text.trim().split(/\s+/).filter(Boolean)
   if (!tokens.length) return []
@@ -57,27 +62,47 @@ export function useVideoTranscribe() {
     stopRef.current = false
     setBusy(true)
     setSegments([])
-    setStatus('در حال استخراج صوت از ویدیو...')
+    setStatus('در حال استخراج صوت...')
     setProgress(5)
 
-    // لنگر زمان واقعی: چقدر از متنِ تاکنون‌دریافت‌شده قطعاً زمان‌بندی و قفل شده
     const anchorSecRef = { current: 0 }
     const committedWordsRef = { current: 0 }
     const builtSegmentsRef = { current: [] as Seg[] }
 
     try {
-      console.log('%c[VIDEO-PIPELINE: STEP 1] Video File Received:', 'color: #ec4899; font-weight: bold;', {
-        sizeBytes: file.size,
-        type: file.type,
-      })
+      let pcm: AudioBuffer | null = null
 
-      const pcm = await decodeToPcm16k(file)
-      if (!pcm) throw new Error('خطا در دیکود صدای ویدیو')
+      // تلاش اول با تایم‌اوت محافظ ۶ ثانیه‌ای برای جلوگیری از Hang شدن سایلنت در MOV
+      try {
+        pcm = await withTimeout(
+          decodeToPcm16k(file),
+          6000,
+          'Web Audio decoding timed out'
+        )
+      } catch (decodeErr) {
+        console.warn('[Decoder] Fast decode failed or hung, falling back to FFmpeg...', decodeErr)
+      }
+
+      // فال‌بک تضمینی به FFmpeg در صورت شکست یا انقضای زمان
+      if (!pcm) {
+        setStatus('در حال رمزگشایی کانتینر ویدیو با موتور FFmpeg...')
+        setProgress(10)
+
+        const wavBlob = await extractAudioFromVideo(file, (p) => {
+          // جلوگیری از پرش به عقب درصد پیشرفت
+          setProgress((prev) => Math.max(prev, Math.max(10, 10 + Math.round(p * 0.1))))
+        })
+
+        // دیکود مجدد WAV خالص (WAV PCM 16k همیشه در جاوااسکریپت در کسری از ثانیه باز می‌شود)
+        pcm = await decodeToPcm16k(wavBlob)
+      }
+
+      if (!pcm) throw new Error('استخراج اطلاعات صوتی ویدیو امکان‌پذیر نشد')
 
       const chunks = bufferToBase64Chunks(pcm, 1) || []
       const totalDuration = chunks.reduce((s, c) => s + (c.seconds || 0), 0)
-      setStatus(`صوت استخراج شد (${chunks.length} چانک) — در حال ارسال...`)
-      setProgress(15)
+      setStatus(`صوت تفکیک شد (${chunks.length} چانک) — اتصال به سرور هوش مصنوعی...`)
+      setProgress(20)
 
       const sessions: { chunks: typeof chunks; offset: number }[] = []
       let current: typeof chunks = []
@@ -102,7 +127,6 @@ export function useVideoTranscribe() {
       let sessionTextBuffer = ''
       let sentCount = 0
 
-      // پردازش هر تکه‌ی تازه‌ی متن روی بازه‌ی زمانی واقعی خودش
       const handleIncoming = (rawSeg: VideoTranscriptSegment) => {
         sessionTextBuffer = rawSeg.text
         const currentCombined = (masterAccumulatedText ? masterAccumulatedText + ' ' : '') + sessionTextBuffer
@@ -118,8 +142,6 @@ export function useVideoTranscribe() {
 
         setSegments([...builtSegmentsRef.current, ...previewSegs])
 
-        // فقط وقتی Gemini متن را قطعی اعلام کرده، لنگر زمانی را جلو می‌بریم
-        // تا بازنگری‌های interim چیزی را که قبلاً قفل شده خراب نکنند
         if (rawSeg.isFinal && previewNewTokens.length) {
           committedWordsRef.current = allTokens.length
           anchorSecRef.current = windowEnd
@@ -131,7 +153,7 @@ export function useVideoTranscribe() {
         if (stopRef.current) break
         const sess = sessions[s]
 
-        setStatus(`سشن ${s + 1}/${sessions.length}...`)
+        setStatus(`سشن ${s + 1} از ${sessions.length}...`)
         const t = new VideoLiveTranscriber(undefined, sess.offset)
 
         t.onSegment = handleIncoming
@@ -143,11 +165,10 @@ export function useVideoTranscribe() {
           if (stopRef.current) break
           t.sendChunk(sess.chunks[i].data, sess.chunks[i].seconds)
           sentCount++
-          setProgress(15 + Math.floor((sentCount / Math.max(chunks.length, 1)) * 75))
+          setProgress(20 + Math.floor((sentCount / Math.max(chunks.length, 1)) * 75))
           await new Promise((r) => setTimeout(r, Math.min(sess.chunks[i].seconds * 1000, 800)))
         }
 
-        setStatus(`در حال انتظار برای پردازش نهایی...`)
         await t.finish()
         if (sessionTextBuffer) {
           masterAccumulatedText = (masterAccumulatedText ? masterAccumulatedText + ' ' : '') + sessionTextBuffer
@@ -155,8 +176,6 @@ export function useVideoTranscribe() {
         }
       }
 
-      // اگر بخشی از متن آخر هیچ‌وقت isFinal اعلام نشد (مثلاً سشن بدون turnComplete بسته شد)،
-      // همان را هم با بهترین لنگر موجود قفل کن تا از دست نرود
       const leftoverTokens = masterAccumulatedText.trim().split(/\s+/).filter(Boolean)
       if (leftoverTokens.length > committedWordsRef.current) {
         const newTokens = leftoverTokens.slice(committedWordsRef.current)
@@ -167,16 +186,14 @@ export function useVideoTranscribe() {
       }
 
       setSegments(builtSegmentsRef.current)
-
-      if (builtSegmentsRef.current.length) {
-        console.log('%c[VIDEO-PIPELINE: ALL SEGMENTS SECURED]:', 'color: #10b981; font-weight: bold;', builtSegmentsRef.current)
-        setStatus(`تکمیل شد (${builtSegmentsRef.current.length} کپشن — ${totalDuration.toFixed(0)} ثانیه)`)
-      } else {
-        setStatus('متنی دریافت نشد')
-      }
       setProgress(100)
+      setStatus(
+        builtSegmentsRef.current.length
+          ? `تکمیل شد (${builtSegmentsRef.current.length} بخش زیرنویس)`
+          : 'متنی در گفتار ویدیو یافت نشد'
+      )
     } catch (err: any) {
-      console.error('[VIDEO TRANSCRIBE ERROR]:', err)
+      console.error('[TRANSCRIBE PIPELINE ERROR]:', err)
       setStatus('خطا در پردازش ویدیو: ' + (err.message || err))
     } finally {
       setBusy(false)
