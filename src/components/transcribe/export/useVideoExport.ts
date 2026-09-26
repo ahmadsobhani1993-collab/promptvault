@@ -1,8 +1,172 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { type Seg, type Style } from '@/lib/subtitle-studio'
-import { drawSubtitleOnCanvas } from '@/lib/studio/universal-renderer'
+import {
+  getAnimationState,
+  resolveAlign,
+  resolveDirection,
+  type Seg,
+  type Style,
+} from '@/lib/subtitle-studio'
+
+const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
+
+function wrapTextSafe(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const words = text.trim().split(/\s+/).filter(Boolean)
+  if (!words.length) return ['']
+  const lines: string[] = []
+  let currentLine = ''
+
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word
+    if (ctx.measureText(testLine).width > maxWidth && currentLine) {
+      lines.push(currentLine)
+      currentLine = word
+    } else {
+      currentLine = testLine
+    }
+  }
+  if (currentLine) lines.push(currentLine)
+  return lines.length ? lines : ['']
+}
+
+function fitSubtitle(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  desiredFontSize: number,
+  maxWidth: number,
+  maxHeight: number,
+  fontFamily: string,
+) {
+  let fontSize = Math.max(12, desiredFontSize)
+  for (let i = 0; i < 20; i++) {
+    ctx.font = `800 ${fontSize}px "${fontFamily}", -apple-system, sans-serif`
+    const lines = wrapTextSafe(ctx, text, maxWidth)
+    const lineHeight = fontSize * 1.3
+    const totalHeight = lines.length * lineHeight
+    const maxLineWidth = Math.max(...lines.map((l) => ctx.measureText(l).width), 0)
+
+    if (maxLineWidth <= maxWidth && totalHeight <= maxHeight) {
+      return { fontSize, lines, lineHeight, totalHeight, maxLineWidth }
+    }
+    fontSize *= 0.94
+  }
+  ctx.font = `800 ${fontSize}px "${fontFamily}", -apple-system, sans-serif`
+  const lines = wrapTextSafe(ctx, text, maxWidth)
+  return {
+    fontSize,
+    lines,
+    lineHeight: fontSize * 1.3,
+    totalHeight: lines.length * (fontSize * 1.3),
+    maxLineWidth: Math.max(...lines.map((l) => ctx.measureText(l).width), 0),
+  }
+}
+
+export function drawSubtitleOnCanvas(
+  ctx: CanvasRenderingContext2D,
+  video: HTMLVideoElement,
+  W: number,
+  H: number,
+  mediaTime: number,
+  duration: number,
+  segments: Seg[],
+  activeStyle: Style,
+) {
+  const t = clamp(mediaTime, 0, duration)
+  const seg = segments.find((item) => t >= item.start && t <= item.end)
+
+  ctx.drawImage(video, 0, 0, W, H)
+  if (!seg) return
+
+  const s = activeStyle
+  const direction = resolveDirection(s.direction, seg.text) || 'rtl'
+  const align = resolveAlign(s.align, direction)
+  const elapsed = Math.max(0, t - seg.start)
+  const anim = getAnimationState(seg.fx, elapsed, seg.end - seg.start, W)
+
+  const maxSubtitleWidth = W * 0.88
+  const maxSubtitleHeight = H * 0.35
+  const anchorX = s.x != null ? (Number(s.x) / 100) * W : W / 2
+  const anchorY = s.y != null ? (Number(s.y) / 100) * H : H * 0.78
+  const fontFamily = s.fontId || 'Vazirmatn'
+  const baseFontSize = s.size ? (Number(s.size) / 100) * W : W * 0.052
+
+  const fitted = fitSubtitle(ctx, seg.text, baseFontSize, maxSubtitleWidth, maxSubtitleHeight, fontFamily)
+  const finalFontSize = fitted.fontSize
+  const lines = fitted.lines
+  const lineHeight = fitted.lineHeight
+
+  ctx.save()
+  ctx.direction = direction
+  ctx.globalAlpha = anim.opacity
+  ctx.translate(anchorX + anim.translateX, anchorY + anim.translateY)
+  ctx.scale(anim.scale, anim.scale)
+  ctx.translate(-anchorX, -anchorY)
+
+  ctx.font = `800 ${finalFontSize}px "${fontFamily}", -apple-system, sans-serif`
+  ctx.textBaseline = 'middle'
+  ctx.textAlign = align
+
+  const strokeWidth = Math.max(4, finalFontSize * 0.16)
+
+  if (!s.karaoke || !seg.words || !seg.words.length) {
+    lines.forEach((line, index) => {
+      const y = anchorY + (index - (lines.length - 1) / 2) * lineHeight
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.85)'
+      ctx.shadowBlur = Math.max(6, finalFontSize * 0.2)
+      ctx.strokeStyle = '#000000'
+      ctx.lineWidth = strokeWidth
+      ctx.strokeText(line, anchorX, y)
+
+      ctx.shadowColor = 'transparent'
+      ctx.shadowBlur = 0
+      ctx.fillStyle = s.color || '#FFFFFF'
+      ctx.fillText(line, anchorX, y)
+    })
+  } else {
+    const activeWordIndex = seg.words.findIndex((w) => t >= w.start && t <= w.end)
+    const spaceWidth = ctx.measureText(' ').width
+    let currentWordIndex = 0
+
+    lines.forEach((line, index) => {
+      const y = anchorY + (index - (lines.length - 1) / 2) * lineHeight
+      const lineWords = line.split(/\s+/).filter(Boolean)
+      const lineWidth = ctx.measureText(line).width
+      let cursorOffset = 0
+
+      lineWords.forEach((word) => {
+        const wordWidth = ctx.measureText(word).width
+        const isWordActive = currentWordIndex === activeWordIndex
+
+        let wordX = anchorX
+        if (direction === 'rtl') {
+          wordX = (anchorX + lineWidth / 2) - cursorOffset - (wordWidth / 2)
+        } else {
+          wordX = (anchorX - lineWidth / 2) + cursorOffset + (wordWidth / 2)
+        }
+
+        const prevAlign = ctx.textAlign
+        ctx.textAlign = 'center'
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.85)'
+        ctx.shadowBlur = Math.max(6, finalFontSize * 0.2)
+        ctx.strokeStyle = '#000000'
+        ctx.lineWidth = strokeWidth
+        ctx.strokeText(word, wordX, y)
+
+        ctx.shadowColor = 'transparent'
+        ctx.shadowBlur = 0
+        ctx.fillStyle = isWordActive ? (s.hlColor || '#FFD600') : (s.color || '#FFFFFF')
+        ctx.fillText(word, wordX, y)
+        ctx.textAlign = prevAlign
+
+        cursorOffset += wordWidth + spaceWidth
+        currentWordIndex++
+      })
+    })
+  }
+
+  ctx.restore()
+}
 
 export function useVideoExport() {
   const [exporting, setExporting] = useState(false)
@@ -45,23 +209,24 @@ export function useVideoExport() {
     }
 
     const stream = canvas.captureStream(30)
-
     let combinedStream: MediaStream = stream
+
     try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
-      const source = audioCtx.createMediaElementSource(video)
-      const dest = audioCtx.createMediaStreamDestination()
-      source.connect(dest)
-      source.connect(audioCtx.destination)
-      if (dest.stream.getAudioTracks().length > 0) {
-        combinedStream = new MediaStream([
-          ...stream.getVideoTracks(),
-          ...dest.stream.getAudioTracks(),
-        ])
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+      if (AudioCtx) {
+        const audioCtx = new AudioCtx()
+        const source = audioCtx.createMediaElementSource(video)
+        const dest = audioCtx.createMediaStreamDestination()
+        source.connect(dest)
+        source.connect(audioCtx.destination)
+        if (dest.stream.getAudioTracks().length > 0) {
+          combinedStream = new MediaStream([
+            ...stream.getVideoTracks(),
+            ...dest.stream.getAudioTracks(),
+          ])
+        }
       }
-    } catch {
-      // استفاده از استریم پیش‌فرض بدون قطع عملیات
-    }
+    } catch {}
 
     const mime = MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.42E01E, mp4a.40.2"')
       ? 'video/mp4; codecs="avc1.42E01E, mp4a.40.2"'
