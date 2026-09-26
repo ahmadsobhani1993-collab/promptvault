@@ -17,6 +17,7 @@ export type SubtitleStudioProps = {
 
 type AspectRatio = 'original' | '9:16' | '1:1' | '16:9' | '4:5'
 type ActiveTab = 'none' | 'style' | 'text' | 'canvas'
+type CaptionTone = 'engaging' | 'professional' | 'friendly' | 'minimal'
 
 interface ExtendedStyle extends Style {
   bold?: boolean
@@ -72,7 +73,8 @@ export default function SubtitleStudio({
   // هوک رندر MP4 با کانویس
   const { exporting, progress, exportVideo, cancelExport } = useVideoExport()
 
-  // بخش تولید کپشن اینستاگرام
+  // بخش تولید کپشن هوش مصنوعی منطبق با api/generate-caption
+  const [captionTone, setCaptionTone] = useState<CaptionTone>('engaging')
   const [generatingCaption, setGeneratingCaption] = useState(false)
   const [igCaptionResult, setIgCaptionResult] = useState('')
   const [showIgModal, setShowIgModal] = useState(false)
@@ -195,7 +197,8 @@ export default function SubtitleStudio({
     downloadFile(`${baseName}.txt`, '\uFEFF' + content, 'text/plain')
   }
 
-  const generateInstagramCaption = async () => {
+  // فراخوانی مستقیم API با فیلد text و tone که بک‌اند انتظار دارد
+  const generateInstagramCaption = async (selectedTone: CaptionTone = captionTone) => {
     if (!segments.length) {
       alert('ابتدا باید زیرنویسی در ویدیو وجود داشته باشد.')
       return
@@ -207,17 +210,21 @@ export default function SubtitleStudio({
       const res = await fetch('/api/generate-caption', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript: fullText, target: 'instagram' }),
+        body: JSON.stringify({
+          text: fullText,
+          tone: selectedTone,
+          locale: style.direction === 'ltr' ? 'en' : 'fa',
+        }),
       })
       const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'خطا در تولید کپشن')
       if (data.caption) {
         setIgCaptionResult(data.caption)
       } else {
-        setIgCaptionResult(fullText + '\n\n#آموزش #ویدیو #ریلز #اکسپلور')
+        throw new Error('کپشنی از مدل دریافت نشد')
       }
-    } catch {
-      const fallback = segments.map((s) => s.text).join(' ')
-      setIgCaptionResult(fallback + '\n\n#آموزش #ریلز #ویدیو')
+    } catch (err: any) {
+      alert(err.message || 'خطا در ارتباط با هوش مصنوعی')
     } finally {
       setGeneratingCaption(false)
     }
@@ -530,7 +537,7 @@ export default function SubtitleStudio({
         @keyframes subSlide { from { transform: translateX(-40px); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
       `}</style>
 
-      {/* ─── Toolbar (نوار ابزار بالا - بدون نویزگیر) ── */}
+      {/* ─── نوار ابزار بالا ── */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-3">
         <div className="relative flex items-center gap-1.5">
           <button onClick={undo} title="واگرد (Ctrl+Z)" className={iconBtn}>↩</button>
@@ -559,7 +566,7 @@ export default function SubtitleStudio({
           </div>
         </div>
 
-        {/* دکمه‌های ناوبری تب‌های تنظیمات */}
+        {/* دکمه‌های ناوبری تب‌های تنظیمات (بدون تب نویزگیر) */}
         <div className="flex items-center gap-1 overflow-x-auto rounded-xl border border-white/10 bg-zinc-900/80 p-1 text-xs">
           <button
             onClick={() => setActiveTab(activeTab === 'canvas' ? 'none' : 'canvas')}
@@ -693,7 +700,7 @@ export default function SubtitleStudio({
         </div>
       )}
 
-      {/* ─── Workspace (نمایش ویدیو و ادیتور) ── */}
+      {/* ─── محیط ادیتور ویدیو ── */}
       <div className="grid gap-4 lg:grid-cols-5 mt-2">
         <div className="space-y-3 lg:col-span-3">
           <div className="sticky top-2 z-20 -mx-4 bg-neutral-950/95 px-4 pb-2 backdrop-blur lg:static lg:mx-0 lg:bg-transparent lg:px-0 lg:pb-0">
@@ -1109,11 +1116,37 @@ export default function SubtitleStudio({
           )}
         </div>
 
-        {/* دکمه کپشن اینستاگرام */}
-        <div className="mt-4 pt-3 border-t border-white/5 flex justify-end">
+        {/* بخش کپشن اینستاگرام با قابلیت انتخاب لحن‌های بک‌اند */}
+        <div className="mt-4 pt-3 border-t border-white/5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-stone-400 font-bold">لحن کپشن:</span>
+            <div className="flex items-center gap-1 bg-white/5 p-1 rounded-xl border border-white/10 text-[11px]">
+              {(
+                [
+                  { id: 'engaging', label: '🔥 پربازدید و ویرال' },
+                  { id: 'professional', label: '👔 رسمی و آموزشی' },
+                  { id: 'friendly', label: '☕ صمیمی و داستانی' },
+                  { id: 'minimal', label: '⚡ کوتاه و ضربتی' },
+                ] as const
+              ).map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setCaptionTone(t.id)}
+                  className={`px-2 py-1 rounded-lg transition ${
+                    captionTone === t.id
+                      ? 'bg-amber-500 text-black font-extrabold'
+                      : 'text-stone-300 hover:text-white'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <button
-            onClick={generateInstagramCaption}
-            disabled={generatingCaption}
+            onClick={() => generateInstagramCaption(captionTone)}
+            disabled={generatingCaption || !segments.length}
             className="flex items-center gap-2 rounded-xl border border-pink-500/30 bg-pink-500/10 px-4 py-2 text-xs font-bold text-pink-300 hover:bg-pink-500/20 transition disabled:opacity-50"
           >
             <span>📸</span>
@@ -1122,27 +1155,37 @@ export default function SubtitleStudio({
         </div>
       </div>
 
-      {/* مودال نمایش کپشن اینستاگرام */}
+      {/* مودال نمایش و کپی کپشن اینستاگرام */}
       {showIgModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" dir="rtl">
           <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-neutral-900 p-5 shadow-2xl">
             <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-3">
-              <strong className="text-sm text-white">کپشن پیشنهادی برای اینستاگرام</strong>
+              <strong className="text-sm text-white">کپشن هوشمند اینستاگرام (Gemini AI)</strong>
               <button onClick={() => setShowIgModal(false)} className="text-white/40 hover:text-white">✕</button>
             </div>
-            <textarea
-              readOnly
-              rows={8}
-              value={igCaptionResult}
-              className="w-full rounded-xl border border-white/10 bg-black/50 p-3 text-xs leading-relaxed text-white/90 outline-none"
-            />
+
+            {generatingCaption ? (
+              <div className="p-8 text-center text-xs text-amber-400 animate-pulse">
+                در حال پردازش زیرنویس با هوش مصنوعی و تولید کپشن...
+              </div>
+            ) : (
+              <textarea
+                readOnly
+                rows={8}
+                value={igCaptionResult}
+                className="w-full rounded-xl border border-white/10 bg-black/50 p-3 text-xs leading-relaxed text-white/90 outline-none"
+              />
+            )}
+
             <div className="mt-3 flex justify-end gap-2">
               <button
                 onClick={() => {
+                  if (!igCaptionResult) return
                   navigator.clipboard.writeText(igCaptionResult)
                   alert('کپشن کپی شد!')
                 }}
-                className="rounded-xl bg-amber-500 px-4 py-1.5 text-xs font-bold text-black hover:bg-amber-400"
+                disabled={!igCaptionResult || generatingCaption}
+                className="rounded-xl bg-amber-500 px-4 py-1.5 text-xs font-bold text-black hover:bg-amber-400 disabled:opacity-50"
               >
                 کپی در کلیپ‌بورد
               </button>
