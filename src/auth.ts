@@ -16,26 +16,41 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       id: 'telegram',
       name: 'Telegram',
       credentials: {
-        telegramId: { label: 'Telegram ID', type: 'text' }, // تغییر از userId به telegramId
+        id: { label: 'Telegram ID', type: 'text' },
+        userId: { label: 'User ID', type: 'text' },
+        telegramId: { label: 'Telegram ID', type: 'text' },
       },
       async authorize(credentials) {
-        if (!credentials?.telegramId) return null
+        // دریافت آیدی تلگرام از هر کدام از کلیدهای ممکن که ممکن است ارسال شده باشد
+        const tgId = credentials?.id || credentials?.userId || credentials?.telegramId
+        
+        if (!tgId) {
+          console.error('[AUTH] Telegram ID is missing in credentials:', credentials)
+          return null
+        }
 
-        // ۱. جستجوی کاربر بر اساس آیدی تلگرام (نه id دیتابیس)
+        const tgIdStr = String(tgId)
+
+        // ۱. جستجوی کاربر بر اساس آیدی عددی تلگرام (فیلد telegram در prisma)
         let user = await prisma.user.findFirst({
-          where: { telegram: credentials.telegramId },
+          where: { telegram: tgIdStr },
         })
 
-        // ۲. اگر کاربر وجود نداشت (سناریوی ۲: اولین بار با تلگرام)، حساب جدید می‌سازیم
+        // ۲. اگر کاربر وجود نداشت (اولین بار است با تلگرام وارد می‌شود)، حساب جدید می‌سازیم
         if (!user) {
-          user = await prisma.user.create({
-            data: {
-              telegram: credentials.telegramId,
-              name: 'کاربر تلگرام',
-              // ایمیل موقت یکتا برای عبور از قید unique دیتابیس، تا کاربر بعداً آن را ست کند
-              email: `telegram_${credentials.telegramId}@promptfa.local`, 
-            },
-          })
+          try {
+            user = await prisma.user.create({
+              data: {
+                telegram: tgIdStr,
+                name: 'کاربر تلگرام',
+                // یک ایمیل موقت یکتا برای عبور از قید unique دیتابیس
+                email: `telegram_${tgIdStr}@promptfa.local`, 
+              },
+            })
+          } catch (error) {
+            console.error('[AUTH] Failed to create Telegram user:', error)
+            return null
+          }
         }
 
         return user
@@ -53,7 +68,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         
         const dbUser = await prisma.user.findUnique({ 
           where: { id: user.id }, 
-          select: { role: true, email: true } 
+          select: { role: true, email: true, telegram: true, telegramHandle: true } 
         })
         
         let role = dbUser?.role ?? 'USER'
