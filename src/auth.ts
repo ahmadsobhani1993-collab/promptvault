@@ -16,14 +16,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       id: 'telegram',
       name: 'Telegram',
       credentials: {
-        userId: { label: 'User ID', type: 'text' },
+        telegramId: { label: 'Telegram ID', type: 'text' }, // تغییر از userId به telegramId
       },
       async authorize(credentials) {
-        if (!credentials?.userId) return null
+        if (!credentials?.telegramId) return null
 
-        const user = await prisma.user.findUnique({
-          where: { id: credentials.userId },
+        // ۱. جستجوی کاربر بر اساس آیدی تلگرام (نه id دیتابیس)
+        let user = await prisma.user.findFirst({
+          where: { telegram: credentials.telegramId },
         })
+
+        // ۲. اگر کاربر وجود نداشت (سناریوی ۲: اولین بار با تلگرام)، حساب جدید می‌سازیم
+        if (!user) {
+          user = await prisma.user.create({
+            data: {
+              telegram: credentials.telegramId,
+              name: 'کاربر تلگرام',
+              // ایمیل موقت یکتا برای عبور از قید unique دیتابیس، تا کاربر بعداً آن را ست کند
+              email: `telegram_${credentials.telegramId}@promptfa.local`, 
+            },
+          })
+        }
 
         return user
       },

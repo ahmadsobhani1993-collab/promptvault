@@ -1,6 +1,5 @@
-﻿import PromptDetailPage from '@/app/prompts/[slug]/page'
+﻿import OriginalPage from '../../prompts/[slug]/page'
 
-export default async function EnPromptPage({ params }: { params: any }) {
-  return <PromptDetailPage params={params} forcedLocale="en" />
+export default function EnPage() {
+  return <OriginalPage />
 }
-export { generateMetadata } from '@/app/prompts/[slug]/page'

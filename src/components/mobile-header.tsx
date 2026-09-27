@@ -1,5 +1,6 @@
 ﻿import Link from 'next/link'
 import { auth } from '@/auth'
+import { prisma } from '@/lib/db'
 import { type Locale } from '@/lib/i18n'
 import { L } from '@/lib/data'
 import LocaleSwitcher from '@/components/locale-switcher'
@@ -10,6 +11,17 @@ interface MobileHeaderProps { locale: Locale }
 export default async function MobileHeader({ locale }: MobileHeaderProps) {
   const session = await auth()
   const userInitial = session?.user?.name ? session.user.name.charAt(0).toUpperCase() : 'U'
+
+  // دریافت نوتیفیکیشن‌های کاربر
+  let notifications: Array<{ id: string; text: string; url: string; createdAt: Date }> = []
+  if (session?.user?.id) {
+    const notifs = await prisma.notification.findMany({
+      where: { userId: session.user.id },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+    })
+    notifications = notifs
+  }
 
   return (
     <header className="sticky top-0 z-40 border-b border-line/60 bg-[#070503]/95 backdrop-blur md:hidden">
@@ -38,7 +50,7 @@ export default async function MobileHeader({ locale }: MobileHeaderProps) {
         <div className="flex items-center gap-2">
           <LocaleSwitcher />
 
-          {/* نوتیفیکیشن - dropdown */}
+          {/* نوتیفیکیشن - با اسکرول و لینک */}
           <div className="group relative">
             <button className="relative flex h-9 w-9 items-center justify-center rounded-full border border-line/60 bg-surface/50 text-ink-muted transition-colors hover:border-gold/40 hover:text-gold-bright">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -46,17 +58,31 @@ export default async function MobileHeader({ locale }: MobileHeaderProps) {
               </svg>
             </button>
             <div className="invisible absolute left-0 top-full z-50 w-72 pt-3 opacity-0 transition-all group-hover:visible group-hover:opacity-100">
-              <div className="card p-4 shadow-2xl">
+              <div className="card p-4 shadow-2xl max-h-[400px] overflow-y-auto">
                 <div className="mb-3 flex items-center justify-between border-b border-line pb-3">
                   <h3 className="text-sm font-bold text-ink">اعلان‌ها</h3>
-                  <span className="rounded-full bg-gold/20 px-2 py-0.5 text-[10px] font-bold text-gold-bright">۳ جدید</span>
+                  <Link href="/notifications" className="rounded-full bg-gold/20 px-2 py-0.5 text-[10px] font-bold text-gold-bright hover:bg-gold/30">
+                    مشاهده همه
+                  </Link>
                 </div>
-                <div className="space-y-2">
-                  <div className="rounded-lg border border-line/60 bg-surface/50 p-3">
-                    <div className="text-xs font-bold text-ink">خوش‌آمدگویی</div>
-                    <div className="mt-1 text-[10px] text-ink-muted">به PromptsFA خوش آمدید</div>
+                {notifications.length === 0 ? (
+                  <p className="text-center text-ink-muted py-6 text-xs">هنوز نوتیفی نداری</p>
+                ) : (
+                  <div className="space-y-2">
+                    {notifications.map((n) => (
+                      <Link 
+                        key={n.id} 
+                        href={n.url || '/notifications'} 
+                        className="block rounded-lg border border-line/60 bg-surface/50 p-3 transition-colors hover:bg-gold/5 hover:border-gold/30"
+                      >
+                        <div className="text-xs font-bold text-ink">{n.text}</div>
+                        <div className="mt-1 text-[10px] text-ink-muted">
+                          {new Date(n.createdAt).toLocaleDateString('fa-IR')}
+                        </div>
+                      </Link>
+                    ))}
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>

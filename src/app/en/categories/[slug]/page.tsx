@@ -1,1 +1,5 @@
-export { default } from '../../../categories/[slug]/page'
+﻿import OriginalPage from '../../categories/[slug]/page'
+
+export default function EnPage() {
+  return <OriginalPage />
+}

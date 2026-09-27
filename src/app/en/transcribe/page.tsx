@@ -1,1 +1,5 @@
-export { default } from '../../transcribe/page';
+﻿import OriginalPage from '../transcribe/page'
+
+export default function EnPage() {
+  return <OriginalPage />
+}

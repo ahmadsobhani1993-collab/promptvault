@@ -1,1 +1,5 @@
-export { default } from '../../login/page';
+﻿import OriginalPage from '../login/page'
+
+export default function EnPage() {
+  return <OriginalPage />
+}

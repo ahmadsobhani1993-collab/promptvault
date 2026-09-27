@@ -5,8 +5,6 @@ import { type Locale } from '@/lib/i18n'
 import { getCategories, L } from '@/lib/data'
 import LocaleSwitcher from '@/components/locale-switcher'
 
-interface DesktopHeaderProps { locale: Locale }
-
 // کامپوننت آیکون دسته‌بندی
 function CategoryIcon({ name, className = "w-8 h-8" }: { name: string; className?: string }) {
   const icons: Record<string, JSX.Element> = {
@@ -48,12 +46,14 @@ function CategoryIcon({ name, className = "w-8 h-8" }: { name: string; className
   return icons[name] || icons.file
 }
 
+interface DesktopHeaderProps { locale: Locale }
+
 export default async function DesktopHeader({ locale }: DesktopHeaderProps) {
   const session = await auth()
   const categories = await getCategories()
   
   // دریافت نوتیفیکیشن‌های کاربر
-  let notifications: Array<{ id: string; text: string; createdAt: Date }> = []
+  let notifications: Array<{ id: string; text: string; url: string; createdAt: Date }> = []
   if (session?.user?.id) {
     const notifs = await prisma.notification.findMany({
       where: { userId: session.user.id },
@@ -181,12 +181,16 @@ export default async function DesktopHeader({ locale }: DesktopHeaderProps) {
                 ) : (
                   <div className="space-y-2">
                     {notifications.map((n) => (
-                      <div key={n.id} className="rounded-lg border border-line/60 bg-surface/50 p-3">
+                      <Link 
+                        key={n.id} 
+                        href={n.url || '/notifications'} 
+                        className="block rounded-lg border border-line/60 bg-surface/50 p-3 transition-colors hover:bg-gold/5 hover:border-gold/30"
+                      >
                         <div className="text-xs font-bold text-ink">{n.text}</div>
                         <div className="mt-1 text-[10px] text-ink-muted">
                           {new Date(n.createdAt).toLocaleDateString('fa-IR')}
                         </div>
-                      </div>
+                      </Link>
                     ))}
                   </div>
                 )}
