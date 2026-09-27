@@ -126,7 +126,6 @@ export default function VideoSubtitleClient() {
 
   const fmt = (t: number) => { const m = Math.floor(t / 60); const s = Math.floor(t % 60); return `${m}:${s.toString().padStart(2, '0')}` }
 
-  // قابلیت ترجمه
   const handleTranslate = async (targetLang: 'fa' | 'en') => {
     if (!segments.length || translating) return
     setTranslating(true)
@@ -145,7 +144,6 @@ export default function VideoSubtitleClient() {
     finally { setTranslating(false) }
   }
 
-  // قابلیت تولید کپشن
   const handleGenerateCaption = async () => {
     if (!segments.length || generatingCaption) return
     setGeneratingCaption(true)
@@ -172,21 +170,21 @@ export default function VideoSubtitleClient() {
   )
 
   return (
-    <div className="min-h-screen bg-[#070605] text-white flex flex-col select-none" dir="rtl">
+    <div className="flex flex-col min-h-[calc(100vh-200px)]" dir="rtl">
       <video ref={videoRef} src={videoUrl} className="hidden" playsInline />
       
-      <header className="h-14 border-b border-stone-800 bg-[#110f0d] px-4 flex items-center justify-between z-30 shrink-0">
-        <div className="flex items-center gap-3">
-          <Link href="/" className="h-9 w-9 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-center text-stone-400 hover:text-white">✕</Link>
-          <h1 className="text-sm font-black text-white truncate max-w-xs">{fileName || 'استودیو زیرنویس'}</h1>
-        </div>
-        {videoUrl && (
+      {/* Toolbar استودیو (نه هدر کامل) */}
+      {videoUrl && (
+        <div className="border-b border-stone-800 bg-[#110f0d] px-4 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h1 className="text-sm font-black text-white truncate max-w-xs">{fileName || 'استودیو زیرنویس'}</h1>
+          </div>
           <div className="flex items-center gap-2">
             <button onClick={() => setShowStylePanel(true)} className="px-3 py-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-xs font-bold">🎨 استایل</button>
             <button onClick={() => setShowExportModal(true)} className="rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-1.5 text-xs font-black text-black">خروجی MP4 ⚡</button>
           </div>
-        )}
-      </header>
+        </div>
+      )}
 
       {!videoUrl ? (
         <div className="flex-1 flex items-center justify-center p-6">
@@ -207,7 +205,7 @@ export default function VideoSubtitleClient() {
         </div>
       ) : (
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* بخش ویدیو (بالا در موبایل، چپ در دسکتاپ) */}
+          {/* بخش ویدیو */}
           <div className="flex-1 flex flex-col bg-black items-center justify-center p-2 sm:p-4 relative overflow-hidden min-h-0">
             {busy && (
               <div className="absolute top-3 inset-x-4 max-w-md mx-auto z-20 bg-stone-900/90 border border-amber-500/40 p-3 rounded-2xl backdrop-blur-md">
@@ -228,7 +226,7 @@ export default function VideoSubtitleClient() {
             </div>
           </div>
 
-          {/* بخش تایم‌لاین و ادیت (پایین در موبایل، راست در دسکتاپ) */}
+          {/* بخش تایم‌لاین */}
           <div className="h-[40vh] sm:h-[35vh] lg:h-auto lg:flex-1 lg:w-[400px] xl:w-[450px] flex flex-col bg-[#0e0d0b] border-t border-stone-800 overflow-hidden shrink-0">
             <div className="p-2 sm:p-3 border-b border-stone-800 flex flex-wrap items-center justify-between gap-2 bg-[#12100d] shrink-0">
               <span className="text-xs font-bold text-white">تایم‌لاین ({segments.length})</span>
