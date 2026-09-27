@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server"
+﻿import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
 export function middleware(req: NextRequest) {
@@ -12,7 +12,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.next()
   }
 
-  // قاعده طلایی: آدرس تعیین‌کننده مطلق زبان است
+  // Ù‚Ø§Ø¹Ø¯Ù‡ Ø·Ù„Ø§ÛŒÛŒ: Ø¢Ø¯Ø±Ø³ ØªØ¹ÛŒÛŒÙ†â€ŒÚ©Ù†Ù†Ø¯Ù‡ Ù…Ø·Ù„Ù‚ Ø²Ø¨Ø§Ù† Ø§Ø³Øª
   const isEn = pathname === "/en" || pathname.startsWith("/en/")
   const locale = isEn ? "en" : "fa"
 
@@ -35,5 +35,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|_next|static|.*\\..*).*)"],,
+  matcher: ["/((?!api|_next|static|.*\\..*).*)"],
 }
