@@ -5,7 +5,7 @@ import { PrismaAdapter } from '@auth/prisma-adapter'
 import { prisma } from '@/lib/db'
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(prisma),
+  adapter: PrismaAdapter(prisma), // برای گوگل همچنان لازم است
   debug: process.env.NODE_ENV === 'development',
   providers: [
     Google({
@@ -21,37 +21,35 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         telegramId: { label: 'Telegram ID', type: 'text' },
       },
       async authorize(credentials) {
-        console.log("🔍 [AUTH] Credentials received:", credentials)
+        console.log("🔍 [AUTH] authorize called with credentials:", credentials)
         
-        // ۱. اگر userId مستقیماً ارسال شده باشد (مثلاً از callback تلگرام)، مستقیماً کاربر را پیدا کن
-        if (credentials?.userId) {
-          const user = await prisma.user.findUnique({
-            where: { id: String(credentials.userId) },
-          })
-          if (user) {
-            console.log("✅ [AUTH] User found by userId:", user.id)
-            return user
-          }
+        const targetId = credentials?.userId || credentials?.id || credentials?.telegramId
+        
+        if (!targetId) {
+          console.error("❌ [AUTH] No ID provided in credentials")
+          return null
         }
 
-        // ۲. در غیر این صورت، بر اساس آیدی تلگرام جستجو کن
-        const tgId = credentials?.id || credentials?.telegramId
-        if (tgId) {
-          const tgIdStr = String(tgId)
-          console.log("🔍 [AUTH] Searching for user with telegram ID:", tgIdStr)
+        const idStr = String(targetId)
+        let user = null
 
-          let user = await prisma.user.findFirst({
-            where: { telegram: tgIdStr },
-          })
-
+        // تشخیص نوع آیدی: اگر ۲۵ کاراکتر باشد و با c شروع شود، Prisma CUID است
+        if (idStr.length === 25 && idStr.startsWith('c')) {
+          console.log("🔍 [AUTH] Detected Prisma CUID, searching by id:", idStr)
+          user = await prisma.user.findUnique({ where: { id: idStr } })
+        } else {
+          // در غیر این صورت، آیدی عددی تلگرام است
+          console.log("🔍 [AUTH] Detected Telegram Numeric ID, searching by telegram:", idStr)
+          user = await prisma.user.findFirst({ where: { telegram: idStr } })
+          
           if (!user) {
-            console.log("⚠️ [AUTH] User not found. Creating new user...")
+            console.log("⚠️ [AUTH] User not found. Creating new user for Telegram ID:", idStr)
             try {
               user = await prisma.user.create({
                 data: {
-                  telegram: tgIdStr,
+                  telegram: idStr,
                   name: 'کاربر تلگرام',
-                  email: `telegram_${tgIdStr}@promptfa.local`, 
+                  email: `telegram_${idStr}@promptfa.local`, 
                 },
               })
               console.log("✅ [AUTH] New user created with ID:", user.id)
@@ -62,45 +60,53 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           } else {
             console.log("✅ [AUTH] Existing user found with ID:", user.id)
           }
-
-          return user
         }
 
-        console.error("❌ [AUTH] No valid credentials provided!")
+        if (user) {
+          console.log("✅ [AUTH] Login successful, returning user:", user.id)
+          return user
+        }
+        
+        console.error("❌ [AUTH] User not found and could not be created")
         return null
       },
     }),
   ],
   secret: process.env.AUTH_SECRET,
   trustHost: true,
-  session: { strategy: 'database' },
+  
+  // ✅ تغییر کلیدی: استفاده از JWT به جای دیتابیس برای سشن
+  session: { strategy: 'jwt' }, 
+  
   pages: { signIn: '/login' },
+  
   callbacks: {
-    async session({ session, user }) {
-      if (session.user && user) {
-        session.user.id = user.id
-        
+    // ۱. کالبک JWT: اطلاعات کاربر را در توکن رمزنگاری‌شده ذخیره می‌کند
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id
+        // دریافت نقش و ایمیل برای ذخیره در توکن
         const dbUser = await prisma.user.findUnique({ 
           where: { id: user.id }, 
-          select: { role: true, email: true, telegram: true, telegramHandle: true } 
+          select: { role: true, email: true } 
         })
-        
-        let role = dbUser?.role ?? 'USER'
-        
-        if (
-          process.env.ADMIN_EMAIL &&
-          dbUser?.email === process.env.ADMIN_EMAIL &&
-          role !== 'ADMIN'
-        ) {
-          await prisma.user.update({ where: { id: user.id }, data: { role: 'ADMIN' } })
-          role = 'ADMIN'
-        }
-        
-        session.user.role = role
+        token.role = dbUser?.role ?? 'USER'
+        token.email = dbUser?.email
+      }
+      return token
+    },
+    
+    // ۲. کالبک Session: اطلاعات را از توکن خوانده و به سشن تزریق می‌کند
+    async session({ session, token }) {
+      if (token && session.user) {
+        session.user.id = token.id as string
+        session.user.role = token.role as string
+        session.user.email = token.email as string
       }
       return session
     },
   },
+  
   logger: {
     error(code, ...message) {
       console.error('[AUTH ERROR]', JSON.stringify({ code, message: message.map((m) => String(m)).join(' ') }))
