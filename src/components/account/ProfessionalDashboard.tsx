@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react'
 import Link from 'next/link'
+import { signOut } from 'next-auth/react'
 import EditPromptModal from './EditPromptModal'
 
 const ANIME_AVATARS = [
@@ -72,6 +73,7 @@ export default function ProfessionalDashboard({
 }: any) {
   const [activeTab, setActiveTab] = useState<'prompts' | 'saved' | 'likes' | 'comments' | 'cart'>('prompts')
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false)
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false)
   
   const [profileData, setProfileData] = useState({
     name: user?.name || '',
@@ -85,7 +87,13 @@ export default function ProfessionalDashboard({
   
   const [savingProfile, setSavingProfile] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const [deleteStep, setDeleteStep] = useState<'initial' | 'code_sent' | 'confirming'>('initial')
+  const [deleteCode, setDeleteCode] = useState('')
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -114,6 +122,7 @@ export default function ProfessionalDashboard({
     e.preventDefault()
     setSavingProfile(true)
     setErrorMessage(null)
+    setSuccessMessage(null)
     try {
       const res = await fetch('/api/user/profile', {
         method: 'PATCH',
@@ -122,13 +131,64 @@ export default function ProfessionalDashboard({
       })
       const data = await res.json()
       if (res.ok) {
-        setIsEditProfileOpen(false)
-        window.location.reload()
+        setSuccessMessage(data.message || 'تغییرات با موفقیت ذخیره شد.')
+        setTimeout(() => {
+          setIsEditProfileOpen(false)
+          window.location.reload()
+        }, 1500)
       } else {
         setErrorMessage(data.error || 'خطا در ثبت اطلاعات')
       }
     } finally {
       setSavingProfile(false)
+    }
+  }
+
+  const handleDeleteRequest = async () => {
+    setIsDeleting(true)
+    setDeleteError('')
+    try {
+      const res = await fetch('/api/user/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'request' }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setDeleteStep('code_sent')
+      } else {
+        setDeleteError(data.error)
+      }
+    } catch {
+      setDeleteError('خطا در ارتباط با سرور')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (deleteCode.length !== 6) {
+      setDeleteError('کد باید ۶ رقم باشد')
+      return
+    }
+    setIsDeleting(true)
+    setDeleteError('')
+    try {
+      const res = await fetch('/api/user/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'confirm', code: deleteCode }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        await signOut({ callbackUrl: '/' })
+      } else {
+        setDeleteError(data.error)
+      }
+    } catch {
+      setDeleteError('خطا در ارتباط با سرور')
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -245,6 +305,12 @@ export default function ProfessionalDashboard({
               className="btn-secondary rounded-xl border border-line px-4 py-2 text-xs font-bold text-ink-muted hover:border-gold/50 hover:text-gold-bright transition-all"
             >
               ⚙️ ویرایش مشخصات
+            </button>
+            <button
+              onClick={() => signOut({ callbackUrl: '/' })}
+              className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-bold text-red-400 hover:bg-red-500/20 transition-all"
+            >
+              🚪 خروج
             </button>
           </div>
         </div>
@@ -433,6 +499,11 @@ export default function ProfessionalDashboard({
                 {errorMessage}
               </div>
             )}
+            {successMessage && (
+              <div className="mb-4 rounded-lg border border-green-500/40 bg-green-500/10 p-2.5 text-xs text-green-400">
+                {successMessage}
+              </div>
+            )}
 
             <form onSubmit={handleProfileSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -441,7 +512,7 @@ export default function ProfessionalDashboard({
                   <input
                     type="text"
                     value={profileData.name}
-                    onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
+                    onChange={(e) => setProfileData({ ...profileData, name: e.target.value})}
                     className="w-full rounded-lg border border-line bg-surface p-2.5 text-xs text-ink focus:border-gold/60 focus:outline-none"
                   />
                 </div>
@@ -506,25 +577,24 @@ export default function ProfessionalDashboard({
                 </div>
               </div>
 
-              {/* سه فیلد جداگانه */}
               <div className="space-y-3">
                 <div>
-                  <label className="block text-xs text-ink-muted mb-1 font-bold">آیدی تلگرام (برای اتصال به حساب)</label>
+                  <label className="block text-xs text-ink-muted mb-1 font-bold">آیدی عددی تلگرام (برای اتصال و ادغام حساب‌ها)</label>
                   {profileData.telegram ? (
-                    <div className="w-full rounded-lg border border-line/30 bg-surface/50 p-2.5 text-xs text-ink-muted cursor-not-allowed" dir="ltr">
-                      @{profileData.telegram}
-                      <span className="block text-[10px] mt-1">غیرقابل تغییر - برای تغییر با پشتیبانی تماس بگیرید</span>
+                    <div className="w-full rounded-lg border border-green-500/30 bg-green-500/10 p-2.5 text-xs text-green-400 cursor-not-allowed" dir="ltr">
+                      ✅ متصل شده: {profileData.telegram}
+                      <span className="block text-[10px] mt-1 text-ink-muted">برای تغییر یا حذف حساب، این اتصال ضروری است.</span>
                     </div>
                   ) : (
                     <>
                       <input
                         type="text"
-                        placeholder="username (بدون @)"
+                        placeholder="مثال: 123456789"
                         value={profileData.telegram}
                         onChange={(e) => setProfileData({ ...profileData, telegram: e.target.value })}
                         className="w-full rounded-lg border border-line bg-surface p-2.5 text-xs text-ink focus:border-gold/60 focus:outline-none dir-ltr text-left"
                       />
-                      <p className="mt-1 text-[10px] text-ink-faint">برای اتصال حساب تلگرام به ایمیل خود</p>
+                      <p className="mt-1 text-[10px] text-ink-faint">اگر قبلاً با تلگرام وارد شده‌اید، آیدی عددی خود را اینجا وارد کنید تا حساب‌ها ادغام شوند.</p>
                     </>
                   )}
                 </div>
@@ -563,15 +633,104 @@ export default function ProfessionalDashboard({
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-line">
-                <button type="button" onClick={() => setIsEditProfileOpen(false)} className="rounded-lg border border-line px-4 py-2 text-xs text-ink-muted hover:bg-surface">
-                  انصراف
+              <div className="flex justify-between items-center pt-3 border-t border-line">
+                <button type="button" onClick={() => setIsDeleteOpen(true)} className="text-xs text-red-400 hover:text-red-300 hover:underline">
+                  حذف دائمی حساب کاربری
                 </button>
-                <button type="submit" disabled={savingProfile} className="btn-primary px-5 py-2 text-xs font-bold">
-                  {savingProfile ? 'در حال ثبت...' : 'ذخیره تغییرات'}
-                </button>
+                <div className="flex gap-3">
+                  <button type="button" onClick={() => setIsEditProfileOpen(false)} className="rounded-lg border border-line px-4 py-2 text-xs text-ink-muted hover:bg-surface">
+                    انصراف
+                  </button>
+                  <button type="submit" disabled={savingProfile} className="btn-primary px-5 py-2 text-xs font-bold">
+                    {savingProfile ? 'در حال ثبت...' : 'ذخیره تغییرات'}
+                  </button>
+                </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* مودال حذف حساب */}
+      {isDeleteOpen && (
+        <div
+          onClick={() => setIsDeleteOpen(false)}
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4 backdrop-blur-md"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="card w-full max-w-md border-red-500/40 bg-[#1a0f0f] p-6 shadow-2xl"
+          >
+            <div className="flex items-center justify-between border-b border-red-500/20 pb-3 mb-4">
+              <h3 className="font-display text-base font-bold text-red-400">⚠️ حذف دائمی حساب</h3>
+              <button type="button" onClick={() => setIsDeleteOpen(false)} className="text-ink-muted hover:text-ink text-sm p-1">
+                ✕
+              </button>
+            </div>
+            
+            {!user?.telegram ? (
+              <div className="text-center py-4">
+                <p className="text-sm text-ink-muted mb-4">
+                  برای حذف حساب کاربری، ابتدا باید حساب تلگرام خود را در بخش "ویرایش مشخصات" متصل کنید.
+                </p>
+                <button
+                  onClick={() => { setIsDeleteOpen(false); setIsEditProfileOpen(true) }}
+                  className="btn-primary w-full py-2 text-xs font-bold"
+                >
+                  رفتن به ویرایش مشخصات
+                </button>
+              </div>
+            ) : deleteStep === 'initial' ? (
+              <div className="text-center py-4">
+                <p className="text-sm text-ink-muted mb-2">
+                  با این عمل، تمام پرامپت‌ها، لایک‌ها و تنظیمات شما برای <span className="text-red-400 font-bold">همیشه</span> حذف خواهند شد.
+                </p>
+                <p className="text-xs text-ink-faint mb-6">
+                  یک کد تایید به تلگرام شما ({user.telegram}) ارسال می‌شود.
+                </p>
+                <button
+                  onClick={handleDeleteRequest}
+                  disabled={isDeleting}
+                  className="w-full rounded-lg bg-red-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {isDeleting ? 'در حال ارسال...' : 'درخواست ارسال کد به تلگرام'}
+                </button>
+              </div>
+            ) : (
+              <div className="py-4">
+                <p className="text-xs text-ink-muted mb-4 text-center">
+                  کد ۶ رقمی ارسال شده به تلگرام خود را وارد کنید:
+                </p>
+                {deleteError && (
+                  <div className="mb-3 rounded-lg border border-red-500/40 bg-red-500/10 p-2 text-center text-xs text-red-400">
+                    {deleteError}
+                  </div>
+                )}
+                <input 
+                  type="text" 
+                  maxLength={6} 
+                  value={deleteCode} 
+                  onChange={(e) => setDeleteCode(e.target.value.replace(/\D/g, ''))} 
+                  placeholder="123456" 
+                  className="w-full rounded-lg border border-red-500/30 bg-surface p-3 text-center text-lg font-bold text-ink tracking-[0.5em] focus:border-red-500 focus:outline-none mb-4" 
+                />
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => { setDeleteStep('initial'); setDeleteCode(''); setDeleteError('') }}
+                    className="flex-1 rounded-lg border border-line px-4 py-2.5 text-xs text-ink-muted hover:bg-surface"
+                  >
+                    بازگشت
+                  </button>
+                  <button
+                    onClick={handleDeleteConfirm}
+                    disabled={isDeleting || deleteCode.length !== 6}
+                    className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {isDeleting ? 'در حال حذف...' : 'تایید و حذف نهایی'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

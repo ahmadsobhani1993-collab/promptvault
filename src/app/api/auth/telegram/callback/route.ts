@@ -1,7 +1,7 @@
 ﻿export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { cookies } from 'next/headers'
+import { signIn } from '@/auth' // اضافه کردن signIn برای لاگین واقعی
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://promptsfa.ir'
 
@@ -16,28 +16,27 @@ export async function GET(req: Request) {
 
     const loginToken = await prisma.loginToken.findUnique({
       where: { token },
-      include: { user: true },
     })
 
-    if (!loginToken || !loginToken.confirmed || !loginToken.user) {
+    // ✅ اصلاح: بررسی فیلد status به جای confirmed
+    if (!loginToken || !loginToken.status?.startsWith('CONFIRMED:')) {
       return NextResponse.redirect(`${APP_URL}/login?error=unauthorized_token`)
     }
 
-    // ثبت نشست در کوکی یا هدایت به حساب کاربری
-    const cookieStore = await cookies()
-    cookieStore.set('telegram_auth_user', loginToken.user.id, {
-      path: '/',
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60 * 24 * 7, // 7 روز
+    // ✅ استخراج userId از فیلد status (مثلاً "CONFIRMED:123") یا استفاده از userId
+    const userId = loginToken.userId || loginToken.status.replace('CONFIRMED:', '')
+
+    if (!userId) {
+      return NextResponse.redirect(`${APP_URL}/login?error=no_user_id`)
+    }
+
+    // ✅ لاگین واقعی کاربر از طریق NextAuth و ریدایرکت به صفحه اصلی
+    await signIn('telegram', {
+      userId: userId,
+      redirect: true,
+      redirectTo: '/'
     })
 
-    // ابطال یا حذف توکن مصرف شده
-    await prisma.loginToken.delete({
-      where: { token },
-    }).catch(() => {})
-
-    return NextResponse.redirect(`${APP_URL}/`)
   } catch (err) {
     console.error('Telegram callback error:', err)
     return NextResponse.redirect(`${APP_URL}/login?error=callback_failed`)

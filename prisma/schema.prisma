@@ -43,9 +43,11 @@ model User {
   image             String?
   role              Role               @default(USER)
   bio               String?
-  telegram          String?            @unique  // آیدی عددی برای لاگین
-  telegramHandle    String?            @unique  // آیدی متنی/کانال برای نمایش
+  telegram          String?            @unique
+  telegramHandle    String?            @unique
   instagram         String?
+  deleteCode        String?            // کد تایید حذف حساب
+  deleteCodeExpires DateTime?          // زمان انقضای کد حذف
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @default(now()) @updatedAt
   

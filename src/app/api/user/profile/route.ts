@@ -12,7 +12,7 @@ export async function PATCH(req: Request) {
 
     const currentUser = await prisma.user.findUnique({
       where: { id: session.user.id },
-      select: { username: true },
+      select: { username: true, telegram: true },
     })
 
     const { name, username, bio, image, telegram, instagram, telegramHandle } = await req.json()
@@ -30,21 +30,36 @@ export async function PATCH(req: Request) {
       newUsernameData = cleanUsername
     }
 
-    // اعتبارسنجی و پردازش telegramHandle
     let newTelegramHandle = undefined
     if (telegramHandle !== undefined) {
       const cleanHandle = String(telegramHandle).replace(/^@/, '').trim()
-      
       if (cleanHandle === '') {
-        newTelegramHandle = null // اگر خالی بود، مقدار قبلی پاک شود
+        newTelegramHandle = null
       } else if (!/^[a-zA-Z0-9_]{3,32}$/.test(cleanHandle)) {
-        return NextResponse.json({ error: 'آیدی تلگرام نامعتبر است (فقط حروف انگلیسی، اعداد و _ و بین ۳ تا ۳۲ کاراکتر)' }, { status: 400 })
+        return NextResponse.json({ error: 'آیدی تلگرام نامعتبر است' }, { status: 400 })
       } else {
         const existing = await prisma.user.findFirst({ where: { telegramHandle: cleanHandle } })
         if (existing && existing.id !== session.user.id) {
-          return NextResponse.json({ error: 'این آیدی تلگرام قبلاً توسط شخص دیگری ثبت شده است.' }, { status: 400 })
+          return NextResponse.json({ error: 'این آیدی تلگرام قبلاً ثبت شده است.' }, { status: 400 })
         }
         newTelegramHandle = cleanHandle
+      }
+    }
+
+    let mergeOccurred = false
+    if (telegram && telegram !== currentUser?.telegram) {
+      const existingTelegramUser = await prisma.user.findUnique({ where: { telegram } })
+      
+      if (existingTelegramUser && existingTelegramUser.id !== session.user.id) {
+        await prisma.$transaction(async (tx) => {
+          await tx.prompt.updateMany({ where: { userId: existingTelegramUser.id }, data: { userId: session.user.id } })
+          await tx.like.updateMany({ where: { userId: existingTelegramUser.id }, data: { userId: session.user.id } })
+          await tx.save.updateMany({ where: { userId: existingTelegramUser.id }, data: { userId: session.user.id } })
+          await tx.comment.updateMany({ where: { userId: existingTelegramUser.id }, data: { userId: session.user.id } })
+          await tx.bookmark.updateMany({ where: { userId: existingTelegramUser.id }, data: { userId: session.user.id } })
+          await tx.user.delete({ where: { id: existingTelegramUser.id } })
+        })
+        mergeOccurred = true
       }
     }
 
@@ -61,7 +76,11 @@ export async function PATCH(req: Request) {
       },
     })
 
-    return NextResponse.json({ ok: true, user: updatedUser })
+    return NextResponse.json({ 
+      ok: true, 
+      user: updatedUser,
+      message: mergeOccurred ? 'حساب تلگرام با موفقیت به این حساب متصل و ادغام شد.' : 'پروفایل با موفقیت به‌روزرسانی شد.'
+    })
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || 'خطا در ویرایش پروفایل' }, { status: 500 })
   }
