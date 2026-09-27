@@ -3,23 +3,9 @@
 import { useState, useRef, useCallback } from 'react'
 
 type Seg = { id: string; start: number; end: number; text: string; words?: { w: string; start: number; end: number }[]; fx?: string; hl?: string }
-type Style = {
-  fontId: string; size: number; color: string; hlColor: string
-  bgOpacity: number; outline: boolean; karaoke: boolean
-  x: number | null; y: number | null; direction?: 'rtl' | 'ltr' | 'auto'
-  align?: 'right' | 'center' | 'left'
-  bold?: boolean; italic?: boolean; underline?: boolean
-  textShadowBlur?: number; textShadowColor?: string; bgRadius?: number
-  fontFamily?: string
-}
+type Style = { fontId: string; size: number; color: string; hlColor: string; bgOpacity: number; outline: boolean; karaoke: boolean; x: number | null; y: number | null; direction?: 'rtl' | 'ltr' | 'auto'; align?: 'right' | 'center' | 'left'; bold?: boolean; italic?: boolean; underline?: boolean; textShadowBlur?: number; textShadowColor?: string; bgRadius?: number; fontFamily?: string }
 
-type Props = {
-  videoUrl: string
-  sourceFile?: File | null
-  segments: Seg[]
-  style: Style
-  baseName: string
-}
+type Props = { videoUrl: string; sourceFile?: File | null; segments: Seg[]; style: Style; baseName: string }
 
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
 
@@ -30,9 +16,8 @@ function wrapTextSafe(ctx: CanvasRenderingContext2D, text: string, maxWidth: num
   let currentLine = ''
   for (const word of words) {
     const testLine = currentLine ? `${currentLine} ${word}` : word
-    if (ctx.measureText(testLine).width > maxWidth && currentLine) {
-      lines.push(currentLine); currentLine = word
-    } else { currentLine = testLine }
+    if (ctx.measureText(testLine).width > maxWidth && currentLine) { lines.push(currentLine); currentLine = word }
+    else { currentLine = testLine }
   }
   if (currentLine) lines.push(currentLine)
   return lines.length ? lines : ['']
@@ -46,9 +31,7 @@ function fitSubtitle(ctx: CanvasRenderingContext2D, text: string, desiredFontSiz
     const lineHeight = fontSize * 1.3
     const totalHeight = lines.length * lineHeight
     const maxLineWidth = Math.max(...lines.map((l) => ctx.measureText(l).width), 0)
-    if (maxLineWidth <= maxWidth && totalHeight <= maxHeight) {
-      return { fontSize, lines, lineHeight, totalHeight, maxLineWidth }
-    }
+    if (maxLineWidth <= maxWidth && totalHeight <= maxHeight) return { fontSize, lines, lineHeight, totalHeight, maxLineWidth }
     fontSize *= 0.94
   }
   ctx.font = `800 ${fontSize}px "${fontFamily}", sans-serif`
@@ -83,12 +66,9 @@ function drawSubtitleOnCanvas(ctx: CanvasRenderingContext2D, video: HTMLVideoEle
 
   const bgOpacity = s.bgOpacity ?? 0.6
   if (seg.hl || bgOpacity > 0) {
-    const padX = finalFontSize * 0.6
-    const padY = finalFontSize * 0.3
-    const boxW = fitted.maxLineWidth + padX * 2
-    const boxH = fitted.totalHeight + padY * 2
-    const boxX = anchorX - boxW / 2
-    const boxY = anchorY - boxH / 2
+    const padX = finalFontSize * 0.6, padY = finalFontSize * 0.3
+    const boxW = fitted.maxLineWidth + padX * 2, boxH = fitted.totalHeight + padY * 2
+    const boxX = anchorX - boxW / 2, boxY = anchorY - boxH / 2
     const radius = s.bgRadius ?? 10
     ctx.save()
     ctx.fillStyle = seg.hl || `rgba(0, 0, 0, ${bgOpacity})`
@@ -158,31 +138,23 @@ export default function SubtitleVideoExport({ videoUrl, sourceFile, segments, st
     setStageText('. آماده‌سازی...')
     cancelRef.current = false
 
-    console.log('[Export] Starting export...', { videoUrl, segmentsCount: segments.length, baseName })
-
     const container = document.createElement('div')
     container.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none;'
     const video = document.createElement('video')
-    video.src = videoUrl
-    video.crossOrigin = 'anonymous'
-    video.playsInline = true
-    video.muted = true
+    video.src = videoUrl; video.crossOrigin = 'anonymous'; video.playsInline = true; video.muted = true
     container.appendChild(video)
     document.body.appendChild(container)
 
     try {
-      console.log('[Export] Waiting for video metadata...')
       await new Promise<void>((res, rej) => {
         const timeout = setTimeout(() => rej(new Error('Video load timeout')), 10000)
-        video.onloadedmetadata = () => { clearTimeout(timeout); console.log('[Export] Video metadata loaded'); res() }
+        video.onloadedmetadata = () => { clearTimeout(timeout); res() }
         video.onerror = () => { clearTimeout(timeout); rej(new Error('Video load error')) }
       })
 
       const duration = video.duration || segments.reduce((max, s) => Math.max(max, s.end), 0)
       const W = video.videoWidth || 1080
       const H = video.videoHeight || 1920
-
-      console.log('[Export] Video info:', { duration, W, H })
 
       const canvas = document.createElement('canvas')
       canvas.width = W; canvas.height = H
@@ -199,17 +171,12 @@ export default function SubtitleVideoExport({ videoUrl, sourceFile, segments, st
       video.currentTime = 0
       await video.play()
 
-      console.log('[Export] Starting canvas render...')
       setStageText('۲. رندر فریم‌ها...')
-      
       await new Promise<void>(resolve => {
         const startTime = Date.now()
         const maxTime = duration * 1000 + 5000
         const onFrame = (_: number, meta: { mediaTime: number }) => {
-          if (cancelRef.current || meta.mediaTime >= duration || (Date.now() - startTime) > maxTime) { 
-            console.log('[Export] Canvas render complete')
-            resolve(); return 
-          }
+          if (cancelRef.current || meta.mediaTime >= duration || (Date.now() - startTime) > maxTime) { resolve(); return }
           drawSubtitleOnCanvas(ctx, video, W, H, meta.mediaTime, duration, segments, style)
           const pct = Math.min(50, Math.round((meta.mediaTime / duration) * 50))
           setProgress(pct)
@@ -219,13 +186,9 @@ export default function SubtitleVideoExport({ videoUrl, sourceFile, segments, st
         if ('requestVideoFrameCallback' in video) video.requestVideoFrameCallback(onFrame)
         else {
           const timer = setInterval(() => {
-            if (cancelRef.current || video.currentTime >= duration || (Date.now() - startTime) > maxTime) { 
-              clearInterval(timer); console.log('[Export] Canvas render complete (fallback)')
-              resolve(); return 
-            }
+            if (cancelRef.current || video.currentTime >= duration || (Date.now() - startTime) > maxTime) { clearInterval(timer); resolve(); return }
             drawSubtitleOnCanvas(ctx, video, video.currentTime, W, H, duration, segments, style)
-            const pct = Math.min(50, Math.round((video.currentTime / duration) * 50))
-            setProgress(pct)
+            setProgress(Math.min(50, Math.round((video.currentTime / duration) * 50)))
           }, 33)
         }
       })
@@ -235,7 +198,6 @@ export default function SubtitleVideoExport({ videoUrl, sourceFile, segments, st
       await recorderPromise
       if (cancelRef.current) throw new Error('CANCELLED')
 
-      console.log('[Export] Chunks collected:', chunks.length)
       setStageText('۳. فشرده‌سازی با FFmpeg...')
       setProgress(55)
 
@@ -243,13 +205,8 @@ export default function SubtitleVideoExport({ videoUrl, sourceFile, segments, st
       let useFFmpeg = true
 
       try {
-        console.log('[Export] Loading FFmpeg...')
         const { loadFFmpeg } = await import('@/lib/video-extract')
-        const ff = await Promise.race([
-          loadFFmpeg(),
-          new Promise<any>((_, rej) => setTimeout(() => { console.warn('[Export] FFmpeg load timeout'); rej(new Error('FFmpeg timeout')) }, 15000))
-        ])
-        console.log('[Export] FFmpeg loaded successfully')
+        const ff = await Promise.race([loadFFmpeg(), new Promise<any>((_, rej) => setTimeout(() => rej(new Error('FFmpeg timeout')), 15000))])
 
         const rawBlob = new Blob(chunks, { type: mime })
         const rawName = `raw_${Date.now()}.webm`
@@ -258,27 +215,17 @@ export default function SubtitleVideoExport({ videoUrl, sourceFile, segments, st
 
         const args = ['-i', rawName, '-c:v', 'libx264', '-crf', '23', '-preset', 'veryfast']
         if (sourceFile) {
-          console.log('[Export] Using source file for audio')
           const ext = sourceFile.name.match(/\.[^.]+$/)?.[0] || '.mp4'
           const srcName = `src_${Date.now()}${ext}`
           await ff.writeFile(srcName, new Uint8Array(await sourceFile.arrayBuffer()))
           args.push('-i', srcName, '-c:a', 'aac', '-b:a', '192k', '-map', '0:v:0', '-map', '1:a:0?', '-shortest')
-        } else { 
-          console.warn('[Export] No source file - audio may be missing')
-          args.push('-c:a', 'aac', '-b:a', '192k') 
-        }
+        } else { args.push('-c:a', 'aac', '-b:a', '192k') }
         args.push(outName)
 
-        console.log('[Export] Running FFmpeg with args:', args)
-        setProgress(65)
-        
-        await Promise.race([ff.exec(args), new Promise((_, rej) => setTimeout(() => { console.warn('[Export] FFmpeg exec timeout'); rej(new Error('FFmpeg exec timeout')) }, 60000))])
-        
-        console.log('[Export] FFmpeg done, reading output...')
+        await Promise.race([ff.exec(args), new Promise((_, rej) => setTimeout(() => rej(new Error('FFmpeg exec timeout')), 60000))])
         const data = await ff.readFile(outName)
         try { await ff.deleteFile(rawName); await ff.deleteFile(outName) } catch {}
         finalBlob = new Blob([data], { type: 'video/mp4' })
-        console.log('[Export] MP4 created, size:', finalBlob.size)
       } catch (err) {
         console.warn('[Export] FFmpeg failed, using WebM fallback:', err)
         useFFmpeg = false

@@ -1,5 +1,4 @@
 import Link from 'next/link'
-import Image from 'next/image'
 import { cookies } from 'next/headers'
 import { auth } from '@/auth'
 import { type Locale } from '@/lib/i18n'
@@ -32,7 +31,26 @@ export default async function Header() {
           </Link>
 
           {/* آیتم‌های سمت چپ موبایل */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            {/*  ابزار - نسخه موبایل (فقط آیکون) */}
+            <div className="hidden sm:flex items-center gap-1">
+              <Link href="/transcribe" className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface text-xs text-ink-muted transition-colors hover:bg-gold/10 hover:text-gold-bright" title="تبدیل صدا به متن">
+                🎙️
+              </Link>
+              <Link href="/subtitle" className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface text-xs text-ink-muted transition-colors hover:bg-gold/10 hover:text-gold-bright" title="استودیو زیرنویس">
+                🎬
+              </Link>
+              <Link href="/audio-enhancer" className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface text-xs text-ink-muted transition-colors hover:bg-gold/10 hover:text-gold-bright" title="تقویت صدا">
+                🔊
+              </Link>
+              <Link href="/tools/bg-remover" className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface text-xs text-ink-muted transition-colors hover:bg-gold/10 hover:text-gold-bright" title="حذف پس‌زمینه">
+                ✂️
+              </Link>
+              <Link href="/pdf-to-word" className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface text-xs text-ink-muted transition-colors hover:bg-gold/10 hover:text-gold-bright" title="PDF به Word">
+                📄
+              </Link>
+            </div>
+
             <LocaleSwitcher />
 
             {session?.user ? (
@@ -42,12 +60,10 @@ export default async function Header() {
                 title={session.user.name || 'پروفایل'}
               >
                 {session.user.image ? (
-                  <Image
+                  <img
                     src={session.user.image}
                     alt={session.user.name || 'User'}
-                    fill
-                    sizes="32px"
-                    className="object-cover"
+                    className="h-full w-full object-cover"
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#1c160c] to-[#2c2211] font-display text-xs font-bold text-gold-bright">
@@ -77,44 +93,27 @@ export default async function Header() {
             Prompts<span className="text-gold-bright">FA</span>
           </Link>
 
-          <nav className="flex items-center gap-6 text-sm text-ink-muted">
-            <Link href="/explore" className="transition-colors hover:text-gold-bright whitespace-nowrap">
-              {L(locale, 'کاوش', 'Explore')}
+          {/* ۵ ابزار - نسخه دسکتاپ (آیکون + متن) */}
+          <nav className="flex items-center gap-2">
+            <Link href="/transcribe" className="flex items-center gap-1.5 rounded-lg bg-surface px-3 py-2 text-xs font-bold text-ink-muted transition-all hover:bg-gold/10 hover:text-gold-bright">
+              <span>🎙️</span>
+              <span>{L(locale, 'تبدیل صدا', 'Transcribe')}</span>
             </Link>
-
-            <div className="group relative">
-              <button type="button" className="transition-colors hover:text-gold-bright whitespace-nowrap">
-                {L(locale, 'دسته‌بندی‌ها', 'Categories')} ▾
-              </button>
-              <div className="invisible absolute left-1/2 top-full z-50 w-80 -translate-x-1/2 pt-3 opacity-0 transition-all group-hover:visible group-hover:opacity-100">
-                <div className="card max-h-[70vh] overflow-auto p-4">
-                  {categories.map((c) => (
-                    <div key={c.id} className="mb-4 last:mb-0">
-                      <Link
-                        href={'/categories/' + c.slug}
-                        className="block rounded-lg px-3 py-1.5 text-sm font-bold text-ink transition-colors hover:bg-elevated hover:text-gold-bright"
-                      >
-                        {c.icon} {L(locale, c.nameFa, c.nameEn)}
-                      </Link>
-                      <div className="mt-2 flex flex-wrap gap-1.5 px-3">
-                        {c.subs.map((s) => (
-                          <Link
-                            key={s.id}
-                            href={'/categories/' + c.slug + '?sub=' + s.slug}
-                            className="rounded-full border border-line bg-elevated px-2.5 py-1 text-[10px] text-ink-muted transition-colors hover:border-gold/50 hover:text-gold-bright"
-                          >
-                            {L(locale, s.fa, s.en)}
-                          </Link>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <Link href="/blog" className="transition-colors hover:text-gold-bright whitespace-nowrap">
-              {L(locale, 'مقالات', 'Blog')}
+            <Link href="/subtitle" className="flex items-center gap-1.5 rounded-lg bg-surface px-3 py-2 text-xs font-bold text-ink-muted transition-all hover:bg-gold/10 hover:text-gold-bright">
+              <span>🎬</span>
+              <span>{L(locale, 'زیرنویس', 'Subtitle')}</span>
+            </Link>
+            <Link href="/audio-enhancer" className="flex items-center gap-1.5 rounded-lg bg-surface px-3 py-2 text-xs font-bold text-ink-muted transition-all hover:bg-gold/10 hover:text-gold-bright">
+              <span>🔊</span>
+              <span>{L(locale, 'تقویت صدا', 'Audio')}</span>
+            </Link>
+            <Link href="/tools/bg-remover" className="flex items-center gap-1.5 rounded-lg bg-surface px-3 py-2 text-xs font-bold text-ink-muted transition-all hover:bg-gold/10 hover:text-gold-bright">
+              <span>✂️</span>
+              <span>{L(locale, 'حذف پس‌زمینه', 'BG Remover')}</span>
+            </Link>
+            <Link href="/pdf-to-word" className="flex items-center gap-1.5 rounded-lg bg-surface px-3 py-2 text-xs font-bold text-ink-muted transition-all hover:bg-gold/10 hover:text-gold-bright">
+              <span>📄</span>
+              <span>{L(locale, 'PDF به Word', 'PDF to Word')}</span>
             </Link>
           </nav>
 
@@ -123,7 +122,7 @@ export default async function Header() {
               href="/submit" 
               className="inline-flex rounded-lg bg-gold-bright/15 border border-gold-bright/35 px-4 py-2 text-sm font-bold text-gold-bright transition-all hover:bg-gold-bright/25 hover:border-gold-bright whitespace-nowrap"
             >
-              ✨ {L(locale, 'ارسال پرامپت', 'Submit')}
+               {L(locale, 'ارسال پرامپت', 'Submit')}
             </Link>
 
             <LocaleSwitcher />
@@ -143,12 +142,10 @@ export default async function Header() {
                 >
                   <div className="relative h-9 w-9 overflow-hidden rounded-full border-2 border-gold-bright/50 bg-[#120f09] shadow-[0_0_12px_rgba(212,175,55,0.15)] transition-all group-hover:border-gold-bright group-hover:shadow-[0_0_16px_rgba(212,175,55,0.35)]">
                     {session.user.image ? (
-                      <Image
+                      <img
                         src={session.user.image}
                         alt={session.user.name || 'User'}
-                        fill
-                        sizes="36px"
-                        className="object-cover"
+                        className="h-full w-full object-cover"
                       />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#1c160c] to-[#2c2211] font-display text-sm font-bold text-gold-bright">
