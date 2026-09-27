@@ -21,39 +21,53 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         telegramId: { label: 'Telegram ID', type: 'text' },
       },
       async authorize(credentials) {
-        // دریافت آیدی تلگرام از هر کدام از کلیدهای ممکن که ممکن است ارسال شده باشد
-        const tgId = credentials?.id || credentials?.userId || credentials?.telegramId
+        console.log("🔍 [AUTH] Credentials received:", credentials)
         
-        if (!tgId) {
-          console.error('[AUTH] Telegram ID is missing in credentials:', credentials)
-          return null
-        }
-
-        const tgIdStr = String(tgId)
-
-        // ۱. جستجوی کاربر بر اساس آیدی عددی تلگرام (فیلد telegram در prisma)
-        let user = await prisma.user.findFirst({
-          where: { telegram: tgIdStr },
-        })
-
-        // ۲. اگر کاربر وجود نداشت (اولین بار است با تلگرام وارد می‌شود)، حساب جدید می‌سازیم
-        if (!user) {
-          try {
-            user = await prisma.user.create({
-              data: {
-                telegram: tgIdStr,
-                name: 'کاربر تلگرام',
-                // یک ایمیل موقت یکتا برای عبور از قید unique دیتابیس
-                email: `telegram_${tgIdStr}@promptfa.local`, 
-              },
-            })
-          } catch (error) {
-            console.error('[AUTH] Failed to create Telegram user:', error)
-            return null
+        // ۱. اگر userId مستقیماً ارسال شده باشد (مثلاً از callback تلگرام)، مستقیماً کاربر را پیدا کن
+        if (credentials?.userId) {
+          const user = await prisma.user.findUnique({
+            where: { id: String(credentials.userId) },
+          })
+          if (user) {
+            console.log("✅ [AUTH] User found by userId:", user.id)
+            return user
           }
         }
 
-        return user
+        // ۲. در غیر این صورت، بر اساس آیدی تلگرام جستجو کن
+        const tgId = credentials?.id || credentials?.telegramId
+        if (tgId) {
+          const tgIdStr = String(tgId)
+          console.log("🔍 [AUTH] Searching for user with telegram ID:", tgIdStr)
+
+          let user = await prisma.user.findFirst({
+            where: { telegram: tgIdStr },
+          })
+
+          if (!user) {
+            console.log("⚠️ [AUTH] User not found. Creating new user...")
+            try {
+              user = await prisma.user.create({
+                data: {
+                  telegram: tgIdStr,
+                  name: 'کاربر تلگرام',
+                  email: `telegram_${tgIdStr}@promptfa.local`, 
+                },
+              })
+              console.log("✅ [AUTH] New user created with ID:", user.id)
+            } catch (error) {
+              console.error("❌ [AUTH] Failed to create user:", error)
+              return null
+            }
+          } else {
+            console.log("✅ [AUTH] Existing user found with ID:", user.id)
+          }
+
+          return user
+        }
+
+        console.error("❌ [AUTH] No valid credentials provided!")
+        return null
       },
     }),
   ],
