@@ -1,10 +1,10 @@
-import type { TranscriptSegment } from './live-transcribe'
+﻿import type { TranscriptSegment } from './live-transcribe'
 
 export type Word = { w: string; start: number; end: number }
 export type Fx = 'none' | 'pop' | 'zoomIn' | 'zoomOut' | 'slide'
 export type TextDirection = 'auto' | 'rtl' | 'ltr'
 export type TextAlign = 'left' | 'center' | 'right'
-export type Seg = TranscriptSegment & { words: Word[]; fx?: Fx; hl?: string }
+export type Seg = TranscriptSegment & { id: string; words: Word[]; fx?: Fx; hl?: string }
 
 export type Style = {
   fontId: string
@@ -239,3 +239,4 @@ export const loadFont = async (id: string) => {
     await (document as any).fonts?.load(`800 40px "${id}"`)
   } catch {}
 }
+

@@ -63,7 +63,7 @@ function regionsFromEnv(env: Float32Array): { regions: Region[]; thr: number } {
   const out: Region[] = []
   for (const r of raw) {
     const last = out[out.length - 1]
-    if (last && r.start - last.end < 0.25) last.end = r.end
+    if (last && r.start - last.end < 0.45) last.end = r.end
     else if (r.end - r.start >= 0.12) out.push(r)
   }
   return { regions: out.length ? out : [{ start: 0, end: env.length * HOP }], thr }
@@ -101,7 +101,9 @@ export function alignSegments(segs: Seg[], pcm: unknown): Seg[] {
         dur += rdur[k - 1]
         const e = Math.max(0.3, exp[i - 1])
         const r = (dur - e) / e
-        const c = dp[i - 1][k - 1] + r * r
+        const pauseBefore = k > 1 ? Math.max(0, regions[k - 1].start - regions[k - 2].end) : 0
+        const pauseReward = Math.min(1.5, Math.max(0, pauseBefore - 0.2) * 2)
+        const c = dp[i - 1][k - 1] + r * r - pauseReward
         if (c < best) { best = c; bk = k - 1 }
       }
       if (m < n && dp[i - 1][j] < best) { best = dp[i - 1][j]; bk = j }
@@ -192,4 +194,53 @@ export function alignSegments(segs: Seg[], pcm: unknown): Seg[] {
     }
   }
   return out
+}
+
+/**
+ * هم‌ترازی صوتی را به مرزبندی کپشن تبدیل می‌کند: سکوت قابل‌توجه بین دو کلمه
+ * می‌شود مرز سگمنت؛ در نبود مکث، طول کپشن حداکثر هفت کلمه می‌ماند.
+ */
+export function alignSegmentsAtPauses(segs: Seg[], pcm: unknown): Seg[] {
+  const aligned = alignSegments(segs, pcm)
+  const timedWords = aligned.flatMap((seg) => {
+    const tokens = seg.text.trim().split(/\s+/).filter(Boolean)
+    const words = seg.words?.length ? seg.words : mkWords(seg.text, seg.start, seg.end)
+    return tokens.map((token, index) => ({
+      text: token,
+      start: Number(words[index]?.start ?? seg.start),
+      end: Number(words[index]?.end ?? seg.end),
+    }))
+  })
+  if (!timedWords.length) return aligned
+
+  const result: Seg[] = []
+  let current: typeof timedWords = []
+  let previousEnd = 0
+
+  const flush = () => {
+    if (!current.length) return
+    const start = current[0].start
+    const end = Math.max(start + 0.15, current[current.length - 1].end)
+    result.push({
+      id: `pause_seg_${Math.round(start * 1000)}_${result.length}`,
+      text: current.map((word) => word.text).join(' '),
+      start,
+      end,
+      words: current.map((word) => ({ w: word.text, start: word.start, end: word.end })),
+    })
+    current = []
+  }
+
+  timedWords.forEach((word, index) => {
+    const start = Math.max(previousEnd, word.start)
+    const normalized = { ...word, start, end: Math.max(start + 0.04, word.end) }
+    current.push(normalized)
+    previousEnd = normalized.end
+
+    const next = timedWords[index + 1]
+    const pauseAfter = next ? Math.max(0, next.start - normalized.end) : 0
+    if (!next || pauseAfter >= 0.45 || current.length >= 7) flush()
+  })
+
+  return result
 }

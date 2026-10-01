@@ -5,7 +5,7 @@ import { useMobileStudioState } from './useMobileStudioState'
 import SubtitleStyleModal from './StyleSheet/SubtitleStyleModal'
 import CanvasSheet from './CanvasSheet'
 import CaptionEditSheet from './CaptionEditSheet'
-import SubtitleVideoExport from '@/components/transcribe/SubtitleVideoExport'
+import { useVideoExport } from '@/components/transcribe/export/useVideoExport'
 
 interface SubtitleSegment {
   id: string
@@ -20,7 +20,7 @@ interface Props {
   onUpdateSubtitleText: (index: number, newText: string) => void
   currentTime: number
   onSeek: (time: number) => void
-  onExport?: () => void
+  sourceFile?: File | null
 }
 
 export default function MobileStudioLayout({
@@ -29,6 +29,7 @@ export default function MobileStudioLayout({
   onUpdateSubtitleText,
   currentTime,
   onSeek,
+  sourceFile,
 }: Props) {
   const {
     styleConfig,
@@ -40,11 +41,40 @@ export default function MobileStudioLayout({
   } = useMobileStudioState()
 
   const [showExportModal, setShowExportModal] = useState(false)
+  const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  const [editText, setEditText] = useState('')
+
   const currentSegment = subtitles[selectedSegmentIndex] || subtitles[0]
+
+  const {
+    exporting,
+    progress,
+    stageText,
+    exportVideo,
+    cancelExport,
+  } = useVideoExport(sourceFile)
+
+  const handleEditClick = (index: number) => {
+    setEditingIndex(index)
+    setEditText(subtitles[index].text)
+  }
+
+  const handleEditSave = () => {
+    if (editingIndex !== null && editText.trim()) {
+      onUpdateSubtitleText(editingIndex, editText.trim())
+    }
+    setEditingIndex(null)
+    setEditText('')
+  }
+
+  const handleEditCancel = () => {
+    setEditingIndex(null)
+    setEditText('')
+  }
 
   return (
     <div className="relative flex flex-col h-[88vh] max-w-md mx-auto bg-[#070605] rounded-3xl overflow-hidden border border-stone-800 shadow-2xl">
-      {/* هدر بدون تاری */}
+      {/* هدر */}
       <div className="flex items-center justify-between px-4 py-3 bg-[#110f0d] border-b border-stone-800 z-20">
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -56,11 +86,11 @@ export default function MobileStudioLayout({
           className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black px-4 py-1.5 rounded-xl text-xs font-black shadow-md active:scale-95 transition-all"
         >
           <span>خروجی نهایی</span>
-          <span>⬇️</span>
+          <span>️</span>
         </button>
       </div>
 
-      {/* ناحیه تصویر ویدیو - شفاف و بدون تیرگی */}
+      {/* ناحیه تصویر ویدیو */}
       <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden">
         <div
           className={`relative transition-all overflow-hidden flex items-center justify-center ${
@@ -135,36 +165,78 @@ export default function MobileStudioLayout({
         </div>
       </div>
 
-      {/* سگمنت‌ها در پایین */}
+      {/* ✅ سگمنت‌ها در پایین - با قابلیت ادیت مستقیم */}
       <div className="bg-[#12100d] border-t border-stone-800 p-3 z-10">
         <div className="flex items-center justify-between mb-2 px-1">
           <span className="text-[11px] font-mono text-stone-400">
             ⏱️ {currentTime.toFixed(1)} ثانیه / {subtitles.length} سگمنت
           </span>
+          {editingIndex !== null && (
+            <div className="flex gap-1">
+              <button
+                onClick={handleEditSave}
+                className="px-2 py-1 rounded bg-amber-500 text-black text-[10px] font-bold"
+              >
+                ✓ ذخیره
+              </button>
+              <button
+                onClick={handleEditCancel}
+                className="px-2 py-1 rounded bg-stone-700 text-stone-300 text-[10px]"
+              >
+                ✕ انصراف
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
           {subtitles.map((sub, idx) => (
-            <button
-              type="button"
+            <div
               key={sub.id || idx}
-              onClick={() => {
-                setSelectedSegmentIndex(idx)
-                onSeek(sub.start)
-              }}
-              className={`shrink-0 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+              className={`shrink-0 rounded-xl text-xs font-medium transition-all ${
                 selectedSegmentIndex === idx
                   ? 'bg-amber-500 text-black font-bold shadow-md'
-                  : 'bg-stone-900 border border-stone-800 text-stone-300 hover:border-stone-700'
+                  : 'bg-stone-900 border border-stone-800 text-stone-300'
               }`}
             >
-              {sub.text}
-            </button>
+              {editingIndex === idx ? (
+                <textarea
+                  autoFocus
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  onBlur={handleEditSave}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      handleEditSave()
+                    }
+                    if (e.key === 'Escape') {
+                      handleEditCancel()
+                    }
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-32 h-16 bg-black/80 text-[10px] text-white resize-none outline-none border border-amber-500/50 rounded p-1"
+                  rows={3}
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedSegmentIndex(idx)
+                    onSeek(sub.start)
+                  }}
+                  onDoubleClick={() => handleEditClick(idx)}
+                  className="px-3 py-2 text-left"
+                >
+                  {sub.text}
+                </button>
+              )}
+            </div>
           ))}
         </div>
       </div>
 
-      {/* پنجره پاپ‌آپ استخراج با انتقال کامل استایل‌های زنده */}
+      {/* مودال خروجی */}
       {showExportModal && (
         <div className="absolute inset-0 z-50 bg-black/90 flex flex-col justify-end p-4">
           <div className="bg-[#161412] border border-stone-800 rounded-3xl p-5 mb-2">
@@ -178,16 +250,55 @@ export default function MobileStudioLayout({
                 ✕
               </button>
             </div>
-            <SubtitleVideoExport
-              videoUrl={videoUrl}
-              segments={subtitles as any}
-              style={{
-                fontId: styleConfig.fontFamily,
-                color: styleConfig.textColor,
-                hlColor: styleConfig.activeWordColor,
-                karaoke: true,
-              } as any}
-            />
+
+            {exporting ? (
+              <div className="space-y-4 text-center py-4">
+                <div className="text-xs text-amber-400 font-mono">{stageText || 'در حال پردازش...'}</div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-stone-800">
+                  <div className="h-full bg-amber-500 transition-all duration-300" style={{ width: `${progress}%` }} />
+                </div>
+                <button
+                  onClick={cancelExport}
+                  className="w-full rounded-lg border border-red-500/30 bg-red-500/10 py-2 text-xs font-bold text-red-400 hover:bg-red-500/20"
+                >
+                  لغو عملیات
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-xs text-stone-400 text-center">
+                  ویدیو با نسبت تصویر <span className="text-amber-400 font-bold">{styleConfig.aspectRatio || '16:9'}</span> و کیفیت بالا رندر خواهد شد.
+                </p>
+                <button
+                  onClick={() => {
+                    exportVideo(
+                      videoUrl,
+                      subtitles as any,
+                      {
+                        fontId: styleConfig.fontFamily,
+                        fontFamily: styleConfig.fontFamily,
+                        size: styleConfig.fontSize,
+                        color: styleConfig.textColor,
+                        hlColor: styleConfig.activeWordColor,
+                        bgColor: styleConfig.bgColor,
+                        bgOpacity: styleConfig.hasBg ? 0.6 : 0,
+                        karaoke: true,
+                        textShadowBlur: styleConfig.shadowBlur,
+                        textShadowColor: styleConfig.shadowColor,
+                        bgRadius: styleConfig.bgRadius,
+                        x: 50,
+                        y: 90,
+                        aspectRatio: styleConfig.aspectRatio,
+                      } as any,
+                      'video'
+                    )
+                  }}
+                  className="w-full rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 py-3 text-xs font-black text-black transition-all hover:from-amber-500 hover:to-amber-400"
+                >
+                  شروع رندر و دانلود MP4 ⚡
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

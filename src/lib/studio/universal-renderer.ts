@@ -1,4 +1,6 @@
 ﻿import { StudioSegment, StudioStyleConfig, WordTiming } from './unified-style'
+import { getAnimationState } from '@/lib/subtitle-studio'
+import { drawWatermarks } from './watermark-renderer'
 
 interface RenderParams {
   ctx: CanvasRenderingContext2D
@@ -123,6 +125,18 @@ export function drawRoundedRect(
   ctx.closePath()
 }
 
+function colorWithOpacity(color: string, opacity: number): string {
+  const alpha = Math.max(0, Math.min(1, opacity))
+  const rgba = color.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*[\d.]+)?\s*\)$/i)
+  if (rgba) return `rgba(${rgba[1]}, ${rgba[2]}, ${rgba[3]}, ${alpha})`
+  const hex = color.match(/^#([\da-f]{3}|[\da-f]{6})$/i)?.[1]
+  if (hex) {
+    const full = hex.length === 3 ? hex.split('').map(char => char + char).join('') : hex
+    return `rgba(${parseInt(full.slice(0, 2), 16)}, ${parseInt(full.slice(2, 4), 16)}, ${parseInt(full.slice(4, 6), 16)}, ${alpha})`
+  }
+  return color
+}
+
 export function renderStudioFrame({
   ctx,
   canvasWidth,
@@ -150,7 +164,10 @@ export function renderStudioFrame({
     (seg) => currentTime >= seg.start && currentTime <= seg.end
   )
 
-  if (!activeSegment || !activeSegment.text.trim()) return
+  if (!activeSegment || !activeSegment.text.trim()) {
+    drawWatermarks(ctx, style.watermarks, canvasWidth, canvasHeight)
+    return
+  }
 
   const refWidth = style.contentFit === 'cover' ? canvasWidth : vRect.drawW
   const calcFontSize = Math.max(14, (refWidth * style.fontSizePercent) / 100)
@@ -169,9 +186,18 @@ export function renderStudioFrame({
   const totalTextHeight = lines.length * lineHeight
 
   const anchorY = (canvasHeight * style.positionYPercent) / 100
-  let anchorX = activeBoundX + activeBoundW / 2
-  if (style.alignment === 'right') anchorX = activeBoundX + activeBoundW * 0.90
-  if (style.alignment === 'left') anchorX = activeBoundX + activeBoundW * 0.10
+  const anchorX = activeBoundX + activeBoundW * (style.positionXPercent / 100)
+
+  const animation = style.subtitleAnimation ?? 'none'
+  const elapsed = Math.max(0, currentTime - activeSegment.start)
+  const animationState = getAnimationState(animation, elapsed, activeSegment.end - activeSegment.start, canvasWidth)
+  if (animation !== 'none' && (elapsed < 0.35 || animation === 'zoomIn' || animation === 'zoomOut')) {
+    ctx.save()
+    ctx.globalAlpha = animationState.opacity
+    ctx.translate(anchorX + animationState.translateX, anchorY + animationState.translateY)
+    ctx.scale(animationState.scale, animationState.scale)
+    ctx.translate(-anchorX, -anchorY)
+  }
 
   const words = getWordTimings(activeSegment)
   const activeWordIdx = words.findIndex(
@@ -198,9 +224,15 @@ export function renderStudioFrame({
     ctx.shadowBlur = 0
     ctx.shadowOffsetX = 0
     ctx.shadowOffsetY = 0
-    ctx.fillStyle = style.bgColor
+    ctx.fillStyle = colorWithOpacity(style.bgColor, style.bgOpacity)
     drawRoundedRect(ctx, bgBoxX, bgBoxY, bgBoxW, bgBoxH, style.bgRadius)
     ctx.fill()
+    if (style.bgBorderWidth > 0) {
+      ctx.strokeStyle = style.bgBorderColor
+      ctx.lineWidth = style.bgBorderWidth
+      drawRoundedRect(ctx, bgBoxX, bgBoxY, bgBoxW, bgBoxH, style.bgRadius)
+      ctx.stroke()
+    }
     ctx.restore()
   }
 
@@ -249,6 +281,12 @@ export function renderStudioFrame({
       }
 
       ctx.textAlign = 'center'
+      if (style.hasTextStroke && style.textStrokeWidth > 0) {
+        ctx.lineJoin = 'round'
+        ctx.strokeStyle = style.textStrokeColor
+        ctx.lineWidth = style.textStrokeWidth
+        ctx.strokeText(word, drawWordCenterX, yPos)
+      }
       ctx.fillStyle = isCurrentActive ? style.activeWordColor : style.textColor
       ctx.fillText(word, drawWordCenterX, yPos)
       ctx.restore()
@@ -257,4 +295,7 @@ export function renderStudioFrame({
       globalWordCounter++
     })
   })
+
+  if (animation !== 'none' && (elapsed < 0.35 || animation === 'zoomIn' || animation === 'zoomOut')) ctx.restore()
+  drawWatermarks(ctx, style.watermarks, canvasWidth, canvasHeight)
 }

@@ -24,6 +24,13 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  outputFileTracingIncludes: {
+    '/api/ffmpeg/[asset]': [
+      './node_modules/@ffmpeg/ffmpeg/dist/esm/*.js',
+      './node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.js',
+      './node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.wasm',
+    ],
+  },
   async rewrites() {
     return [
       {
@@ -38,9 +45,18 @@ const nextConfig = {
   },
   async headers() {
     return [
+      // ۱. هدرهای امنیتی عمومی برای تمام مسیرها (دست‌نخورده)
       {
         source: '/:path*',
         headers: securityHeaders,
+      },
+      // . هدرهای اختصاصی برای FFmpeg (جدید و امن)
+      {
+        source: '/ffmpeg/(.*)',
+        headers: [
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+          { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
+        ],
       },
     ]
   },

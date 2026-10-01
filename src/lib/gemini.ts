@@ -43,8 +43,12 @@ export const MODEL_CHAIN = [
 let globalKeyIndex = 0
 
 function getGeminiKeys(): string[] {
-  const raw = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || ''
-  return raw.split(',').map((k) => k.trim()).filter((k) => k.length > 10)
+  const numberedKeys = Object.entries(process.env)
+    .filter(([name, value]) => /^GEMINI_API_KEY_\d+$/.test(name) && Boolean(value?.trim()))
+    .sort(([a], [b]) => Number(a.match(/\d+$/)?.[0]) - Number(b.match(/\d+$/)?.[0]))
+    .map(([, value]) => value || '')
+  const configured = [process.env.GEMINI_API_KEYS, process.env.GEMINI_API_KEY, ...numberedKeys]
+  return [...new Set(configured.flatMap((value) => (value || '').split(',').map((key) => key.trim())).filter((key) => key.length > 10))]
 }
 
 export async function generateText(opts: {
@@ -52,6 +56,10 @@ export async function generateText(opts: {
   imgBase64?: string | null
   imgMime?: string
   expectJson?: boolean
+  modelChain?: readonly string[]
+  timeoutMs?: number
+  temperature?: number
+  responseSchema?: Record<string, unknown>
 }): Promise<{ text: string; model: string }> {
   const parts: any[] = [{ text: opts.instruction }]
   if (opts.imgBase64) {
@@ -62,7 +70,6 @@ export async function generateText(opts: {
       },
     })
   }
-
   const keys = getGeminiKeys()
   if (keys.length === 0) {
     throw new Error('GEMINI_FAILED: کلید API برای جمینای تنظیم نشده است')
@@ -70,15 +77,18 @@ export async function generateText(opts: {
 
   const errors: string[] = []
 
-  for (const model of MODEL_CHAIN) {
+  for (const model of opts.modelChain ?? MODEL_CHAIN) {
     for (let attempt = 0; attempt < keys.length; attempt++) {
       const keyIndex = (globalKeyIndex + attempt) % keys.length
       const key = keys[keyIndex]
 
       try {
         const payload: any = { contents: [{ parts }] }
-        if (opts.expectJson) {
-          payload.generationConfig = { responseMimeType: 'application/json' }
+        if (opts.expectJson || opts.temperature != null || opts.responseSchema) {
+          payload.generationConfig = {}
+          if (opts.expectJson || opts.responseSchema) payload.generationConfig.responseMimeType = 'application/json'
+          if (opts.temperature != null) payload.generationConfig.temperature = opts.temperature
+          if (opts.responseSchema) payload.generationConfig.responseSchema = opts.responseSchema
         }
 
         const res = await fetch(
@@ -87,7 +97,7 @@ export async function generateText(opts: {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
-            signal: AbortSignal.timeout(35000),
+            signal: AbortSignal.timeout(opts.timeoutMs ?? 35000),
           }
         )
 

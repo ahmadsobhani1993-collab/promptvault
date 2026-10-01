@@ -1,6 +1,21 @@
 ﻿export type AspectRatio = 'original' | '9:16' | '16:9' | '1:1' | '4:5'
 export type ContentFit = 'contain' | 'cover'
 export type TextAlignment = 'center' | 'right' | 'left'
+export type SubtitleAnimation = 'none' | 'pop' | 'zoomIn' | 'zoomOut'
+export type WatermarkType = 'text' | 'sticker'
+
+export interface WatermarkOverlay {
+  id: string
+  type: WatermarkType
+  value: string
+  x: number
+  y: number
+  size: number
+  opacity: number
+  color: string
+  rotation: number
+  fontFamily?: string
+}
 
 export interface WordTiming {
   text: string
@@ -17,6 +32,7 @@ export interface StudioSegment {
 }
 
 export interface StudioStyleConfig {
+  fontId?: string
   aspectRatio: AspectRatio
   contentFit: ContentFit
 
@@ -31,7 +47,10 @@ export interface StudioStyleConfig {
 
   hasBg: boolean
   bgColor: string
+  bgOpacity: number
   bgRadius: number
+  bgBorderColor: string
+  bgBorderWidth: number
   bgPaddingX: number
   bgPaddingY: number
 
@@ -44,7 +63,14 @@ export interface StudioStyleConfig {
   shadowX: number
   shadowY: number
 
+  hasTextStroke: boolean
+  textStrokeColor: string
+  textStrokeWidth: number
+
+  positionXPercent: number
   positionYPercent: number
+  subtitleAnimation: SubtitleAnimation
+  watermarks: WatermarkOverlay[]
   templateId: string
 }
 
@@ -60,7 +86,10 @@ export const DEFAULT_STUDIO_STYLE: StudioStyleConfig = {
   activeWordColor: '#F59E0B',
   hasBg: true,
   bgColor: 'rgba(0, 0, 0, 0.75)',
+  bgOpacity: 0.75,
   bgRadius: 14,
+  bgBorderColor: '#ffffff',
+  bgBorderWidth: 0,
   bgPaddingX: 18,
   bgPaddingY: 10,
   hasActiveWordBg: false,
@@ -70,7 +99,13 @@ export const DEFAULT_STUDIO_STYLE: StudioStyleConfig = {
   shadowBlur: 8,
   shadowX: 0,
   shadowY: 3,
+  hasTextStroke: false,
+  textStrokeColor: '#000000',
+  textStrokeWidth: 2,
+  positionXPercent: 50,
   positionYPercent: 82,
+  subtitleAnimation: 'none',
+  watermarks: [],
   templateId: 'pop-classic-gold',
 }
 
@@ -81,7 +116,33 @@ export function getStoredStyle(): StudioStyleConfig {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return DEFAULT_STUDIO_STYLE
-    return { ...DEFAULT_STUDIO_STYLE, ...JSON.parse(raw) }
+    const stored = JSON.parse(raw)
+    const supportedFonts = new Set(['Vazirmatn', 'Estedad', 'Readex Pro', 'IBM Plex Sans Arabic', 'Noto Kufi Arabic', 'Lalezar', 'Amiri', 'Noto Nastaliq Urdu'])
+    const requestedFont = stored.fontId ?? stored.fontFamily
+    const fontFamily = supportedFonts.has(requestedFont) ? requestedFont : DEFAULT_STUDIO_STYLE.fontFamily
+    return {
+      ...DEFAULT_STUDIO_STYLE,
+      ...stored,
+      fontId: fontFamily,
+      fontFamily,
+      fontSizePercent: stored.fontSizePercent ?? stored.size ?? DEFAULT_STUDIO_STYLE.fontSizePercent,
+      textColor: stored.textColor ?? stored.color ?? DEFAULT_STUDIO_STYLE.textColor,
+      activeWordColor: stored.activeWordColor ?? stored.hlColor ?? DEFAULT_STUDIO_STYLE.activeWordColor,
+      hasBg: stored.hasBg ?? (stored.bgOpacity == null ? DEFAULT_STUDIO_STYLE.hasBg : Number(stored.bgOpacity) > 0),
+      bgOpacity: stored.bgOpacity ?? DEFAULT_STUDIO_STYLE.bgOpacity,
+      bgBorderColor: stored.bgBorderColor ?? DEFAULT_STUDIO_STYLE.bgBorderColor,
+      bgBorderWidth: stored.bgBorderWidth ?? DEFAULT_STUDIO_STYLE.bgBorderWidth,
+      hasShadow: stored.hasShadow ?? stored.outline ?? DEFAULT_STUDIO_STYLE.hasShadow,
+      shadowColor: stored.shadowColor ?? stored.textShadowColor ?? DEFAULT_STUDIO_STYLE.shadowColor,
+      shadowBlur: stored.shadowBlur ?? stored.textShadowBlur ?? DEFAULT_STUDIO_STYLE.shadowBlur,
+      hasTextStroke: stored.hasTextStroke ?? false,
+      textStrokeColor: stored.textStrokeColor ?? '#000000',
+      textStrokeWidth: stored.textStrokeWidth ?? 2,
+      watermarks: Array.isArray(stored.watermarks) ? stored.watermarks : [],
+      templateId: stored.templateId ?? stored.template ?? DEFAULT_STUDIO_STYLE.templateId,
+      positionXPercent: stored.positionXPercent ?? stored.x ?? DEFAULT_STUDIO_STYLE.positionXPercent,
+      positionYPercent: stored.positionYPercent ?? stored.y ?? DEFAULT_STUDIO_STYLE.positionYPercent,
+    }
   } catch {
     return DEFAULT_STUDIO_STYLE
   }
@@ -100,6 +161,37 @@ export interface TemplateDefinition {
   category: string
   previewBg: string
   style: Partial<StudioStyleConfig>
+}
+
+export interface SavedSubtitleTemplate {
+  id: string
+  name: string
+  style: Partial<StudioStyleConfig>
+  savedAt: number
+}
+
+const CUSTOM_TEMPLATES_KEY = 'promptvault_custom_subtitle_templates_v1'
+
+export function getSavedSubtitleTemplates(): SavedSubtitleTemplate[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const templates = JSON.parse(localStorage.getItem(CUSTOM_TEMPLATES_KEY) || '[]')
+    return Array.isArray(templates) ? templates : []
+  } catch {
+    return []
+  }
+}
+
+export function saveSubtitleTemplate(template: SavedSubtitleTemplate): SavedSubtitleTemplate[] {
+  const templates = [template, ...getSavedSubtitleTemplates().filter(item => item.id !== template.id)].slice(0, 30)
+  localStorage.setItem(CUSTOM_TEMPLATES_KEY, JSON.stringify(templates))
+  return templates
+}
+
+export function deleteSubtitleTemplate(id: string): SavedSubtitleTemplate[] {
+  const templates = getSavedSubtitleTemplates().filter(template => template.id !== id)
+  localStorage.setItem(CUSTOM_TEMPLATES_KEY, JSON.stringify(templates))
+  return templates
 }
 
 export const TEMPLATES: TemplateDefinition[] = [

@@ -1,0 +1,3760 @@
+﻿
+
+================================================================================
+FILE: src\components\transcribe\AudioTranscribeClient.tsx
+================================================================================
+
+
+'use client'
+
+import Link from 'next/link'
+import { useRef, useState } from 'react'
+import { LiveTranscriber, TranscriptSegment } from '@/lib/live-transcribe'
+import { decodeToPcm16k, MAX_AUDIO_MB } from '@/lib/audio'
+import { prepareChunks } from '@/lib/audio-enhance'
+import { toSrt, toTxt } from '@/lib/subtitle'
+import { useAuth } from '@/lib/use-auth'
+import AuthGate from './AuthGate'
+
+const fmt = (t: number) => {
+  const m = Math.floor(t / 60)
+  const s = Math.floor(t % 60)
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+export default function AudioTranscribeClient() {
+  const auth = useAuth()
+
+  const [status, setStatus] = useState('')
+  const [segments, setSegments] = useState<TranscriptSegment[]>([])
+  const [fileName, setFileName] = useState('')
+  const [progress, setProgress] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const [speed, setSpeed] = useState<1 | 2 | 4 | 8>(4)
+  const stopRef = useRef(false)
+  const tRef = useRef<LiveTranscriber | null>(null)
+
+  const baseName = fileName.replace(/\.[^.]+$/, '') || 'transcript'
+
+  const dl = (name: string, content: string, mime = 'text/plain') => {
+    const blob = new Blob(['\uFEFF' + content], { type: mime + ';charset=utf-8' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = name
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000)
+  }
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setFileName(file.name)
+
+    if (!file.type.startsWith('audio/')) {
+      setStatus('❌ فقط فایل صوتی — برای ویدیو به استودیو زیرنویس برو')
+      return
+    }
+    if (file.size > MAX_AUDIO_MB * 1024 * 1024) {
+      setStatus(`❌ فایل بزرگ‌تر از ${MAX_AUDIO_MB}MB است`)
+      return
+    }
+
+    setSegments([])
+    setProgress(0)
+    setBusy(true)
+    stopRef.current = false
+
+    try {
+      setStatus('۱. دیکود و بهینه‌سازی صدا…')
+      const pcm = await decodeToPcm16k(file)
+      const { chunks, avg } = await prepareChunks(pcm)
+      if (avg < 0.001) {
+        setStatus('❌ این فایل صدای قابل استفاده ندارد (سکوت)')
+        setBusy(false)
+        return
+      }
+
+      setStatus('۲. اتصال به سرور…')
+      const t = new LiveTranscriber()
+      tRef.current = t
+      t.onSegment = (seg) => setSegments((prev) => [...prev, seg])
+      t.onError = (m) => setStatus('❌ ' + m)
+
+      await Promise.race([
+        t.connect(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout اتصال')), 20000)),
+      ])
+
+      setStatus('۳. ترنسکریپت زنده…')
+      for (let i = 0; i < chunks.length; i++) {
+        if (stopRef.current) break
+        t.sendChunk(chunks[i].data, chunks[i].seconds)
+        setProgress(Math.round(((i + 1) / chunks.length) * 100))
+        await new Promise((r) => setTimeout(r, 1000 / speed))
+      }
+
+      if (!stopRef.current) {
+        setStatus('۴. دریافت متن پایانی…')
+        await t.finish()
+        setStatus('✅ تمام شد — متن را ادیت و خروجی بگیر')
+      }
+    } catch (err: any) {
+      setStatus('❌ ' + (err?.message || String(err)))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (auth === 'checking') return <div className="p-10 text-center text-sm text-white/40">در حال بررسی…</div>
+  if (auth === 'no') return <AuthGate />
+
+  return (
+    <div className="mx-auto max-w-5xl space-y-4 p-4 lg:p-6" dir="rtl">
+      {/* ─── Top Bar ─── */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="font-display text-lg font-extrabold text-white lg:text-xl">🎙️ تبدیل فایل صوتی به متن</h1>
+          <p className="mt-0.5 max-w-[60vw] truncate text-[11px] text-white/40" title={fileName}>
+            {fileName || 'MP3 / WAV / M4A — تا ' + MAX_AUDIO_MB + 'MB'}
+          </p>
+        </div>
+        <Link href="/subtitle" className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/70 transition hover:border-amber-500/40 hover:text-amber-300">
+          🎬 استودیو زیرنویس ویدیو
+        </Link>
+      </div>
+
+      {/* ─── Import / Status strip ─── */}
+      <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="cursor-pointer rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-black transition hover:bg-amber-400">
+            📥 وارد کردن فایل صوتی
+            <input type="file" accept="audio/*" disabled={busy} onChange={handleFile} className="hidden" />
+          </label>
+
+          <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-black/40 p-1">
+            <span className="px-2 text-[10px] text-white/40">سرعت</span>
+            {([1, 2, 4, 8] as const).map((s) => (
+              <button
+                key={s}
+                disabled={busy}
+                onClick={() => setSpeed(s)}
+                className={`rounded-md px-2.5 py-1 text-[11px] transition ${speed === s ? 'bg-amber-500 font-bold text-black' : 'text-white/60 hover:bg-white/10'}`}
+              >
+                {s}x
+              </button>
+            ))}
+          </div>
+
+          {busy && (
+            <button
+              onClick={() => { stopRef.current = true; tRef.current?.finish() }}
+              className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs text-red-400 transition hover:bg-red-500/20"
+            >
+              ⏹ توقف
+            </button>
+          )}
+
+          {segments.length > 0 && (
+            <span className="ms-auto rounded-md bg-white/5 px-2 py-1 text-[11px] text-white/40">{segments.length} سگمنت</span>
+          )}
+        </div>
+
+        {busy && (
+          <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-white/10">
+            <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${progress}%` }} />
+          </div>
+        )}
+
+        {status && (
+          <div
+            className={`mt-3 rounded-lg px-3 py-2 text-xs ${
+              status.startsWith('✅')
+                ? 'bg-emerald-500/10 text-emerald-400'
+                : status.startsWith('❌')
+                ? 'bg-red-500/10 text-red-400'
+                : status.startsWith('⚠️')
+                ? 'bg-amber-500/10 text-amber-400'
+                : 'bg-white/5 text-white/60'
+            }`}
+          >
+            {status}
+          </div>
+        )}
+      </div>
+
+      {/* ─── Empty State ─── */}
+      {!busy && segments.length === 0 && (
+        <div className="flex flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed border-white/10 bg-zinc-900/30 py-20 text-center">
+          <div className="text-4xl">🎙️</div>
+          <div>
+            <p className="text-sm font-bold text-white/80">فایل صوتی را وارد کن</p>
+            <p className="mt-1 text-xs text-white/40">ترنسکریپت زنده → ویرایش متن → خروجی TXT / SRT</p>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Transcript + Output ─── */}
+      {segments.length > 0 && (
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <div className="flex h-full flex-col rounded-2xl border border-white/10 bg-zinc-900/60">
+              <div className="border-b border-white/10 p-3 text-xs">
+                <strong className="text-white/80">ویرایش متن ({segments.length} سگمنت)</strong>
+              </div>
+              <div className="max-h-[30rem] flex-1 space-y-1 overflow-y-auto p-2">
+                {segments.map((s, i) => (
+                  <div key={i} className="rounded-xl border-r-2 border-transparent p-2.5 transition hover:bg-white/5">
+                    <span className="font-mono text-[10px] text-white/40">{fmt(s.start)}</span>
+                    <textarea
+                      value={s.text}
+                      rows={1}
+                      onChange={(e) => setSegments(segments.map((x, idx) => (idx === i ? { ...x, text: e.target.value } : x)))}
+                      className="mt-1 w-full resize-y bg-transparent text-sm leading-6 text-white/90 outline-none"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-4">
+              <strong className="mb-3 block text-sm text-white/80">خروجی</strong>
+              <button
+                onClick={() => dl(`${baseName}.txt`, toTxt(segments))}
+                className="mb-2 block w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-bold text-black shadow-lg shadow-amber-500/20 transition hover:bg-amber-400"
+              >
+                ⬇ دانلود TXT
+              </button>
+              <button
+                onClick={() => dl(`${baseName}.srt`, toSrt(segments))}
+                className="block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs text-white/70 transition hover:border-amber-500/40 hover:text-amber-300"
+              >
+                ⬇ دانلود SRT
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+
+================================================================================
+FILE: src\components\transcribe\AuthGate.tsx
+================================================================================
+
+
+import Link from 'next/link'
+
+export default function AuthGate() {
+  return (
+    <div className="container-app mx-auto max-w-3xl p-6" dir="rtl">
+      <div className="space-y-4 rounded-2xl border-2 border-dashed border-amber-500/40 bg-amber-500/5 p-8 text-center">
+        <p className="text-sm text-ink-muted">
+          برای استفاده از این بخش، ابتدا باید وارد حساب کاربری خود شوید.
+        </p>
+        <Link
+          href="/login"
+          className="inline-block rounded-xl border border-amber-500/60 px-6 py-2.5 text-sm text-amber-400 transition hover:bg-amber-500/10"
+        >
+          ورود به حساب کاربری
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+
+
+================================================================================
+FILE: src\components\transcribe\CaptionList.tsx
+================================================================================
+
+
+'use client'
+import { Seg } from './types'
+
+interface Props {
+  segments: Seg[]
+  activeSeg: Seg | null
+  selectedSegId: string | null
+  editingSegId: string | null
+  readingSpeed: (seg: Seg) => number
+  onSeek: (time: number) => void
+  onSelect: (id: string) => void
+  onEdit: (id: string) => void
+  onTextChange: (id: string, text: string) => void
+  onEditBlur: () => void
+  onSplit: (id: string) => void
+  onMerge: (id: string) => void
+  onDelete: (id: string) => void
+}
+
+export default function CaptionList({
+  segments, activeSeg, selectedSegId, editingSegId, readingSpeed,
+  onSeek, onSelect, onEdit, onTextChange, onEditBlur, onSplit, onMerge, onDelete
+}: Props) {
+  const fmt = (t: number) => `${Math.floor(t / 60)}:${Math.floor(t % 60).toString().padStart(2, '0')}`
+
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto p-3 space-y-2">
+      {segments.length === 0 ? (
+        <div className="flex items-center justify-center h-32 text-stone-500 text-xs">هنوز کپشنی وجود ندارد</div>
+      ) : segments.map((seg) => {
+          const safeId = seg.id || `fallback_${seg.start}_${seg.end}`
+          const selected = selectedSegId === seg.id
+          const active = activeSeg?.id === seg.id
+          const fast = readingSpeed(seg) > 17
+          return (
+            <div key={safeId} className={`rounded-xl border ${active ? 'border-amber-500/70 bg-amber-500/10' : selected ? 'border-amber-500/40 bg-stone-800/70' : 'border-stone-800 bg-stone-900/60'}`}>
+              <div className="flex flex-wrap items-center gap-1 border-b border-stone-800/70 p-2">
+                <button onClick={() => onSeek(seg.start)} className="font-mono text-[10px] text-amber-400">{fmt(seg.start)}</button>
+                <span className="text-stone-600">→</span>
+                <button onClick={() => onSeek(seg.end)} className="font-mono text-[10px] text-amber-400">{fmt(seg.end)}</button>
+                <span className={`mr-auto text-[9px] ${fast ? 'text-red-400' : 'text-stone-500'}`}>CPS {readingSpeed(seg).toFixed(1)}</span>
+                <button onClick={() => onSplit(safeId)} className="rounded bg-stone-800 px-1.5 py-1 text-[10px]" title="Split">✂</button>
+                <button onClick={() => onMerge(safeId)} className="rounded bg-stone-800 px-1.5 py-1 text-[10px]" title="Merge">↔</button>
+                <button onClick={() => onDelete(safeId)} className="rounded bg-red-500/10 px-1.5 py-1 text-[10px] text-red-400" title="Delete">✕</button>
+              </div>
+              {editingSegId === safeId ? (
+                <textarea autoFocus dir="auto" value={seg.text} onChange={(e) => onTextChange(safeId, e.target.value)} onBlur={onEditBlur} onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); (e.target as HTMLTextAreaElement).blur() } }} className="m-2 w-[calc(100%-1rem)] resize-none rounded-lg border border-amber-500/50 bg-black/50 p-2 text-xs outline-none" rows={3} />
+              ) : (
+                <button onClick={() => { onSelect(safeId); onEdit(safeId) }} className="block w-full p-2 text-right text-xs leading-6 text-white/90" dir="auto">{seg.text}</button>
+              )}
+            </div>
+          )
+        })}
+    </div>
+  )
+}
+
+
+
+
+================================================================================
+FILE: src\components\transcribe\constants.ts
+================================================================================
+
+
+import { Preset, FontOption } from './types'
+
+// آستانه‌ی حداکثر سرعت خوانش (کاراکتر بر ثانیه) — یک‌جا تعریف شده،
+// همه‌ی فایل‌های دیگر (SubtitleEditor, Timeline, CaptionList و ...)
+// باید همین ثابت را import کنند، نه عدد ۱۷ را جدا hardcode کنند.
+export const MAX_CPS = 17
+
+export const PRESETS: Preset[] = [
+  { id: 'viral', name: '🔥 وایرال', fontId: 'Lalezar', size: 7, color: '#ffffff', bgColor: 'rgba(0,0,0,.72)', bgOpacity: .72, outline: true, karaoke: true, hlColor: '#ffe14d', textShadowBlur: 8, textShadowColor: 'rgba(0,0,0,.85)', bgRadius: 10 },
+  { id: 'minimal', name: 'مینیمال', fontId: 'Vazirmatn', size: 5.5, color: '#ffffff', bgColor: 'rgba(0,0,0,.45)', bgOpacity: .45, outline: false, karaoke: false, hlColor: '#ffe14d', textShadowBlur: 4, textShadowColor: 'rgba(0,0,0,.7)', bgRadius: 8 },
+  { id: 'podcast', name: '🎙 پادکست', fontId: 'Readex Pro', size: 6, color: '#ffffff', bgColor: 'rgba(0,0,0,.7)', bgOpacity: .7, outline: false, karaoke: true, hlColor: '#7CFC00', textShadowBlur: 5, textShadowColor: 'rgba(0,0,0,.8)', bgRadius: 10 },
+  { id: 'cinema', name: '🎬 سینمایی', fontId: 'Dana', size: 4.8, color: '#f5f5f4', bgColor: 'rgba(0,0,0,.35)', bgOpacity: .35, outline: true, karaoke: false, hlColor: '#ffd700', textShadowBlur: 7, textShadowColor: 'rgba(0,0,0,.85)', bgRadius: 6 },
+  { id: 'news', name: '📰 خبری', fontId: 'Noto Kufi Arabic', size: 5.8, color: '#ffffff', bgColor: 'rgba(0,0,0,.85)', bgOpacity: .85, outline: false, karaoke: false, hlColor: '#ff5555', textShadowBlur: 3, textShadowColor: 'rgba(0,0,0,.8)', bgRadius: 5 },
+  { id: 'neon', name: '⚡ نئون', fontId: 'Peyda', size: 6, color: '#ffffff', bgColor: 'rgba(0,0,0,.55)', bgOpacity: .55, outline: true, karaoke: true, hlColor: '#00e5ff', textShadowBlur: 12, textShadowColor: 'rgba(0,229,255,.65)', bgRadius: 12 },
+  { id: 'luxury', name: '💎 لوکس', fontId: 'Dana', size: 5.2, color: '#f8e7a1', bgColor: 'rgba(0,0,0,.5)', bgOpacity: .5, outline: false, karaoke: false, hlColor: '#ffd700', textShadowBlur: 8, textShadowColor: 'rgba(0,0,0,.8)', bgRadius: 8 },
+  { id: 'bold', name: '💥 بولد', fontId: 'Lalezar', size: 7.5, color: '#ffffff', bgColor: 'rgba(0,0,0,.82)', bgOpacity: .82, outline: true, karaoke: true, hlColor: '#ff5252', textShadowBlur: 9, textShadowColor: 'rgba(255,0,0,.45)', bgRadius: 7 },
+  { id: 'pastel', name: '🌸 پاستل', fontId: 'Peyda', size: 5.3, color: '#ffd0df', bgColor: 'rgba(255,105,180,.16)', bgOpacity: .16, outline: false, karaoke: false, hlColor: '#ff69b4', textShadowBlur: 4, textShadowColor: 'rgba(0,0,0,.5)', bgRadius: 18 },
+  { id: 'tech', name: '🤖 تکنولوژی', fontId: 'Readex Pro', size: 5.5, color: '#e9faff', bgColor: 'rgba(0,180,255,.12)', bgOpacity: .12, outline: true, karaoke: true, hlColor: '#00d4ff', textShadowBlur: 8, textShadowColor: 'rgba(0,180,255,.55)', bgRadius: 12 },
+]
+
+export const FONTS: FontOption[] = [
+  { id: 'Vazirmatn', label: 'وزیرمتن', category: 'مدرن' },
+  { id: 'Estedad', label: 'استعداد', category: 'مدرن' },
+  { id: 'Peyda', label: 'پیدا', category: 'مدرن' },
+  { id: 'Dana', label: 'دانا', category: 'مدرن' },
+  { id: 'Yekan Bakh', label: 'یکان‌بخ', category: 'مدرن' },
+  { id: 'Readex Pro', label: 'ریدکس پرو', category: 'دیجیتال' },
+  { id: 'IBM Plex Sans Arabic', label: 'پلکس', category: 'تمیز' },
+  { id: 'IRANSansX', label: 'ایران‌سنس X', category: 'حرفه‌ای' },
+  { id: 'Noto Kufi Arabic', label: 'کوفی', category: 'نمایشی' },
+  { id: 'Lalezar', label: 'لاله‌زار', category: 'نمایشی' },
+  { id: 'Amiri', label: 'امیری', category: 'ادبی' },
+  { id: 'Noto Nastaliq Urdu', label: 'نستعلیق', category: 'ادبی' },
+]
+
+
+================================================================================
+FILE: src\components\transcribe\DesktopSubtitleEditor.tsx
+================================================================================
+
+
+'use client'
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useVideoTranscribe } from '@/lib/use-video-transcribe'
+import { StudioStyleConfig, getStoredStyle, saveStoredStyle } from '@/lib/studio/unified-style'
+import { renderStudioFrame, clampCanvasDimensions } from '@/lib/studio/universal-renderer'
+import { ensureFontLoaded } from '@/lib/studio/font-loader'
+import SubtitleVideoExport from './SubtitleVideoExport'
+import UploadScreen from './UploadScreen'
+import StylePanel from './StylePanel'
+import { PRESETS, FONTS } from './constants'
+import type { Seg, Snapshot, Preset } from './types'
+
+// ═══════════════════════════════════════════════════════════════
+// توابع کمکی
+// ═══════════════════════════════════════════════════════════════
+const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v))
+
+const fmt = (t: number): string => {
+  const m = Math.floor(t / 60)
+  const s = Math.floor(t % 60)
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+let editorIdCounter = 0
+const uid = (): string => {
+  editorIdCounter++
+  return `seg_${Date.now()}_${editorIdCounter}_${Math.random().toString(36).substring(2, 7)}`
+}
+
+// ═══════════════════════════════════════════════════════════════
+// کامپوننت اصلی
+// ═══════════════════════════════════════════════════════════════
+export default function DesktopSubtitleEditor() {
+  const [videoUrl, setVideoUrl] = useState('')
+  const [fileName, setFileName] = useState('')
+  const [sourceFile, setSourceFile] = useState<File | null>(null)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [selectedSegId, setSelectedSegId] = useState<string | null>(null)
+  const [editingSegId, setEditingSegId] = useState<string | null>(null)
+  const [timelineZoom, setTimelineZoom] = useState(100)
+  const [showStyle, setShowStyle] = useState(false)
+  const [showExport, setShowExport] = useState(false)
+  const [showSafe, setShowSafe] = useState(true)
+  const [lastSaved, setLastSaved] = useState<Date | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const [fontLoaded, setFontLoaded] = useState(false)
+  const [history, setHistory] = useState<Snapshot[]>([])
+  const [redoStack, setRedoStack] = useState<Snapshot[]>([])
+  const [saving, setSaving] = useState(false)
+  const [restored, setRestored] = useState(false)
+  const [translating, setTranslating] = useState(false)
+  const [generatingCaption, setGeneratingCaption] = useState(false)
+  const [captionText, setCaptionText] = useState('')
+  const [captionHashtags, setCaptionHashtags] = useState('')
+  const [waveform, setWaveform] = useState<number[]>([])
+  // ═══════════════════════════════════════════════════════════════
+  // Drag زیرنویس روی canvas
+  // ═══════════════════════════════════════════════════════════════
+  const [isDraggingSubtitle, setIsDraggingSubtitle] = useState(false)
+  const subtitleDragStart = useRef<{ x: number; y: number; styleX: number; styleY: number } | null>(null)
+
+  const { status, progress, busy, segments, setSegments, run, stop } = useVideoTranscribe()
+  const [styleConfig, setStyleConfig] = useState<StudioStyleConfig>(() => getStoredStyle())
+  
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const timelineScrollRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{ id: string; mode: 'move' | 'left' | 'right'; startX: number; start: number; end: number } | null>(null)
+  const beforeDragRef = useRef<Snapshot | null>(null)
+  const beforeStyleDragRef = useRef<Snapshot | null>(null)
+  const beforeEditRef = useRef<Snapshot | null>(null)
+
+  const style = styleConfig as unknown as Record<string, any>
+  const fontId = style.fontId ?? style.fontFamily ?? 'Vazirmatn'
+  const x = Number(style.x ?? 50)
+  const y = Number(style.y ?? 90)
+
+  const toastMsg = useCallback((message: string) => {
+    setToast(message)
+    window.setTimeout(() => setToast(v => v === message ? null : v), 2600)
+  }, [])
+
+  const makeSnapshot = useCallback((): Snapshot => ({
+    segments: clone(segments),
+    style: clone(styleConfig as any),
+  }), [segments, styleConfig])
+
+  const recordBefore = useCallback((snapshot?: Snapshot) => {
+    const item = snapshot ?? makeSnapshot()
+    setHistory(prev => [...prev, item].slice(-80))
+    setRedoStack([])
+  }, [makeSnapshot])
+
+  const updateStyle = useCallback((patch: Record<string, unknown>, record = true) => {
+    if (record) recordBefore()
+    setStyleConfig(prev => {
+      const next = { ...(prev as any), ...patch } as StudioStyleConfig
+      saveStoredStyle(next)
+      return next
+    })
+  }, [recordBefore])
+
+  const undo = useCallback(() => {
+    setHistory(prev => {
+      if (!prev.length) return prev
+      const target = prev[prev.length - 1] as Snapshot
+      if (!target) return prev
+      
+      const current: Snapshot = { segments: clone(segments), style: clone(styleConfig as any) }
+      setRedoStack(r => [...r, current].slice(-80))
+      setSegments(clone((target as any).segments))
+      setStyleConfig((target as any).style as StudioStyleConfig)
+      saveStoredStyle((target as any).style)
+      return prev.slice(0, -1)
+    })
+  }, [segments, styleConfig, setSegments])
+
+  const redo = useCallback(() => {
+    setRedoStack(prev => {
+      if (!prev.length) return prev
+      const target = prev[prev.length - 1] as Snapshot
+      if (!target) return prev
+      
+      const current: Snapshot = { segments: clone(segments), style: clone(styleConfig as any) }
+      setHistory(h => [...h, current].slice(-80))
+      setSegments(clone((target as any).segments))
+      setStyleConfig((target as any).style as StudioStyleConfig)
+      saveStoredStyle((target as any).style)
+      return prev.slice(0, -1)
+    })
+  }, [segments, styleConfig, setSegments])
+
+  useEffect(() => {
+    let active = true
+    setFontLoaded(false)
+    ensureFontLoaded(fontId).then(() => active && setFontLoaded(true)).catch(() => active && setFontLoaded(true))
+    return () => { active = false }
+  }, [fontId])
+
+  useEffect(() => {
+    if (!toast) return
+    const id = window.setTimeout(() => setToast(null), 2600)
+    return () => window.clearTimeout(id)
+  }, [toast])
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 250 * 1024 * 1024) {
+      toastMsg('حجم فایل بیشتر از ۲۵۰ مگابایت است.')
+      e.target.value = ''
+      return
+    }
+    const url = URL.createObjectURL(file)
+    setFileName(file.name)
+    setSourceFile(file)
+    setVideoUrl(url)
+    setSelectedSegId(null)
+    setHistory([])
+    setRedoStack([])
+    setRestored(false)
+    await run(file)
+  }
+
+  useEffect(() => {
+    return () => { if (videoUrl.startsWith('blob:')) URL.revokeObjectURL(videoUrl) }
+  }, [videoUrl])
+
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+    const onTime = () => setCurrentTime(v.currentTime)
+    const onMeta = () => setDuration(Number.isFinite(v.duration) ? v.duration : 0)
+    const onPlay = () => setIsPlaying(true)
+    const onPause = () => setIsPlaying(false)
+    v.addEventListener('timeupdate', onTime)
+    v.addEventListener('loadedmetadata', onMeta)
+    v.addEventListener('play', onPlay)
+    v.addEventListener('pause', onPause)
+    return () => {
+      v.removeEventListener('timeupdate', onTime)
+      v.removeEventListener('loadedmetadata', onMeta)
+      v.removeEventListener('play', onPlay)
+      v.removeEventListener('pause', onPause)
+    }
+  }, [videoUrl])
+
+  const activeSeg = useMemo(() => 
+    segments.find((s: any) => currentTime >= s.start && currentTime < s.end) ?? null, 
+    [segments, currentTime]
+  )
+
+  useEffect(() => {
+    if (activeSeg?.id) setSelectedSegId(activeSeg.id)
+  }, [activeSeg?.id])
+
+  const seek = useCallback((t: number) => {
+    const v = videoRef.current
+    const next = Math.max(0, Math.min(duration || Infinity, t))
+    if (v) v.currentTime = next
+    setCurrentTime(next)
+  }, [duration])
+
+  const togglePlay = useCallback(() => {
+    const v = videoRef.current
+    if (!v) return
+    if (v.paused) v.play().catch(() => {})
+    else v.pause()
+  }, [])
+
+  const splitAt = useCallback((id: string, at = currentTime) => {
+    const seg = segments.find((s: any) => s.id === id)
+    if (!seg || at <= seg.start + 0.05 || at >= seg.end - 0.05) {
+      toastMsg('پلی‌هد باید داخل همان سگمنت باشد.')
+      return
+    }
+    const before = makeSnapshot()
+    const ratio = (at - seg.start) / Math.max(0.001, seg.end - seg.start)
+    const words = seg.text.trim().split(/\s+/)
+    const cut = Math.max(1, Math.min(words.length - 1, Math.round(words.length * ratio)))
+    
+    const first: any = { ...seg, id: seg.id || uid(), end: at, text: words.slice(0, cut).join(' ') || seg.text }
+    const second: any = { ...seg, id: uid(), start: at, text: words.slice(cut).join(' ') || seg.text }
+    
+    recordBefore(before)
+    setSegments(prev => prev.flatMap(s => s.id === id ? [first, second] : [s]))
+    setSelectedSegId(second.id)
+  }, [segments, currentTime, makeSnapshot, recordBefore, setSegments, toastMsg])
+
+  const mergeSeg = useCallback((id: string) => {
+    const idx = segments.findIndex((s: any) => s.id === id)
+    if (idx < 0 || idx >= segments.length - 1) return
+    const a = segments[idx]
+    const b = segments[idx + 1]
+    const before = makeSnapshot()
+    recordBefore(before)
+    setSegments(prev => prev.filter(s => s.id !== b.id).map(s => s.id === a.id ? { ...s, end: b.end, text: `${s.text} ${b.text}`.trim() } : s))
+  }, [segments, makeSnapshot, recordBefore, setSegments])
+
+  const deleteSeg = useCallback((id: string) => {
+    const before = makeSnapshot()
+    recordBefore(before)
+    setSegments(prev => prev.filter(s => s.id !== id))
+    setSelectedSegId(prev => prev === id ? null : prev)
+  }, [makeSnapshot, recordBefore, setSegments])
+
+  const addSeg = useCallback(() => {
+    const start = currentTime
+    const end = Math.min(duration || start + 2.5, start + 2.5)
+    const before = makeSnapshot()
+    recordBefore(before)
+    const seg: any = { id: uid(), start, end: Math.max(start + .2, end), text: 'متن جدید' }
+    setSegments(prev => [...prev, seg].sort((a: any, b: any) => a.start - b.start))
+    setSelectedSegId(seg.id)
+    setEditingSegId(seg.id)
+  }, [currentTime, duration, makeSnapshot, recordBefore, setSegments])
+
+  const onTimelinePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = timelineScrollRef.current
+    if (!el || !duration) return
+    const target = e.target as HTMLElement
+    const block = target.closest('[data-seg-id]') as HTMLElement | null
+    if (block) return
+    const rect = el.getBoundingClientRect()
+    const localX = e.clientX - rect.left + el.scrollLeft
+    seek((localX / Math.max(1, el.scrollWidth)) * duration)
+  }
+
+  const beginSegDrag = (id: string, mode: 'move' | 'left' | 'right', e: React.PointerEvent) => {
+    e.stopPropagation()
+    const seg = segments.find((s: any) => s.id === id)
+    const el = timelineScrollRef.current
+    if (!seg || !el || !duration) return
+    setSelectedSegId(id)
+    beforeDragRef.current = makeSnapshot()
+    dragRef.current = { id, mode, startX: e.clientX, start: seg.start, end: seg.end }
+    ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+  }
+
+  const onTimelinePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current
+    const el = timelineScrollRef.current
+    if (!drag || !el || !duration) return
+    const deltaPx = e.clientX - drag.startX
+    const delta = (deltaPx / Math.max(1, el.scrollWidth)) * duration
+    const minDur = 0.2
+    let start = drag.start
+    let end = drag.end
+    if (drag.mode === 'move') {
+      const len = drag.end - drag.start
+      start = Math.max(0, Math.min(duration - len, drag.start + delta))
+      end = start + len
+    } else if (drag.mode === 'left') {
+      start = Math.max(0, Math.min(drag.end - minDur, drag.start + delta))
+    } else {
+      end = Math.min(duration, Math.max(drag.start + minDur, drag.end + delta))
+    }
+    setSegments(prev => prev.map(s => s.id === drag.id ? { ...s, start, end } : s).sort((a: any, b: any) => a.start - b.start))
+  }
+
+  const endSegDrag = () => {
+    if (!dragRef.current) return
+    const before = beforeDragRef.current
+    dragRef.current = null
+    beforeDragRef.current = null
+    if (before) recordBefore(before)
+  }
+
+  const applyPreset = (preset: Preset) => {
+    updateStyle({
+      template: preset.id,
+      fontId: preset.fontId,
+      fontFamily: preset.fontId,
+      size: preset.size,
+      color: preset.color,
+      bgColor: preset.bgColor,
+      bgOpacity: preset.bgOpacity,
+      outline: preset.outline,
+      karaoke: preset.karaoke,
+      hlColor: preset.hlColor,
+      textShadowBlur: preset.textShadowBlur,
+      textShadowColor: preset.textShadowColor,
+      bgRadius: preset.bgRadius,
+    })
+    toastMsg(`قالب «${preset.name}» اعمال شد.`)
+  }
+
+  const applyFont = (id: string) => updateStyle({ fontId: id, fontFamily: id })
+
+  
+  // ═══════════════════════════════════════════════════════════════
+  // Handler های drag زیرنویس روی canvas
+  // ═══════════════════════════════════════════════════════════════
+  const handleSubtitleDragStart = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const clickX = ((e.clientX - rect.left) / rect.width) * 100
+    const clickY = ((e.clientY - rect.top) / rect.height) * 100
+    
+    // چک کن آیا نزدیک به موقعیت زیرنویس است (با tolerance ۱۵٪)
+    const tolerance = 15
+    if (Math.abs(clickX - x) < tolerance && Math.abs(clickY - y) < tolerance) {
+      setIsDraggingSubtitle(true)
+      subtitleDragStart.current = { x: e.clientX, y: e.clientY, styleX: x, styleY: y }
+    }
+  }
+
+  const handleSubtitleDragMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDraggingSubtitle || !subtitleDragStart.current) return
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    
+    const deltaX = e.clientX - subtitleDragStart.current.x
+    const deltaY = e.clientY - subtitleDragStart.current.y
+    const deltaXPercent = (deltaX / rect.width) * 100
+    const deltaYPercent = (deltaY / rect.height) * 100
+    
+    const newX = Math.max(5, Math.min(95, subtitleDragStart.current.styleX + deltaXPercent))
+    const newY = Math.max(5, Math.min(95, subtitleDragStart.current.styleY + deltaYPercent))
+    
+    updateStyle({ x: newX, y: newY }, false)
+  }
+
+  const handleSubtitleDragEnd = () => {
+    if (isDraggingSubtitle) {
+      setIsDraggingSubtitle(false)
+      subtitleDragStart.current = null
+      recordBefore()
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // دابل‌کلیک برای ادیت متن زیرنویس روی تصویر
+  // ═══════════════════════════════════════════════════════════════
+  const [editingOnCanvas, setEditingOnCanvas] = useState(false)
+  const [canvasEditText, setCanvasEditText] = useState('')
+
+  const handleCanvasDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const clickX = ((e.clientX - rect.left) / rect.width) * 100
+    const clickY = ((e.clientY - rect.top) / rect.height) * 100
+    
+    const tolerance = 15
+    if (Math.abs(clickX - x) < tolerance && Math.abs(clickY - y) < tolerance) {
+      // پیدا کردن زیرنویس فعال
+      const activeSegment = segments.find((s: any) => currentTime >= s.start && currentTime < s.end)
+      if (activeSegment) {
+        setCanvasEditText(activeSegment.text)
+        setEditingOnCanvas(true)
+      }
+    }
+  }
+
+  const handleCanvasEditSave = () => {
+    if (activeSeg && canvasEditText.trim()) {
+      recordBefore()
+      setSegments(prev => prev.map((s: any) => 
+        s.id === activeSeg.id ? { ...s, text: canvasEditText.trim() } : s
+      ))
+      toastMsg('متن زیرنویس به‌روز شد.')
+    }
+    setEditingOnCanvas(false)
+  }
+
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    updateStyle({ 
+      x: Math.max(5, Math.min(95, ((e.clientX - rect.left) / rect.width) * 100)), 
+      y: Math.max(5, Math.min(95, ((e.clientY - rect.top) / rect.height) * 100)) 
+    })
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    if (!videoUrl) { setWaveform([]); return }
+    ;(async () => {
+      try {
+        const response = await fetch(videoUrl)
+        const buffer = await response.arrayBuffer()
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+        if (!AudioCtx) return
+        const ctx = new AudioCtx()
+        const audio = await ctx.decodeAudioData(buffer.slice(0))
+        const channel = audio.getChannelData(0)
+        const count = 700
+        const step = Math.max(1, Math.floor(channel.length / count))
+        const peaks = new Array(count).fill(0).map((_, i) => {
+          let peak = 0
+          const end = Math.min(channel.length, (i + 1) * step)
+          for (let j = i * step; j < end; j += 8) peak = Math.max(peak, Math.abs(channel[j]))
+          return Math.min(1, peak * 1.8)
+        })
+        if (!cancelled) setWaveform(peaks)
+        await ctx.close()
+      } catch {
+        if (!cancelled) setWaveform([])
+      }
+    })()
+    return () => { cancelled = true }
+  }, [videoUrl])
+
+  const drawFrame = useCallback(() => {
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    if (!video || !canvas || video.readyState < 2) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    let W = video.videoWidth || 1080
+    let H = video.videoHeight || 1920
+    if (style.aspectRatio === '9:16') { W = 1080; H = 1920 }
+    else if (style.aspectRatio === '16:9') { W = 1920; H = 1080 }
+    else if (style.aspectRatio === '1:1') { W = 1080; H = 1080 }
+    else if (style.aspectRatio === '4:5') { W = 1080; H = 1350 }
+    const out = clampCanvasDimensions(W, H, 1920)
+    if (canvas.width !== out.width || canvas.height !== out.height) { 
+      canvas.width = out.width
+      canvas.height = out.height 
+    }
+    renderStudioFrame({ 
+      ctx, 
+      canvasWidth: out.width, 
+      canvasHeight: out.height, 
+      video, 
+      currentTime: video.currentTime, 
+      segments: segments as any, 
+      style: styleConfig 
+    })
+  }, [segments, styleConfig, style])
+
+  useEffect(() => {
+    if (!fontLoaded) return
+    if (!isPlaying) { drawFrame(); return }
+    let raf = 0
+    const loop = () => { drawFrame(); raf = requestAnimationFrame(loop) }
+    raf = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(raf)
+  }, [drawFrame, fontLoaded, isPlaying])
+
+  useEffect(() => {
+    if (!segments.length || !fileName) return
+    const project = { version: 2, fileName, segments, style: styleConfig, currentTime, savedAt: Date.now() }
+    const key = `subtitle-project:${fileName}`
+    setSaving(true)
+    const timer = window.setTimeout(() => {
+      try { 
+        localStorage.setItem(key, JSON.stringify(project))
+        setLastSaved(new Date())
+        setSaving(false) 
+      } catch { 
+        setSaving(false)
+        toastMsg('ذخیره خودکار انجام نشد.') 
+      }
+    }, 900)
+    return () => window.clearTimeout(timer)
+  }, [segments, styleConfig, fileName, currentTime, toastMsg])
+
+  useEffect(() => {
+    if (!fileName || restored) return
+    const key = `subtitle-project:${fileName}`
+    try {
+      const raw = localStorage.getItem(key)
+      if (!raw) { setRestored(true); return }
+      const saved = JSON.parse(raw)
+      if (saved?.segments?.length) {
+        setSegments(clone(saved.segments))
+        if (saved.style) {
+          setStyleConfig(saved.style as StudioStyleConfig)
+          saveStoredStyle(saved.style as any)
+        }
+        if (typeof saved.currentTime === 'number') seek(saved.currentTime)
+        toastMsg('نسخه ذخیره‌شده بازیابی شد.')
+      }
+    } catch { /* ignore corrupt local draft */ }
+    setRestored(true)
+  }, [fileName, restored, setSegments, seek, toastMsg])
+
+  useEffect(() => {
+    const el = timelineScrollRef.current
+    if (!el || !duration) return
+    const xPx = (currentTime / duration) * el.scrollWidth
+    const left = el.scrollLeft
+    const right = left + el.clientWidth
+    const margin = el.clientWidth * .22
+    if (xPx < left + margin || xPx > right - margin) {
+      el.scrollTo({ left: Math.max(0, xPx - el.clientWidth * .5), behavior: 'smooth' })
+    }
+  }, [currentTime, duration, timelineZoom])
+
+  useEffect(() => {
+    let resizeTimer: any
+    const handleResize = () => {
+      clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(() => {
+        drawFrame()
+      }, 100)
+    }
+    
+    window.addEventListener('resize', handleResize)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      clearTimeout(resizeTimer)
+    }
+  }, [drawFrame])
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (segments.length && fileName) {
+        const project = { version: 2, fileName, segments, style: styleConfig, currentTime, savedAt: Date.now() }
+        const key = `subtitle-project:${fileName}`
+        try { localStorage.setItem(key, JSON.stringify(project)) } catch {}
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [segments, styleConfig, fileName, currentTime])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const editing = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable
+      if (editing && !(e.ctrlKey || e.metaKey)) return
+      const mod = e.ctrlKey || e.metaKey
+      if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return }
+      if ((mod && e.key.toLowerCase() === 'y') || (mod && e.shiftKey && e.key.toLowerCase() === 'z')) { e.preventDefault(); redo(); return }
+      if (editing) return
+      if (e.code === 'Space') { e.preventDefault(); togglePlay(); return }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); seek(currentTime - (e.shiftKey ? 1 : .1)); return }
+      if (e.key === 'ArrowRight') { e.preventDefault(); seek(currentTime + (e.shiftKey ? 1 : .1)); return }
+      if (e.key.toLowerCase() === 's') { e.preventDefault(); const id = selectedSegId ?? activeSeg?.id; if (id) splitAt(id); return }
+      if (e.key === 'Delete' || e.key === 'Backspace') { if (selectedSegId) { e.preventDefault(); deleteSeg(selectedSegId) } }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [undo, redo, currentTime, seek, selectedSegId, activeSeg?.id, splitAt, deleteSeg, togglePlay])
+
+  const readingSpeed = (seg: any): number => seg.text.length / Math.max(.05, seg.end - seg.start)
+
+  const handleTranslate = async (targetLang: 'fa' | 'en') => {
+    if (!segments.length || translating) return
+    setTranslating(true)
+    try {
+      const pad = (n: number, z = 2) => String(Math.floor(n)).padStart(z, '0')
+      const time = (sec: number) => `${pad(sec / 3600)}:${pad((sec % 3600) / 60)}:${pad(sec % 60)},${String(Math.floor((sec % 1) * 1000)).padStart(3, '0')}`
+      const srt = segments.map((s: any, i: number) => `${i + 1}\n${time(s.start)} --> ${time(s.end)}\n${s.text}`).join('\n\n')
+      const res = await fetch('/api/translate-srt', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ srtContent: srt, targetLang }) 
+      })
+      if (!res.ok) throw new Error('translate failed')
+      const data = await res.json()
+      if (!data.srt) throw new Error(data.error || 'پاسخی دریافت نشد')
+      const parsed = data.srt.trim().replace(/\r\n/g, '\n').split(/\n\s*\n/).map((b: string) => b.trim().split('\n').slice(2).join(' ').trim())
+      recordBefore(makeSnapshot())
+      setSegments(segments.map((seg: any, i: number) => ({ ...seg, text: parsed[i] || seg.text })))
+      toastMsg('ترجمه انجام شد.')
+    } catch { toastMsg('خطا در ترجمه.') }
+    finally { setTranslating(false) }
+  }
+
+  const handleGenerateCaption = async () => {
+    if (!segments.length || generatingCaption) return
+    setGeneratingCaption(true)
+    try {
+      const res = await fetch('/api/generate-caption', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ text: segments.map((s: any) => s.text).join(' '), language: 'fa', style: 'instagram' }) 
+      })
+      const data = await res.json()
+      if (!res.ok || !data.caption) throw new Error(data.error || 'خطا')
+      setCaptionText(data.caption)
+      setCaptionHashtags(data.hashtags || '')
+      toastMsg('کپشن اینستاگرام ساخته شد.')
+    } catch (e: any) { toastMsg(`خطا در تولید کپشن: ${e?.message || 'نامشخص'}`) }
+    finally { setGeneratingCaption(false) }
+  }
+
+  if (!videoUrl) {
+    return <UploadScreen onFileSelect={handleFile} />
+  }
+
+  const timelineWidth = Math.max(100, timelineZoom)
+
+  return (
+    <div className="flex h-[100dvh] min-h-0 w-full min-w-0 flex-col overflow-hidden bg-[#070605] text-white transition-all duration-300 ease-in-out" dir="rtl">
+      <header className="shrink-0 border-b border-stone-800 bg-[#110f0d] px-3 py-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h1 className="min-w-0 max-w-[22rem] truncate text-sm font-black">{fileName}</h1>
+          <span className="text-[10px] text-stone-500">{saving ? 'در حال ذخیره…' : lastSaved ? `ذخیره ${fmt(lastSaved.getTime() / 1000)}` : ''}</span>
+          <div className="mr-auto flex max-w-full flex-wrap items-center gap-1">
+            <button aria-label="Undo" onClick={undo} disabled={!history.length} className="rounded-lg bg-stone-800 px-2 py-1.5 text-xs disabled:opacity-30">↶</button>
+            <button aria-label="Redo" onClick={redo} disabled={!redoStack.length} className="rounded-lg bg-stone-800 px-2 py-1.5 text-xs disabled:opacity-30">↷</button>
+            <button onClick={() => setShowStyle(true)} className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-400">⚙ استایل</button>
+            <button onClick={() => setShowExport(true)} className="rounded-xl bg-amber-500 px-3 py-1.5 text-xs font-black text-black">خروجی MP4</button>
+          </div>
+        </div>
+      </header>
+
+      <main className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-black transition-all duration-300 ease-in-out">
+          {busy && (
+            <div className="absolute left-1/2 top-14 z-30 w-[min(28rem,calc(100%-2rem))] -translate-x-1/2 rounded-2xl border border-amber-500/40 bg-stone-900/95 p-3">
+              <div className="mb-1 flex justify-between text-xs">
+                <span className="text-amber-400">{status}</span>
+                <button onClick={stop} className="text-red-400">توقف</button>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-stone-800">
+                <div className="h-full bg-amber-500" style={{ width: `${progress}%` }} />
+              </div>
+            </div>
+          )}
+
+          <div className="flex min-h-0 flex-1 items-center justify-center p-2 sm:p-4">
+            <canvas 
+  ref={canvasRef} 
+  onClick={handleCanvasClick}
+  onMouseDown={handleSubtitleDragStart}
+  onMouseMove={handleSubtitleDragMove}
+  onMouseUp={handleSubtitleDragEnd}
+  onMouseLeave={handleSubtitleDragEnd}
+  onDoubleClick={handleCanvasDoubleClick}
+  className={`block max-h-full max-w-full object-contain ${isDraggingSubtitle ? 'cursor-grabbing' : 'cursor-crosshair'}`} 
+/>
+            <video ref={videoRef} src={videoUrl} className="hidden" playsInline />
+          </div>
+
+          <div className="shrink-0 border-t border-stone-800 bg-[#110f0d] px-3 py-2">
+            <div className="flex items-center gap-2">
+              <button aria-label={isPlaying ? 'Pause' : 'Play'} onClick={togglePlay} className="h-9 w-9 shrink-0 rounded-xl bg-amber-500 text-black">
+                {isPlaying ? '⏸' : '▶'}
+              </button>
+              <input 
+                aria-label="Video progress" 
+                type="range" 
+                min={0} 
+                max={duration || 1} 
+                step={.05} 
+                value={currentTime} 
+                onChange={e => seek(Number(e.target.value))} 
+                className="min-w-0 flex-1 accent-amber-500" 
+              />
+              <span className="shrink-0 font-mono text-[10px] text-stone-400">{fmt(currentTime)} / {fmt(duration)}</span>
+            </div>
+          </div>
+
+          <div className="shrink-0 border-t border-stone-800 bg-[#0e0d0b] p-2 sm:p-3">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="text-[10px] text-stone-400">Timeline</span>
+              <input 
+                aria-label="Timeline zoom" 
+                type="range" 
+                min={50} 
+                max={800} 
+                value={timelineZoom} 
+                onChange={e => setTimelineZoom(Number(e.target.value))} 
+                className="w-28 accent-amber-500" 
+              />
+              <span className="text-[10px] text-stone-500">{timelineZoom}%</span>
+              <button onClick={() => setShowSafe(v => !v)} className={`rounded-lg px-2 py-1 text-[10px] ${showSafe ? 'bg-amber-500 text-black' : 'bg-stone-800 text-stone-400'}`}>
+                Safe Zone
+              </button>
+              <button onClick={() => { const id = selectedSegId ?? activeSeg?.id; if (id) splitAt(id) }} className="rounded-lg bg-stone-800 px-2 py-1 text-[10px]">
+                ✂ Split
+              </button>
+              <button onClick={() => selectedSegId && mergeSeg(selectedSegId)} className="rounded-lg bg-stone-800 px-2 py-1 text-[10px]">
+                Merge
+              </button>
+              <button onClick={addSeg} className="rounded-lg bg-amber-500/10 px-2 py-1 text-[10px] text-amber-400">
+                + افزودن
+              </button>
+              <button onClick={() => handleTranslate('fa')} disabled={translating} className="rounded-lg bg-blue-500/10 px-2 py-1 text-[10px] text-blue-400">
+                ترجمه FA
+              </button>
+              <button onClick={() => handleTranslate('en')} disabled={translating} className="rounded-lg bg-green-500/10 px-2 py-1 text-[10px] text-green-400">
+                ترجمه EN
+              </button>
+              <button onClick={handleGenerateCaption} disabled={generatingCaption} className="rounded-lg bg-purple-500/10 px-2 py-1 text-[10px] text-purple-400">
+                کپشن AI
+              </button>
+            </div>
+
+            <div 
+              ref={timelineScrollRef} 
+              onPointerDown={onTimelinePointerDown} 
+              onPointerMove={onTimelinePointerMove} 
+              onPointerUp={endSegDrag} 
+              onPointerCancel={endSegDrag} 
+              className="relative h-24 overflow-x-auto overflow-y-hidden rounded-xl bg-stone-950 overscroll-x-contain" 
+              style={{ scrollbarGutter: 'stable' }}
+            >
+              <div className="relative h-full" style={{ width: `${timelineWidth}%`, minWidth: '100%' }}>
+                <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-between px-1 text-[8px] text-stone-600">
+                  <span>0:00</span>
+                  <span>{fmt(duration)}</span>
+                </div>
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 top-7 flex items-end gap-px px-1 opacity-25">
+                  {waveform.map((v, i) => (
+                    <span key={`wave-${i}`} className="min-w-[1px] flex-1 rounded-t bg-stone-300" style={{ height: `${Math.max(4, v * 100)}%` }} />
+                  ))}
+                </div>
+                {segments.map((seg: any) => {
+                  const safeId = seg.id || uid()
+                  const left = duration ? (seg.start / duration) * 100 : 0
+                  const width = duration ? ((seg.end - seg.start) / duration) * 100 : 0
+                  const fast = readingSpeed(seg) > 17
+                  const selected = selectedSegId === seg.id
+                  return (
+                    <div 
+                      key={safeId} 
+                      data-seg-id={safeId} 
+                      onClick={e => { e.stopPropagation(); setSelectedSegId(safeId); seek(seg.start) }} 
+                      className={`absolute bottom-2 top-7 rounded-lg border cursor-pointer ${
+                        selected ? 'border-amber-300 bg-amber-500/60' : 'border-amber-500/20 bg-amber-500/25'
+                      } ${fast ? 'ring-2 ring-red-500/80' : ''}`} 
+                      style={{ left: `${left}%`, width: `${Math.max(width, .35)}%`, minWidth: 16 }}
+                    >
+                      <div 
+                        onPointerDown={e => beginSegDrag(safeId, 'left', e)} 
+                        className="absolute inset-y-0 left-0 z-20 w-2 cursor-ew-resize rounded-l bg-amber-400/60" 
+                      />
+                      <div 
+                        onPointerDown={e => beginSegDrag(safeId, 'move', e)} 
+                        className="absolute inset-0 cursor-grab px-2 py-2 text-[9px] text-white active:cursor-grabbing"
+                      >
+                        <span className="block truncate">{seg.text}</span>
+                        {fast && <span className="absolute bottom-0 right-1 text-[8px] text-red-300">CPS {readingSpeed(seg).toFixed(1)}</span>}
+                      </div>
+                      <div 
+                        onPointerDown={e => beginSegDrag(safeId, 'right', e)} 
+                        className="absolute inset-y-0 right-0 z-20 w-2 cursor-ew-resize rounded-r bg-amber-400/60" 
+                      />
+                    </div>
+                  )
+                })}
+                <div 
+                  className="pointer-events-none absolute bottom-0 top-0 z-30 w-0.5 bg-amber-400" 
+                  style={{ left: `${duration ? (currentTime / duration) * 100 : 0}%` }} 
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <aside className="flex max-h-[42vh] min-h-0 w-full shrink-0 flex-col border-t border-stone-800 bg-[#0e0d0b] transition-all duration-300 ease-in-out lg:max-h-none lg:w-[min(400px,38vw)] lg:border-l lg:border-t-0">
+          <div className="shrink-0 border-b border-stone-800 bg-[#12100d] p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold">کپشن‌ها ({segments.length})</span>
+              <span className="text-[10px] text-stone-500">CPS بالای 17 = هشدار</span>
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-3 space-y-2">
+            {segments.map((seg: any) => {
+              const selected = selectedSegId === seg.id
+              const active = activeSeg?.id === seg.id
+              const fast = readingSpeed(seg) > 17
+              const safeId = seg.id || uid()
+              return (
+                <div 
+                  key={safeId} 
+                  className={`rounded-xl border ${
+                    active ? 'border-amber-500/70 bg-amber-500/10' 
+                    : selected ? 'border-amber-500/40 bg-stone-800/70' 
+                    : 'border-stone-800 bg-stone-900/60'
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center gap-1 border-b border-stone-800/70 p-2">
+                    <button onClick={() => seek(seg.start)} className="font-mono text-[10px] text-amber-400">{fmt(seg.start)}</button>
+                    <span className="text-stone-600">→</span>
+                    <button onClick={() => seek(seg.end)} className="font-mono text-[10px] text-amber-400">{fmt(seg.end)}</button>
+                    <span className={`mr-auto text-[9px] ${fast ? 'text-red-400' : 'text-stone-500'}`}>
+                      CPS {readingSpeed(seg).toFixed(1)}
+                    </span>
+                    <button aria-label="Split caption" onClick={() => splitAt(safeId)} className="rounded bg-stone-800 px-1.5 py-1 text-[10px]">✂</button>
+                    <button aria-label="Merge caption" onClick={() => mergeSeg(safeId)} className="rounded bg-stone-800 px-1.5 py-1 text-[10px]">↔</button>
+                    <button aria-label="Delete caption" onClick={() => deleteSeg(safeId)} className="rounded bg-red-500/10 px-1.5 py-1 text-[10px] text-red-400">✕</button>
+                  </div>
+                  {editingSegId === safeId ? (
+                    <textarea 
+                      autoFocus 
+                      dir="auto" 
+                      value={seg.text} 
+                      onChange={e => setSegments((prev: any[]) => prev.map(s => s.id === safeId ? { ...s, text: e.target.value } : s))} 
+                      onBlur={() => { 
+                        if (beforeEditRef.current) recordBefore(beforeEditRef.current)
+                        beforeEditRef.current = null
+                        setEditingSegId(null) 
+                      }} 
+                      onKeyDown={e => { 
+                        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { 
+                          e.preventDefault()
+                          ;(e.target as HTMLTextAreaElement).blur() 
+                        } 
+                      }} 
+                      className="m-2 w-[calc(100%-1rem)] resize-none rounded-lg border border-amber-500/50 bg-black/50 p-2 text-xs outline-none" 
+                      rows={3} 
+                    />
+                  ) : (
+                    <button 
+                      onClick={() => { 
+                        beforeEditRef.current = makeSnapshot()
+                        setEditingSegId(safeId)
+                        setSelectedSegId(safeId) 
+                      }} 
+                      className="block w-full p-2 text-right text-xs leading-6 text-white/90" 
+                      dir="auto"
+                    >
+                      {seg.text}
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          {(captionText || captionHashtags) && (
+            <div className="shrink-0 border-t border-stone-800 bg-[#12100d] p-3">
+              <h4 className="mb-2 text-xs font-bold">کپشن اینستاگرام</h4>
+              <textarea 
+                value={captionText + (captionHashtags ? `\n\n${captionHashtags}` : '')} 
+                onChange={e => { 
+                  const parts = e.target.value.split('\n\n')
+                  setCaptionText(parts[0] || '')
+                  setCaptionHashtags(parts.slice(1).join('\n\n')) 
+                }} 
+                className="mb-2 w-full resize-none rounded-lg border border-stone-700 bg-black/40 p-2 text-xs" 
+                rows={4} 
+              />
+              <button 
+                onClick={() => navigator.clipboard.writeText(captionText + (captionHashtags ? `\n\n${captionHashtags}` : '')).then(() => toastMsg('کپی شد.')).catch(() => toastMsg('کپی انجام نشد.'))} 
+                className="w-full rounded-lg border border-amber-500/30 bg-amber-500/10 py-1.5 text-xs font-bold text-amber-400"
+              >
+                📋 کپی کپشن
+              </button>
+            </div>
+          )}
+        </aside>
+      </main>
+
+      
+      {/* ادیت زیرنویس روی تصویر */}
+      {editingOnCanvas && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50" onMouseDown={() => setEditingOnCanvas(false)}>
+          <div 
+            onMouseDown={e => e.stopPropagation()}
+            className="w-full max-w-md rounded-2xl border border-amber-500/50 bg-[#12100d] p-4 shadow-2xl"
+          >
+            <h3 className="mb-2 text-sm font-bold text-white">ویرایش متن زیرنویس</h3>
+            <textarea
+              autoFocus
+              value={canvasEditText}
+              onChange={e => setCanvasEditText(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                  e.preventDefault()
+                  handleCanvasEditSave()
+                }
+                if (e.key === 'Escape') {
+                  setEditingOnCanvas(false)
+                }
+              }}
+              className="w-full rounded-lg border border-stone-700 bg-black/50 p-3 text-sm text-white focus:border-amber-500 focus:outline-none"
+              rows={3}
+              dir="rtl"
+            />
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={handleCanvasEditSave}
+                className="flex-1 rounded-lg bg-amber-500 py-2 text-xs font-bold text-black"
+              >
+                ذخیره (Ctrl+Enter)
+              </button>
+              <button
+                onClick={() => setEditingOnCanvas(false)}
+                className="flex-1 rounded-lg bg-stone-800 py-2 text-xs text-stone-300"
+              >
+                انصراف (Esc)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}{showSafe && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 hidden border-t border-amber-500/20 bg-amber-500/5 lg:block" style={{ height: '0px' }} />
+      )}
+
+      {showStyle && (
+        <StylePanel
+          style={style}
+          fontId={fontId}
+          onClose={() => setShowStyle(false)}
+          onApplyPreset={applyPreset}
+          onApplyFont={applyFont}
+          onUpdateStyle={updateStyle}
+          makeSnapshot={makeSnapshot}
+          recordBefore={recordBefore}
+        />
+      )}
+
+      {showExport && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-3" onMouseDown={() => setShowExport(false)}>
+          <div 
+            onMouseDown={e => e.stopPropagation()} 
+            className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-3xl border border-stone-800 bg-[#14120f] p-5"
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-sm font-bold">خروجی نهایی</h3>
+              <button aria-label="Close export" onClick={() => setShowExport(false)}>✕</button>
+            </div>
+            <SubtitleVideoExport 
+              videoUrl={videoUrl} 
+              sourceFile={sourceFile} 
+              segments={segments as any} 
+              style={styleConfig as any} 
+              baseName={fileName.replace(/\.[^.]+$/, '')} 
+            />
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div role="status" aria-live="polite" className="fixed bottom-4 left-1/2 z-[200] -translate-x-1/2 rounded-xl border border-stone-700 bg-stone-900 px-4 py-2 text-xs shadow-2xl">
+          {toast}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+
+
+
+================================================================================
+FILE: src\components\transcribe\export\subtitle-canvas.ts
+================================================================================
+
+
+import {
+  getAnimationState,
+  resolveAlign,
+  resolveDirection,
+  type Seg,
+  type Style,
+} from '@/lib/subtitle-studio'
+
+export const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
+
+export function wrapTextSafe(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const words = text.trim().split(/\s+/).filter(Boolean)
+  if (!words.length) return ['']
+  const lines: string[] = []
+  let currentLine = ''
+
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word
+    if (ctx.measureText(testLine).width > maxWidth && currentLine) {
+      lines.push(currentLine)
+      currentLine = word
+    } else {
+      currentLine = testLine
+    }
+  }
+  if (currentLine) lines.push(currentLine)
+  return lines.length ? lines : ['']
+}
+
+export function fitSubtitle(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  desiredFontSize: number,
+  maxWidth: number,
+  maxHeight: number,
+  fontFamily: string,
+) {
+  let fontSize = Math.max(12, desiredFontSize)
+  for (let i = 0; i < 20; i++) {
+    ctx.font = `800 ${fontSize}px "${fontFamily}", -apple-system, sans-serif`
+    const lines = wrapTextSafe(ctx, text, maxWidth)
+    const lineHeight = fontSize * 1.3
+    const totalHeight = lines.length * lineHeight
+    const maxLineWidth = Math.max(...lines.map((l) => ctx.measureText(l).width), 0)
+
+    if (maxLineWidth <= maxWidth && totalHeight <= maxHeight) {
+      return { fontSize, lines, lineHeight, totalHeight, maxLineWidth }
+    }
+    fontSize *= 0.94
+  }
+  ctx.font = `800 ${fontSize}px "${fontFamily}", -apple-system, sans-serif`
+  const lines = wrapTextSafe(ctx, text, maxWidth)
+  return {
+    fontSize,
+    lines,
+    lineHeight: fontSize * 1.3,
+    totalHeight: lines.length * (fontSize * 1.3),
+    maxLineWidth: Math.max(...lines.map((l) => ctx.measureText(l).width), 0),
+  }
+}
+
+export function drawSubtitleOnCanvas(
+  ctx: CanvasRenderingContext2D,
+  video: HTMLVideoElement,
+  W: number,
+  H: number,
+  mediaTime: number,
+  duration: number,
+  segments: Seg[],
+  activeStyle: Style,
+) {
+  const t = clamp(mediaTime, 0, duration)
+  const seg = segments.find((item) => t >= item.start && t <= item.end)
+
+  ctx.drawImage(video, 0, 0, W, H)
+  if (!seg) return
+
+  const s = activeStyle
+  const direction = resolveDirection(s.direction, seg.text) || 'rtl'
+  const align = resolveAlign(s.align, direction)
+  const elapsed = Math.max(0, t - seg.start)
+  const anim = getAnimationState(seg.fx, elapsed, seg.end - seg.start, W)
+
+  const maxSubtitleWidth = W * 0.88
+  const maxSubtitleHeight = H * 0.35
+  const anchorX = s.x != null ? (Number(s.x) / 100) * W : W / 2
+  const anchorY = s.y != null ? (Number(s.y) / 100) * H : H * 0.78
+  const fontFamily = s.fontId || 'Vazirmatn'
+  const baseFontSize = s.size ? (Number(s.size) / 100) * W : W * 0.052
+
+  const fitted = fitSubtitle(ctx, seg.text, baseFontSize, maxSubtitleWidth, maxSubtitleHeight, fontFamily)
+  const finalFontSize = fitted.fontSize
+  const lines = fitted.lines
+  const lineHeight = fitted.lineHeight
+
+  ctx.save()
+  ctx.direction = direction
+  ctx.globalAlpha = anim.opacity
+  ctx.translate(anchorX + anim.translateX, anchorY + anim.translateY)
+  ctx.scale(anim.scale, anim.scale)
+  ctx.translate(-anchorX, -anchorY)
+
+  ctx.font = `800 ${finalFontSize}px "${fontFamily}", -apple-system, sans-serif`
+  ctx.textBaseline = 'middle'
+  ctx.textAlign = align
+
+  const strokeWidth = Math.max(4, finalFontSize * 0.16)
+
+  if (!s.karaoke || !seg.words || !seg.words.length) {
+    lines.forEach((line, index) => {
+      const y = anchorY + (index - (lines.length - 1) / 2) * lineHeight
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.85)'
+      ctx.shadowBlur = Math.max(6, finalFontSize * 0.2)
+      ctx.strokeStyle = '#000000'
+      ctx.lineWidth = strokeWidth
+      ctx.strokeText(line, anchorX, y)
+
+      ctx.shadowColor = 'transparent'
+      ctx.shadowBlur = 0
+      ctx.fillStyle = s.color || '#FFFFFF'
+      ctx.fillText(line, anchorX, y)
+    })
+  } else {
+    const activeWordIndex = seg.words.findIndex((w) => t >= w.start && t <= w.end)
+    const spaceWidth = ctx.measureText(' ').width
+    let currentWordIndex = 0
+
+    lines.forEach((line, index) => {
+      const y = anchorY + (index - (lines.length - 1) / 2) * lineHeight
+      const lineWords = line.split(/\s+/).filter(Boolean)
+      const lineWidth = ctx.measureText(line).width
+      let cursorOffset = 0
+
+      lineWords.forEach((word) => {
+        const wordWidth = ctx.measureText(word).width
+        const isWordActive = currentWordIndex === activeWordIndex
+
+        let wordX = anchorX
+        if (direction === 'rtl') {
+          wordX = (anchorX + lineWidth / 2) - cursorOffset - (wordWidth / 2)
+        } else {
+          wordX = (anchorX - lineWidth / 2) + cursorOffset + (wordWidth / 2)
+        }
+
+        const prevAlign = ctx.textAlign
+        ctx.textAlign = 'center'
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.85)'
+        ctx.shadowBlur = Math.max(6, finalFontSize * 0.2)
+        ctx.strokeStyle = '#000000'
+        ctx.lineWidth = strokeWidth
+        ctx.strokeText(word, wordX, y)
+
+        ctx.shadowColor = 'transparent'
+        ctx.shadowBlur = 0
+        ctx.fillStyle = isWordActive ? (s.hlColor || '#FFD600') : (s.color || '#FFFFFF')
+        ctx.fillText(word, wordX, y)
+        ctx.textAlign = prevAlign
+
+        cursorOffset += wordWidth + spaceWidth
+        currentWordIndex++
+      })
+    })
+  }
+
+  ctx.restore()
+}
+
+
+
+================================================================================
+FILE: src\components\transcribe\export\useVideoExport.ts
+================================================================================
+
+
+'use client'
+
+import { useState, useRef, useEffect, useCallback } from 'react'
+import {
+  getAnimationState,
+  resolveAlign,
+  resolveDirection,
+  type Seg,
+  type Style,
+} from '@/lib/subtitle-studio'
+import { loadFFmpeg } from '@/lib/video-extract'
+
+export type ExportQuality = 'balanced' | 'high'
+
+const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
+
+let ffmpegLock: Promise<any> = Promise.resolve()
+function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+  const result = ffmpegLock.then(fn, fn)
+  ffmpegLock = result.catch(() => {})
+  return result
+}
+
+export function wrapTextSafe(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const words = text.trim().split(/\s+/).filter(Boolean)
+  if (!words.length) return ['']
+  const lines: string[] = []
+  let currentLine = ''
+
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word
+    if (ctx.measureText(testLine).width > maxWidth && currentLine) {
+      lines.push(currentLine)
+      currentLine = word
+    } else {
+      currentLine = testLine
+    }
+  }
+  if (currentLine) lines.push(currentLine)
+  return lines.length ? lines : ['']
+}
+
+export function fitSubtitle(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  desiredFontSize: number,
+  maxWidth: number,
+  maxHeight: number,
+  fontFamily: string,
+) {
+  let fontSize = Math.max(12, desiredFontSize)
+  for (let i = 0; i < 20; i++) {
+    ctx.font = `800 ${fontSize}px "${fontFamily}", -apple-system, sans-serif`
+    const lines = wrapTextSafe(ctx, text, maxWidth)
+    const lineHeight = fontSize * 1.3
+    const totalHeight = lines.length * lineHeight
+    const maxLineWidth = Math.max(...lines.map((l) => ctx.measureText(l).width), 0)
+
+    if (maxLineWidth <= maxWidth && totalHeight <= maxHeight) {
+      return { fontSize, lines, lineHeight, totalHeight, maxLineWidth }
+    }
+    fontSize *= 0.94
+  }
+  ctx.font = `800 ${fontSize}px "${fontFamily}", -apple-system, sans-serif`
+  const lines = wrapTextSafe(ctx, text, maxWidth)
+  return {
+    fontSize,
+    lines,
+    lineHeight: fontSize * 1.3,
+    totalHeight: lines.length * (fontSize * 1.3),
+    maxLineWidth: Math.max(...lines.map((l) => ctx.measureText(l).width), 0),
+  }
+}
+
+export function drawSubtitleOnCanvas(
+  ctx: CanvasRenderingContext2D,
+  video: HTMLVideoElement,
+  W: number,
+  H: number,
+  mediaTime: number,
+  duration: number,
+  segments: Seg[],
+  activeStyle: any,
+) {
+  const t = clamp(mediaTime, 0, duration)
+  const seg = segments.find((item) => t >= item.start && t <= item.end)
+
+  ctx.drawImage(video, 0, 0, W, H)
+  if (!seg) return
+
+  const s = activeStyle
+  const direction = resolveDirection(s.direction, seg.text) || 'rtl'
+  const align = resolveAlign(s.align, direction)
+  const elapsed = Math.max(0, t - seg.start)
+  const anim = getAnimationState(seg.fx, elapsed, seg.end - seg.start, W)
+
+  const maxSubtitleWidth = W * 0.88
+  const maxSubtitleHeight = H * 0.35
+  const anchorX = s.x != null ? (Number(s.x) / 100) * W : W / 2
+  const anchorY = s.y != null ? (Number(s.y) / 100) * H : H * 0.78
+  const fontFamily = s.fontId || 'Vazirmatn'
+  const baseFontSize = s.size ? (Number(s.size) / 100) * W : W * 0.052
+
+  const fitted = fitSubtitle(ctx, seg.text, baseFontSize, maxSubtitleWidth, maxSubtitleHeight, fontFamily)
+  const finalFontSize = fitted.fontSize
+  const lines = fitted.lines
+  const lineHeight = fitted.lineHeight
+
+  ctx.save()
+  ctx.direction = direction
+  ctx.globalAlpha = anim.opacity
+  ctx.translate(anchorX + anim.translateX, anchorY + anim.translateY)
+  ctx.scale(anim.scale, anim.scale)
+  ctx.translate(-anchorX, -anchorY)
+
+  const bgOpacity = s.bgOpacity ?? 0.6
+  if (seg.hl || bgOpacity > 0) {
+    const padX = finalFontSize * 0.6
+    const padY = finalFontSize * 0.3
+    const boxW = fitted.maxLineWidth + padX * 2
+    const boxH = fitted.totalHeight + padY * 2
+    const boxX = anchorX - boxW / 2
+    const boxY = anchorY - boxH / 2
+    const radius = s.bgRadius ?? 10
+
+    ctx.save()
+    ctx.fillStyle = seg.hl || `rgba(0, 0, 0, ${bgOpacity})`
+    ctx.beginPath()
+    if (ctx.roundRect) {
+      ctx.roundRect(boxX, boxY, boxW, boxH, radius)
+    } else {
+      ctx.rect(boxX, boxY, boxW, boxH)
+    }
+    ctx.fill()
+    ctx.restore()
+  }
+
+  ctx.font = `800 ${finalFontSize}px "${fontFamily}", -apple-system, sans-serif`
+  ctx.textBaseline = 'middle'
+  ctx.textAlign = align
+
+  const strokeWidth = Math.max(4, finalFontSize * 0.16)
+
+  if (!s.karaoke || !seg.words || !seg.words.length) {
+    lines.forEach((line, index) => {
+      const y = anchorY + (index - (lines.length - 1) / 2) * lineHeight
+      ctx.shadowColor = s.textShadowColor || 'rgba(0, 0, 0, 0.85)'
+      ctx.shadowBlur = s.textShadowBlur ?? Math.max(6, finalFontSize * 0.2)
+      ctx.strokeStyle = '#000000'
+      ctx.lineWidth = strokeWidth
+      ctx.strokeText(line, anchorX, y)
+
+      ctx.shadowColor = 'transparent'
+      ctx.shadowBlur = 0
+      ctx.fillStyle = s.color || '#FFFFFF'
+      ctx.fillText(line, anchorX, y)
+    })
+  } else {
+    const activeWordIndex = seg.words.findIndex((w) => t >= w.start && t <= w.end)
+    const spaceWidth = ctx.measureText(' ').width
+    let currentWordIndex = 0
+
+    lines.forEach((line, index) => {
+      const y = anchorY + (index - (lines.length - 1) / 2) * lineHeight
+      const lineWords = line.split(/\s+/).filter(Boolean)
+      const lineWidth = ctx.measureText(line).width
+      let cursorOffset = 0
+
+      lineWords.forEach((word) => {
+        const wordWidth = ctx.measureText(word).width
+        const isWordActive = currentWordIndex === activeWordIndex
+
+        let wordX = anchorX
+        if (direction === 'rtl') {
+          wordX = (anchorX + lineWidth / 2) - cursorOffset - (wordWidth / 2)
+        } else {
+          wordX = (anchorX - lineWidth / 2) + cursorOffset + (wordWidth / 2)
+        }
+
+        const prevAlign = ctx.textAlign
+        ctx.textAlign = 'center'
+        ctx.shadowColor = s.textShadowColor || 'rgba(0, 0, 0, 0.85)'
+        ctx.shadowBlur = s.textShadowBlur ?? Math.max(6, finalFontSize * 0.2)
+        ctx.strokeStyle = '#000000'
+        ctx.lineWidth = strokeWidth
+        ctx.strokeText(word, wordX, y)
+
+        ctx.shadowColor = 'transparent'
+        ctx.shadowBlur = 0
+        ctx.fillStyle = isWordActive ? (s.hlColor || '#FFD600') : (s.color || '#FFFFFF')
+        ctx.fillText(word, wordX, y)
+        ctx.textAlign = prevAlign
+
+        cursorOffset += wordWidth + spaceWidth
+        currentWordIndex++
+      })
+    })
+  }
+
+  ctx.restore()
+}
+
+async function extractAudioSafe(
+  ff: any,
+  inputName: string,
+  outputName: string,
+  limitDuration?: number
+): Promise<boolean> {
+  const durationArgs = limitDuration ? ['-t', String(limitDuration)] : []
+  try {
+    await ff.exec(['-i', inputName, '-vn', '-c:a', 'copy', ...durationArgs, outputName])
+    return true
+  } catch (err) {
+    console.warn('[AudioPrep] Stream-copy failed, falling back to AAC:', err)
+    try {
+      await ff.exec(['-i', inputName, '-vn', '-c:a', 'aac', '-b:a', '192k', ...durationArgs, outputName])
+      return true
+    } catch (fallbackErr) {
+      console.error('[AudioPrep] Audio fallback failed:', fallbackErr)
+      return false
+    }
+  }
+}
+
+export function useVideoExport(sourceFile?: File | Blob | null) {
+  const [exporting, setExporting] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [stageText, setStageText] = useState('')
+  const cancelRef = useRef(false)
+  const preppedAudioRef = useRef<{ name: string; ready: boolean } | null>(null)
+
+  const prepAudio = useCallback(async (fileOrBlob: File | Blob) => {
+    if (preppedAudioRef.current?.ready) return
+    try {
+      await runExclusive(async () => {
+        const ff = await loadFFmpeg()
+        const ext = (fileOrBlob as File)?.name?.match(/\.[^.]+$/)?.[0] || '.mp4'
+        const inName = `prep_in_${Date.now()}${ext}`
+        const outAudio = `prep_audio_${Date.now()}.m4a`
+
+        await ff.writeFile(inName, new Uint8Array(await fileOrBlob.arrayBuffer()))
+        const success = await extractAudioSafe(ff, inName, outAudio)
+        await ff.deleteFile(inName)
+
+        if (success) {
+          preppedAudioRef.current = { name: outAudio, ready: true }
+        }
+      })
+    } catch (e) {
+      console.warn('[Background Audio Prep Warn]', e)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (sourceFile) prepAudio(sourceFile)
+    return () => {
+      const stale = preppedAudioRef.current
+      if (stale?.ready) {
+        preppedAudioRef.current = null
+        runExclusive(async () => {
+          const ff = await loadFFmpeg()
+          await ff.deleteFile(stale.name).catch(() => {})
+        })
+      }
+    }
+  }, [sourceFile, prepAudio])
+
+  const exportVideo = async (
+    videoUrl: string,
+    segments: Seg[],
+    style: Style,
+    baseName: string = 'video',
+    quality: ExportQuality = 'balanced'
+  ) => {
+    if (!videoUrl || exporting) return
+
+    setExporting(true)
+    setProgress(0)
+    setStageText('آماده‌سازی لایه‌ها...')
+    cancelRef.current = false
+
+    const container = document.createElement('div')
+    container.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none;'
+
+    const video = document.createElement('video')
+    video.src = videoUrl
+    video.crossOrigin = 'anonymous'
+    video.playsInline = true
+    video.preload = 'auto'
+    
+    // قطع قطعی صدای المنت برای جلوگیری از پخش از اسپیکر
+    video.muted = true
+    video.volume = 0
+
+    container.appendChild(video)
+    document.body.appendChild(container)
+
+    let canvasStream: MediaStream | null = null
+    let recorder: MediaRecorder | null = null
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        video.onloadedmetadata = () => resolve()
+        video.onerror = () => reject(new Error('خطا در بارگذاری اولیه ویدیو'))
+      })
+
+      let duration = video.duration
+      if (!duration || !Number.isFinite(duration) || duration <= 0) {
+        try {
+          video.currentTime = 1e101
+          await new Promise<void>((r) => {
+            const onTime = () => {
+              video.removeEventListener('timeupdate', onTime)
+              r()
+            }
+            video.addEventListener('timeupdate', onTime, { once: true })
+            setTimeout(r, 800)
+          })
+          duration = video.duration
+          video.currentTime = 0
+        } catch {
+          video.currentTime = 0
+        }
+      }
+
+      if (!duration || !Number.isFinite(duration) || duration <= 0) {
+        duration = segments.length > 0 ? Math.max(...segments.map((s) => s.end)) : 10
+      }
+
+      let targetFps = 30
+      try {
+        const probeStream = (video as any).captureStream?.()
+        const track = probeStream?.getVideoTracks?.()[0]
+        const settings = track?.getSettings?.()
+        if (settings?.frameRate && settings.frameRate > 45) {
+          targetFps = 60
+        }
+        track?.stop()
+        probeStream?.getTracks().forEach((t: MediaStreamTrack) => t.stop())
+      } catch {
+        targetFps = 30
+      }
+
+      const W = video.videoWidth || 1080
+      const H = video.videoHeight || 1920
+
+      const canvas = document.createElement('canvas')
+      canvas.width = W
+      canvas.height = H
+      const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true })
+      if (!ctx) throw new Error('امکان ایجاد Canvas وجود ندارد')
+
+      canvasStream = canvas.captureStream(targetFps)
+
+      const mime = MediaRecorder.isTypeSupported('video/webm; codecs=vp9')
+        ? 'video/webm; codecs=vp9'
+        : MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.640028"')
+        ? 'video/mp4; codecs="avc1.640028"'
+        : 'video/webm'
+
+      const intermediateBitrate = duration > 120 ? 9_000_000 : 15_000_000
+
+      recorder = new MediaRecorder(canvasStream, {
+        mimeType: mime,
+        videoBitsPerSecond: intermediateBitrate,
+      })
+
+      const rawChunks: Blob[] = []
+      recorder.ondataavailable = (e) => {
+        if (e.data?.size > 0) rawChunks.push(e.data)
+      }
+
+      const recorderStopped = new Promise<void>((resolve) => {
+        if (!recorder) return resolve()
+        recorder.onstop = () => resolve()
+      })
+
+      video.currentTime = 0
+      drawSubtitleOnCanvas(ctx, video, W, H, 0, duration, segments, style)
+
+      recorder.start(250)
+      await video.play()
+
+      // فاز ۱: رندر فریم‌به‌فریم کانویس تا ۵۰٪
+      await new Promise<void>((resolve) => {
+        const startTime = Date.now()
+        const maxRealTimeMs = (duration + 2) * 1000
+
+        const onFrame = (_now: DOMHighResTimeStamp, metadata: { mediaTime: number }) => {
+          if (cancelRef.current || video.ended || metadata.mediaTime >= duration || (Date.now() - startTime) > maxRealTimeMs) {
+            resolve()
+            return
+          }
+          drawSubtitleOnCanvas(ctx, video, W, H, metadata.mediaTime, duration, segments, style)
+          const p = Math.min(50, Math.round((metadata.mediaTime / duration) * 50))
+          setProgress(p)
+          
+          const remainingSec = Math.max(0, duration - metadata.mediaTime)
+          setStageText(`رندر کانویس (${Math.ceil(remainingSec)}s باقی‌مانده)`)
+
+          if ('requestVideoFrameCallback' in (video as object)) {
+            video.requestVideoFrameCallback(onFrame)
+          }
+        }
+
+        if ('requestVideoFrameCallback' in (video as object)) {
+          video.requestVideoFrameCallback(onFrame)
+        } else {
+          const timer = setInterval(() => {
+            if (cancelRef.current || video.ended || video.currentTime >= duration || (Date.now() - startTime) > maxRealTimeMs) {
+              clearInterval(timer)
+              resolve()
+              return
+            }
+            drawSubtitleOnCanvas(ctx, video, W, H, video.currentTime, duration, segments, style)
+            const p = Math.min(50, Math.round((video.currentTime / duration) * 50))
+            setProgress(p)
+            const remainingSec = Math.max(0, duration - video.currentTime)
+            setStageText(`رندر کانویس (${Math.ceil(remainingSec)}s باقی‌مانده)`)
+          }, 1000 / targetFps)
+        }
+      })
+
+      if (cancelRef.current) {
+        try { recorder.stop() } catch {}
+        video.pause()
+        canvasStream.getTracks().forEach((t) => t.stop())
+        return
+      }
+
+      recorder.stop()
+      video.pause()
+      await recorderStopped
+
+      if (cancelRef.current) return
+
+      // فاز ۲: استخراج خودکار صدا و فشرده‌سازی با FFmpeg
+      setStageText('آماده‌سازی استخراج صدا و ساخت کانتینر...')
+      setProgress(55)
+
+      const finalBlob = await runExclusive(async () => {
+        const ff = await loadFFmpeg()
+
+        // استخراج مستقیم از videoUrl در صورت غیبت منبع دستی
+        let workingSource = sourceFile
+        if (!workingSource) {
+          try {
+            setStageText('دریافت بایت‌های ویدیوی اصلی...')
+            const resp = await fetch(videoUrl)
+            workingSource = await resp.blob()
+          } catch (fetchErr) {
+            console.warn('[VideoExport] Fetching videoUrl blob failed:', fetchErr)
+          }
+        }
+
+        let audioFileToUse = preppedAudioRef.current?.name || null
+
+        if (!audioFileToUse && workingSource) {
+          setStageText('استخراج صدای اورجینال...')
+          const inExt = (workingSource as File)?.name?.match(/\.[^.]+$/)?.[0] || '.mp4'
+          const tmpSrc = `src_late_${Date.now()}${inExt}`
+          const tmpOut = `audio_late_${Date.now()}.m4a`
+
+          await ff.writeFile(tmpSrc, new Uint8Array(await workingSource.arrayBuffer()))
+          const ok = await extractAudioSafe(ff, tmpSrc, tmpOut, duration)
+          await ff.deleteFile(tmpSrc)
+
+          if (ok) {
+            audioFileToUse = tmpOut
+          }
+        }
+
+        setStageText('فشرده‌سازی هوشمند CRF و Muxing...')
+        setProgress(65)
+
+        const rawBlob = new Blob(rawChunks, { type: mime })
+        const rawVideoName = `raw_${Date.now()}.webm`
+        const finalOutputName = `final_${Date.now()}.mp4`
+
+        await ff.writeFile(rawVideoName, new Uint8Array(await rawBlob.arrayBuffer()))
+
+        const audioArgs = audioFileToUse ? ['-i', audioFileToUse, '-c:a', 'copy'] : []
+        const crfValue = quality === 'high' ? '20' : '23'
+        const presetValue = quality === 'high' ? 'medium' : 'veryfast'
+
+        await ff.exec([
+          '-i', rawVideoName,
+          ...audioArgs,
+          '-c:v', 'libx264',
+          '-crf', crfValue,
+          '-preset', presetValue,
+          '-shortest',
+          finalOutputName,
+        ])
+
+        setProgress(95)
+        const finalData = await ff.readFile(finalOutputName)
+
+        await ff.deleteFile(rawVideoName)
+        await ff.deleteFile(finalOutputName)
+        if (audioFileToUse && audioFileToUse !== preppedAudioRef.current?.name) {
+          await ff.deleteFile(audioFileToUse).catch(() => {})
+        }
+
+        const finalBytes = finalData instanceof Uint8Array ? finalData : new Uint8Array(finalData as any)
+        const finalBuffer = new Uint8Array(finalBytes).buffer
+
+        return new Blob([finalBuffer], { type: 'video/mp4' })
+      })
+
+      if (cancelRef.current) return
+
+      setProgress(100)
+      setStageText('آماده دانلود!')
+
+      const url = URL.createObjectURL(finalBlob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${baseName}.subtitled.mp4`
+      document.body.appendChild(a)
+      a.click()
+      setTimeout(() => {
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      }, 5000)
+
+    } catch (e: any) {
+      if (!cancelRef.current) {
+        console.error('[Export Error]', e)
+        alert('خطا در رندر خروجی: ' + (e?.message || 'عملیات ناموفق بود'))
+      }
+    } finally {
+      if (canvasStream) {
+        canvasStream.getTracks().forEach((t) => t.stop())
+      }
+      if (document.body.contains(container)) {
+        document.body.removeChild(container)
+      }
+      setExporting(false)
+      setStageText('')
+    }
+  }
+
+  const cancelExport = () => {
+    cancelRef.current = true
+    setExporting(false)
+    setStageText('')
+  }
+
+  return {
+    exporting,
+    progress,
+    stageText,
+    exportVideo,
+    cancelExport,
+  }
+}
+
+
+
+================================================================================
+FILE: src\components\transcribe\MobileSubtitleEditor.tsx
+================================================================================
+
+
+'use client'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { useVideoTranscribe } from '@/lib/use-video-transcribe'
+import { type Seg, mkWords } from '@/lib/subtitle-studio'
+import { StudioStyleConfig, getStoredStyle, saveStoredStyle } from '@/lib/studio/unified-style'
+import { renderStudioFrame, clampCanvasDimensions } from '@/lib/studio/universal-renderer'
+import { ensureFontLoaded } from '@/lib/studio/font-loader'
+import TemplatePanel from '../studio/panels/TemplatePanel'
+import SubtitleVideoExport from './SubtitleVideoExport'
+
+export default function MobileSubtitleEditor() {
+  const [videoUrl, setVideoUrl] = useState('')
+  const [fileName, setFileName] = useState('')
+  const [sourceFile, setSourceFile] = useState<File | null>(null)
+  const [speed, setSpeed] = useState<1 | 2 | 4 | 8>(4)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [showStylePanel, setShowStylePanel] = useState(false)
+  const [showExportModal, setShowExportModal] = useState(false)
+  const [editingSegId, setEditingSegId] = useState<string | null>(null)
+  const [selectedSegId, setSelectedSegId] = useState<string | null>(null)
+
+  const { status, progress, busy, segments, setSegments, run, stop } = useVideoTranscribe()
+  const [styleConfig, setStyleConfig] = useState<StudioStyleConfig>(() => getStoredStyle())
+  const updateStyle = (patch: Partial<StudioStyleConfig>) => {
+    setStyleConfig(prev => { const next = { ...prev, ...patch }; saveStoredStyle(next); return next })
+  }
+
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [fontLoaded, setFontLoaded] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    setFontLoaded(false)
+    ensureFontLoaded(styleConfig.fontFamily).then(() => { if (active) setFontLoaded(true) })
+    return () => { active = false }
+  }, [styleConfig.fontFamily])
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 250 * 1024 * 1024) {
+      alert('❌ حجم فایل بیش از ۲۵۰ مگابایت است')
+      e.target.value = ''
+      return
+    }
+    setFileName(file.name)
+    setSourceFile(file)
+    setVideoUrl(URL.createObjectURL(file))
+    await run(file)
+  }
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+    const onTime = () => setCurrentTime(video.currentTime)
+    const onLoaded = () => setDuration(video.duration || 0)
+    const onPlay = () => setIsPlaying(true)
+    const onPause = () => setIsPlaying(false)
+    video.addEventListener('timeupdate', onTime)
+    video.addEventListener('loadedmetadata', onLoaded)
+    video.addEventListener('play', onPlay)
+    video.addEventListener('pause', onPause)
+    return () => {
+      video.removeEventListener('timeupdate', onTime)
+      video.removeEventListener('loadedmetadata', onLoaded)
+      video.removeEventListener('play', onPlay)
+      video.removeEventListener('pause', onPause)
+    }
+  }, [videoUrl])
+
+  const drawFrame = useCallback(() => {
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    if (!video || !canvas || video.readyState < 2) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    let W = video.videoWidth || 1080
+    let H = video.videoHeight || 1920
+    if (styleConfig.aspectRatio === '9:16') { W = 1080; H = 1920 }
+    else if (styleConfig.aspectRatio === '16:9') { W = 1920; H = 1080 }
+    else if (styleConfig.aspectRatio === '1:1') { W = 1080; H = 1080 }
+    const clamped = clampCanvasDimensions(W, H, 1920)
+    if (canvas.width !== clamped.width || canvas.height !== clamped.height) {
+      canvas.width = clamped.width; canvas.height = clamped.height
+    }
+    renderStudioFrame({ ctx, canvasWidth: clamped.width, canvasHeight: clamped.height, video, currentTime: video.currentTime || currentTime, segments: segments as any, style: styleConfig })
+  }, [currentTime, segments, styleConfig])
+
+  useEffect(() => {
+    if (!fontLoaded) return
+    if (!isPlaying) { drawFrame(); return }
+    let id: number
+    const loop = () => { drawFrame(); id = requestAnimationFrame(loop) }
+    id = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(id)
+  }, [isPlaying, fontLoaded, drawFrame])
+
+  const togglePlay = () => { if (!videoRef.current) return; isPlaying ? videoRef.current.pause() : videoRef.current.play() }
+  const seek = (t: number) => { if (!videoRef.current) return; videoRef.current.currentTime = t; setCurrentTime(t) }
+  const fmt = (t: number) => { const m = Math.floor(t / 60); const s = Math.floor(t % 60); return `${m}:${s.toString().padStart(2, '0')}` }
+
+  const adjustSegTime = (id: string, delta: number) => {
+    setSegments(prev => prev.map(s => {
+      if (s.id !== id) return s
+      const newStart = Math.max(0, s.start + delta)
+      const newEnd = Math.max(newStart + 0.2, s.end + delta)
+      return { ...s, start: newStart, end: newEnd }
+    }))
+  }
+
+  const deleteSeg = (id: string) => setSegments(prev => prev.filter(s => s.id !== id))
+
+  const addSeg = () => {
+    const text = 'متن جدید'
+    const start = currentTime
+    const end = currentTime + 2.5
+    const newSeg: Seg = {
+      id: `seg_${Date.now()}`,
+      text,
+      start,
+      end,
+      words: mkWords(text, start, end),
+    }
+    setSegments(prev => [...prev, newSeg])
+  }
+
+  const splitSeg = (id: string) => {
+    const seg = segments.find(s => s.id === id)
+    if (!seg) return
+    const mid = currentTime
+    if (mid <= seg.start || mid >= seg.end) return
+    const first: Seg = { ...seg, end: mid }
+    const second: Seg = { ...seg, id: `seg_${Date.now()}`, start: mid }
+    setSegments(prev => prev.flatMap(s => s.id === id ? [first, second] : [s]))
+  }
+
+  if (!videoUrl) {
+    return (
+      <div className="flex flex-col min-h-screen bg-[#070605]" dir="rtl">
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="w-full max-w-sm rounded-3xl border border-stone-800 bg-[#12100d] p-8 text-center">
+            <div className="text-5xl mb-4">🎬</div>
+            <h2 className="text-lg font-black text-white mb-2">ویدیوی خود را وارد کنید</h2>
+            <p className="text-xs text-stone-400 mb-6">حداکثر ۲۵۰ مگابایت</p>
+            <div className="flex items-center justify-center gap-2 mb-6">
+              <span className="text-xs text-stone-400">سرعت:</span>
+              {([1, 2, 4, 8] as const).map(s => (
+                <button key={s} onClick={() => setSpeed(s)} className={`rounded-lg px-3 py-1 text-xs font-bold ${speed === s ? 'bg-amber-500 text-black' : 'bg-stone-900 text-stone-400'}`}>{s}x</button>
+              ))}
+            </div>
+            <label className="block w-full cursor-pointer rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 py-3 text-xs font-black text-black">
+              انتخاب ویدیو
+              <input type="file" accept="video/*,.mov,.mp4" onChange={handleFile} className="hidden" />
+            </label>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col h-screen bg-[#070605]" dir="rtl">
+      <video ref={videoRef} src={videoUrl || undefined} className="hidden" playsInline />
+
+      {/* هدر */}
+      <div className="shrink-0 border-b border-stone-800 bg-[#110f0d] px-3 py-2 flex items-center justify-between">
+        <h1 className="text-xs font-black text-white truncate max-w-[120px]">{fileName}</h1>
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => setShowStylePanel(true)} className="px-2.5 py-1 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-400 text-[10px] font-bold">🎨</button>
+          <button onClick={() => setShowExportModal(true)} className="rounded-lg bg-gradient-to-r from-amber-600 to-amber-500 px-3 py-1 text-[10px] font-black text-black">خروجی</button>
+        </div>
+      </div>
+
+      {/* بخش ویدیو (۴۵٪ ارتفاع) */}
+      <div className="h-[45vh] shrink-0 flex flex-col bg-black items-center justify-center p-2 relative overflow-hidden">
+        {busy && (
+          <div className="absolute top-2 inset-x-3 z-20 bg-stone-900/90 border border-amber-500/40 p-2 rounded-xl backdrop-blur-md">
+            <div className="flex justify-between text-[10px] mb-1">
+              <span className="text-amber-400 font-bold">{status}</span>
+              <button onClick={stop} className="text-red-400">توقف</button>
+            </div>
+            <div className="h-1 w-full bg-stone-800 rounded-full"><div className="h-full bg-amber-500" style={{ width: `${progress}%` }} /></div>
+          </div>
+        )}
+        <div onClick={togglePlay} className="relative w-full h-full flex items-center justify-center rounded-xl bg-black cursor-pointer border border-stone-800">
+          <canvas ref={canvasRef} className="max-h-full max-w-full object-contain" />
+        </div>
+      </div>
+
+      {/* کنترلر پلیر */}
+      <div className="shrink-0 bg-[#110f0d] border-b border-stone-800 px-3 py-2 flex items-center gap-2">
+        <button onClick={togglePlay} className="h-8 w-8 rounded-lg bg-amber-500 text-black font-bold flex items-center justify-center shrink-0 text-sm">{isPlaying ? '⏸' : '▶'}</button>
+        <input type="range" min={0} max={duration || 1} step={0.05} value={currentTime} onChange={e => seek(Number(e.target.value))} className="flex-1 accent-amber-500" />
+        <span className="font-mono text-[9px] text-stone-400 shrink-0">{fmt(currentTime)}</span>
+      </div>
+
+      {/* تایم‌لاین حرفه‌ای (۵٪ ارتفاع) */}
+      <div className="flex-1 flex flex-col bg-[#0e0d0b] overflow-hidden min-h-0">
+        <div className="shrink-0 px-3 py-2 border-b border-stone-800 flex items-center justify-between bg-[#12100d]">
+          <span className="text-[10px] font-bold text-white">تایم‌لاین ({segments.length})</span>
+          <button onClick={addSeg} className="px-2 py-0.5 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded text-[9px] font-bold">+ افزودن</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+          {segments.length === 0 && (
+            <div className="flex items-center justify-center h-full text-stone-500 text-xs">هنوز کپشنی وجود ندارد</div>
+          )}
+          {segments.map((seg: any) => {
+            const isActive = currentTime >= seg.start && currentTime <= seg.end
+            const isSelected = selectedSegId === seg.id
+            const isEditing = editingSegId === seg.id
+            const readingSpeed = seg.text.length / (seg.end - seg.start)
+            const isFast = readingSpeed > 17
+            return (
+              <div key={seg.id} onClick={() => { setSelectedSegId(seg.id); setEditingSegId(seg.id); seek(seg.start) }} className={`rounded-lg border transition-all cursor-pointer ${isActive ? 'bg-amber-500/10 border-amber-500/60' : isSelected ? 'bg-stone-800/60 border-amber-500/40' : 'bg-stone-900/60 border-stone-800'}`}>
+                <div className="flex items-center justify-between px-2 py-1 border-b border-stone-800/50">
+                  <span className="bg-stone-800 px-1.5 py-0.5 rounded text-amber-400 font-mono text-[9px]">{fmt(seg.start)} - {fmt(seg.end)}</span>
+                  <div className="flex items-center gap-0.5">
+                    <button onClick={e => { e.stopPropagation(); adjustSegTime(seg.id, -0.5) }} className="px-1.5 py-0.5 rounded bg-stone-800 text-[9px] text-stone-300">-0.5</button>
+                    <button onClick={e => { e.stopPropagation(); adjustSegTime(seg.id, 0.5) }} className="px-1.5 py-0.5 rounded bg-stone-800 text-[9px] text-stone-300">+0.5</button>
+                    <button onClick={e => { e.stopPropagation(); splitSeg(seg.id) }} className="px-1.5 py-0.5 rounded bg-stone-800 text-[9px] text-stone-300">✂</button>
+                    <button onClick={e => { e.stopPropagation(); deleteSeg(seg.id) }} className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 text-[9px]"></button>
+                  </div>
+                </div>
+                {isEditing ? (
+                  <div className="p-2">
+                    <textarea
+                      rows={2}
+                      value={seg.text}
+                      onChange={e => setSegments(prev => prev.map((s: any) => s.id === seg.id ? { ...s, text: e.target.value } : s))}
+                      onBlur={() => setEditingSegId(null)}
+                      onClick={e => e.stopPropagation()}
+                      autoFocus
+                      className="w-full bg-black/40 border border-amber-500/50 rounded p-1.5 text-[11px] text-white focus:outline-none resize-none"
+                    />
+                  </div>
+                ) : (
+                  <div className="px-2 py-1.5 text-[11px] text-white/90 line-clamp-2 relative">
+                    {seg.text}
+                    {isFast && <span className="absolute top-1 left-1 text-red-500 text-[9px]">⚠</span>}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* پنل استایل (از سمت چپ) */}
+      {showStylePanel && (
+        <div className="fixed inset-y-0 left-0 z-50 w-80 bg-[#12100d] border-r border-stone-800 shadow-2xl overflow-y-auto">
+          <div className="sticky top-0 bg-[#12100d] border-b border-stone-800 p-3 flex items-center justify-between z-10">
+            <h3 className="text-sm font-bold text-white">تنظیمات استایل</h3>
+            <button onClick={() => setShowStylePanel(false)} className="text-stone-400 hover:text-white">✕</button>
+          </div>
+          <TemplatePanel config={styleConfig} onChange={updateStyle} onClose={() => setShowStylePanel(false)} />
+        </div>
+      )}
+
+      {/* مودال خروجی */}
+      {showExportModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-[#14120f] border border-stone-800 p-4 shadow-2xl max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-3 border-b border-stone-800 pb-2">
+              <h3 className="text-sm font-bold text-white">خروجی ویدیو</h3>
+              <button onClick={() => setShowExportModal(false)} className="text-stone-400">✕</button>
+            </div>
+            <SubtitleVideoExport videoUrl={videoUrl} sourceFile={sourceFile} segments={segments as any} style={styleConfig as any} baseName={fileName.replace(/\.[^.]+$/, '')} />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+
+================================================================================
+FILE: src\components\transcribe\StylePanel.tsx
+================================================================================
+
+
+'use client'
+import { useRef } from 'react'
+import { PRESETS, FONTS } from './constants'
+import { Preset, Snapshot } from './types'
+
+interface Props {
+  style: Record<string, any>
+  fontId: string
+  onClose: () => void
+  onApplyPreset: (preset: Preset) => void
+  onApplyFont: (id: string) => void
+  onUpdateStyle: (patch: Record<string, unknown>, record?: boolean) => void
+  makeSnapshot: () => Snapshot
+  recordBefore: (snapshot?: Snapshot) => void
+}
+
+export default function StylePanel({ 
+  style, fontId, onClose, onApplyPreset, onApplyFont, onUpdateStyle, makeSnapshot, recordBefore 
+}: Props) {
+  const x = Number(style.x ?? 50)
+  const y = Number(style.y ?? 90)
+  const beforeStyleDragRef = useRef<Snapshot | null>(null)
+
+  const handleDragStart = () => { beforeStyleDragRef.current = makeSnapshot() }
+  const handleDragEnd = () => { 
+    if (beforeStyleDragRef.current) {
+      recordBefore(beforeStyleDragRef.current)
+      beforeStyleDragRef.current = null
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-black/70" onMouseDown={onClose}>
+      <section 
+        onMouseDown={e => e.stopPropagation()} 
+        className="absolute inset-y-0 left-0 w-full max-w-[430px] overflow-y-auto border-r border-stone-800 bg-[#12100d] shadow-2xl"
+      >
+        <div className="sticky top-0 z-20 flex items-center justify-between border-b border-stone-800 bg-[#12100d] p-4">
+          <div>
+            <h2 className="text-sm font-black">استایل زیرنویس</h2>
+            <p className="text-[10px] text-stone-500">قالب، فونت و تنظیمات در یک‌جا</p>
+          </div>
+          <button onClick={onClose} className="rounded-lg bg-stone-800 px-3 py-1.5">✕</button>
+        </div>
+        
+        <div className="space-y-6 p-4">
+          {/* قالب‌ها */}
+          <section>
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-xs font-bold">قالب‌ها</h3>
+              <span className="text-[10px] text-stone-500">{PRESETS.length} قالب</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {PRESETS.map(p => (
+                <button 
+                  key={p.id} 
+                  onClick={() => onApplyPreset(p)} 
+                  className={`rounded-xl border p-2 text-right transition-all ${
+                    style.template === p.id ? 'border-amber-400 bg-amber-500/10' : 'border-stone-800 bg-stone-900/60'
+                  }`}
+                >
+                  <div 
+                    className="mb-2 rounded-lg px-2 py-3 text-center" 
+                    style={{ 
+                      background: p.bgColor, 
+                      borderRadius: p.bgRadius,
+                      border: p.outline ? `1px solid ${p.color}40` : 'none',
+                      boxShadow: p.outline ? `0 0 8px ${p.color}30` : 'none'
+                    }}
+                  >
+                    <span 
+                      style={{ 
+                        fontFamily: `"${p.fontId}"`, 
+                        color: p.color, 
+                        fontSize: 15, 
+                        fontWeight: 800, 
+                        textShadow: p.outline 
+                          ? `0 0 4px ${p.textShadowColor}, 0 0 8px ${p.textShadowColor}` 
+                          : `0 2px ${p.textShadowBlur}px ${p.textShadowColor}`,
+                        letterSpacing: p.karaoke ? '0.5px' : 'normal',
+                        textTransform: p.id === 'bold' ? 'uppercase' : 'none'
+                      }}
+                    >
+                      نمونه زیرنویس
+                    </span>
+                  </div>
+                  <div className="text-[11px] font-bold">{p.name}</div>
+                  <div className="mt-1 text-[9px] text-stone-500">{p.fontId}</div>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {/* فونت‌ها */}
+          <section>
+            <h3 className="mb-2 text-xs font-bold">فونت‌ها</h3>
+            <div className="grid grid-cols-2 gap-2">
+              {FONTS.map(f => (
+                <button 
+                  key={f.id} 
+                  onClick={() => onApplyFont(f.id)} 
+                  className={`rounded-xl border p-3 text-right transition-all ${
+                    fontId === f.id ? 'border-amber-400 bg-amber-500/10' : 'border-stone-800 bg-stone-900/60'
+                  }`}
+                >
+                  <div dir="rtl" style={{ fontFamily: `"${f.id}"`, fontSize: 18, fontWeight: 700 }}>
+                    این یک متن نمونه است
+                  </div>
+                  <div className="mt-1 text-[10px] text-stone-500">{f.label} · {f.category}</div>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {/* اندازه و رنگ */}
+          <section className="space-y-3">
+            <h3 className="text-xs font-bold">اندازه و رنگ</h3>
+            <label className="block text-[10px] text-stone-400">
+              اندازه: {Number(style.size ?? 6).toFixed(1)}٪ از عرض ویدیو
+              <input 
+                type="range" 
+                min="2" 
+                max="12" 
+                step=".1" 
+                value={Number(style.size ?? 6)} 
+                onPointerDown={handleDragStart} 
+                onChange={e => onUpdateStyle({ size: Number(e.target.value) }, false)} 
+                onPointerUp={handleDragEnd} 
+                className="mt-2 w-full accent-amber-500" 
+              />
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="rounded-lg bg-stone-900 p-2 text-[10px]">
+                رنگ متن
+                <input 
+                  type="color" 
+                  value={style.color ?? '#ffffff'} 
+                  onChange={e => onUpdateStyle({ color: e.target.value })} 
+                  className="mt-2 h-8 w-full" 
+                />
+              </label>
+              <label className="rounded-lg bg-stone-900 p-2 text-[10px]">
+                رنگ کلمه فعال
+                <input 
+                  type="color" 
+                  value={style.hlColor ?? '#ffe14d'} 
+                  onChange={e => onUpdateStyle({ hlColor: e.target.value })} 
+                  className="mt-2 h-8 w-full" 
+                />
+              </label>
+            </div>
+          </section>
+
+          {/* موقعیت */}
+          <section className="space-y-3">
+            <h3 className="text-xs font-bold">موقعیت</h3>
+            <label className="block text-[10px] text-stone-400">
+              X: {x.toFixed(0)}%
+              <input 
+                type="range" 
+                min="5" 
+                max="95" 
+                value={x} 
+                onPointerDown={handleDragStart} 
+                onChange={e => onUpdateStyle({ x: Number(e.target.value) }, false)} 
+                onPointerUp={handleDragEnd} 
+                className="mt-2 w-full accent-amber-500" 
+              />
+            </label>
+            <label className="block text-[10px] text-stone-400">
+              Y: {y.toFixed(0)}%
+              <input 
+                type="range" 
+                min="5" 
+                max="95" 
+                value={y} 
+                onPointerDown={handleDragStart} 
+                onChange={e => onUpdateStyle({ y: Number(e.target.value) }, false)} 
+                onPointerUp={handleDragEnd} 
+                className="mt-2 w-full accent-amber-500" 
+              />
+            </label>
+            <p className="text-[10px] text-stone-500">موقعیت نسبت به خود فریم ویدیو ذخیره می‌شود.</p>
+          </section>
+
+          {/* دکمه‌های toggle */}
+          <section className="grid grid-cols-2 gap-2">
+            <button 
+              onClick={() => onUpdateStyle({ karaoke: !Boolean(style.karaoke) })} 
+              className={`rounded-xl p-3 text-xs transition-all ${
+                style.karaoke ? 'bg-amber-500 text-black' : 'bg-stone-900 text-stone-300'
+              }`}
+            >
+              کلمه فعال {style.karaoke ? 'روشن' : 'خاموش'}
+            </button>
+            <button 
+              onClick={() => onUpdateStyle({ outline: !Boolean(style.outline) })} 
+              className={`rounded-xl p-3 text-xs transition-all ${
+                style.outline ? 'bg-amber-500 text-black' : 'bg-stone-900 text-stone-300'
+              }`}
+            >
+              Outline {style.outline ? 'روشن' : 'خاموش'}
+            </button>
+          </section>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+
+
+================================================================================
+FILE: src\components\transcribe\SubtitleEditor.tsx
+================================================================================
+
+
+'use client'
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useVideoTranscribe } from '@/lib/use-video-transcribe'
+import { StudioStyleConfig, getStoredStyle, saveStoredStyle } from '@/lib/studio/unified-style'
+import { renderStudioFrame, clampCanvasDimensions } from '@/lib/studio/universal-renderer'
+import { ensureFontLoaded } from '@/lib/studio/font-loader'
+import SubtitleVideoExport from './SubtitleVideoExport'
+import { useVideoExport } from '@/lib/video-extract'
+import UploadScreen from './UploadScreen'
+import StylePanel from './StylePanel'
+import { PRESETS, FONTS } from './constants'
+import type { Seg, Snapshot, Preset } from './types'
+
+// ═══════════════════════════════════════════════════════════════
+// توابع کمکی
+// ═══════════════════════════════════════════════════════════════
+const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v))
+
+const fmt = (t: number): string => {
+  const m = Math.floor(t / 60)
+  const s = Math.floor(t % 60)
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+let editorIdCounter = 0
+const uid = (): string => {
+  editorIdCounter++
+  return `seg_${Date.now()}_${editorIdCounter}_${Math.random().toString(36).substring(2, 7)}`
+}
+
+// ═══════════════════════════════════════════════════════════════
+// کامپوننت واحد (responsive)
+// ═══════════════════════════════════════════════════════════════
+export default function SubtitleEditor() {
+  const [videoUrl, setVideoUrl] = useState('')
+  const [fileName, setFileName] = useState('')
+  const [sourceFile, setSourceFile] = useState<File | null>(null)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [selectedSegId, setSelectedSegId] = useState<string | null>(null)
+  const [editingSegId, setEditingSegId] = useState<string | null>(null)
+  const [timelineZoom, setTimelineZoom] = useState(100)
+  const [showStyle, setShowStyle] = useState(false)
+  const [showExport, setShowExport] = useState(false)
+  const [showSafe, setShowSafe] = useState(true)
+  const [lastSaved, setLastSaved] = useState<Date | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const [fontLoaded, setFontLoaded] = useState(false)
+  const [history, setHistory] = useState<Snapshot[]>([])
+  const [redoStack, setRedoStack] = useState<Snapshot[]>([])
+  const [saving, setSaving] = useState(false)
+  const [restored, setRestored] = useState(false)
+  const [translating, setTranslating] = useState(false)
+  const [generatingCaption, setGeneratingCaption] = useState(false)
+  const [captionText, setCaptionText] = useState('')
+  const [captionHashtags, setCaptionHashtags] = useState('')
+  const [waveform, setWaveform] = useState<number[]>([])
+  const [isDraggingSubtitle, setIsDraggingSubtitle] = useState(false)
+  const [editingOnCanvas, setEditingOnCanvas] = useState(false)
+  const [canvasEditText, setCanvasEditText] = useState('')
+
+  const subtitleDragStart = useRef<{ x: number; y: number; styleX: number; styleY: number } | null>(null)
+
+  const { status, progress, busy, segments, setSegments, run, stop } = useVideoTranscribe()
+  const [styleConfig, setStyleConfig] = useState<StudioStyleConfig>(() => getStoredStyle())
+  
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const timelineScrollRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{ id: string; mode: 'move' | 'left' | 'right'; startX: number; start: number; end: number } | null>(null)
+  const beforeDragRef = useRef<Snapshot | null>(null)
+  const beforeStyleDragRef = useRef<Snapshot | null>(null)
+  const beforeEditRef = useRef<Snapshot | null>(null)
+
+  const style = styleConfig as unknown as Record<string, any>
+  const fontId = style.fontId ?? style.fontFamily ?? 'Vazirmatn'
+  const x = Number(style.x ?? 50)
+  const y = Number(style.y ?? 90)
+
+  const toastMsg = useCallback((message: string) => {
+    setToast(message)
+    window.setTimeout(() => setToast(v => v === message ? null : v), 2600)
+  }, [])
+
+  const makeSnapshot = useCallback((): Snapshot => ({
+    segments: clone(segments),
+    style: clone(styleConfig as any),
+  }), [segments, styleConfig])
+
+  const recordBefore = useCallback((snapshot?: Snapshot) => {
+    const item = snapshot ?? makeSnapshot()
+    setHistory(prev => [...prev, item].slice(-80))
+    setRedoStack([])
+  }, [makeSnapshot])
+
+  const updateStyle = useCallback((patch: Record<string, unknown>, record = true) => {
+    if (record) recordBefore()
+    setStyleConfig(prev => {
+      const next = { ...(prev as any), ...patch } as StudioStyleConfig
+      saveStoredStyle(next)
+      return next
+    })
+  }, [recordBefore])
+
+  const undo = useCallback(() => {
+    setHistory(prev => {
+      if (!prev.length) return prev
+      const target = prev[prev.length - 1] as Snapshot
+      if (!target) return prev
+      const current: Snapshot = { segments: clone(segments), style: clone(styleConfig as any) }
+      setRedoStack(r => [...r, current].slice(-80))
+      setSegments(clone((target as any).segments))
+      setStyleConfig((target as any).style as StudioStyleConfig)
+      saveStoredStyle((target as any).style)
+      return prev.slice(0, -1)
+    })
+  }, [segments, styleConfig, setSegments])
+
+  const redo = useCallback(() => {
+    setRedoStack(prev => {
+      if (!prev.length) return prev
+      const target = prev[prev.length - 1] as Snapshot
+      if (!target) return prev
+      const current: Snapshot = { segments: clone(segments), style: clone(styleConfig as any) }
+      setHistory(h => [...h, current].slice(-80))
+      setSegments(clone((target as any).segments))
+      setStyleConfig((target as any).style as StudioStyleConfig)
+      saveStoredStyle((target as any).style)
+      return prev.slice(0, -1)
+    })
+  }, [segments, styleConfig, setSegments])
+
+  useEffect(() => {
+    let active = true
+    setFontLoaded(false)
+    ensureFontLoaded(fontId).then(() => active && setFontLoaded(true)).catch(() => active && setFontLoaded(true))
+    return () => { active = false }
+  }, [fontId])
+
+  useEffect(() => {
+    if (!toast) return
+    const id = window.setTimeout(() => setToast(null), 2600)
+    return () => window.clearTimeout(id)
+  }, [toast])
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 250 * 1024 * 1024) {
+      toastMsg('حجم فایل بیشتر از ۲۵۰ مگابایت است.')
+      e.target.value = ''
+      return
+    }
+    const url = URL.createObjectURL(file)
+    setFileName(file.name)
+    setSourceFile(file)
+    setVideoUrl(url)
+    setSelectedSegId(null)
+    setHistory([])
+    setRedoStack([])
+    setRestored(false)
+    await run(file)
+  }
+
+  useEffect(() => {
+    return () => { if (videoUrl.startsWith('blob:')) URL.revokeObjectURL(videoUrl) }
+  }, [videoUrl])
+
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+    const onTime = () => setCurrentTime(v.currentTime)
+    const onMeta = () => setDuration(Number.isFinite(v.duration) ? v.duration : 0)
+    const onPlay = () => setIsPlaying(true)
+    const onPause = () => setIsPlaying(false)
+    v.addEventListener('timeupdate', onTime)
+    v.addEventListener('loadedmetadata', onMeta)
+    v.addEventListener('play', onPlay)
+    v.addEventListener('pause', onPause)
+    return () => {
+      v.removeEventListener('timeupdate', onTime)
+      v.removeEventListener('loadedmetadata', onMeta)
+      v.removeEventListener('play', onPlay)
+      v.removeEventListener('pause', onPause)
+    }
+  }, [videoUrl])
+
+  const activeSeg = useMemo(() => 
+    segments.find((s: any) => currentTime >= s.start && currentTime < s.end) ?? null, 
+    [segments, currentTime]
+  )
+
+  // ✅ اصلاح ۳: حذف بازنویسی خودکار انتخاب کاربر. هایلایت بصری توسط متغیر 'active' مدیریت می‌شود.
+
+  const seek = useCallback((t: number) => {
+    const v = videoRef.current
+    const next = Math.max(0, Math.min(duration || Infinity, t))
+    if (v) v.currentTime = next
+    setCurrentTime(next)
+  }, [duration])
+
+  const togglePlay = useCallback(() => {
+    const v = videoRef.current
+    if (!v) return
+    if (v.paused) v.play().catch(() => {})
+    else v.pause()
+  }, [])
+
+  const splitAt = useCallback((id: string, at = currentTime) => {
+    const seg = segments.find((s: any) => s.id === id)
+    if (!seg || at <= seg.start + 0.05 || at >= seg.end - 0.05) {
+      toastMsg('پلی‌هد باید داخل همان سگمنت باشد.')
+      return
+    }
+    const before = makeSnapshot()
+    const ratio = (at - seg.start) / Math.max(0.001, seg.end - seg.start)
+    const words = seg.text.trim().split(/\s+/)
+    const cut = Math.max(1, Math.min(words.length - 1, Math.round(words.length * ratio)))
+    const first: any = { ...seg, id: seg.id || uid(), end: at, text: words.slice(0, cut).join(' ') || seg.text }
+    const second: any = { ...seg, id: uid(), start: at, text: words.slice(cut).join(' ') || seg.text }
+    recordBefore(before)
+    setSegments(prev => prev.flatMap(s => s.id === id ? [first, second] : [s]))
+    setSelectedSegId(second.id)
+  }, [segments, currentTime, makeSnapshot, recordBefore, setSegments, toastMsg])
+
+  const mergeSeg = useCallback((id: string) => {
+    const idx = segments.findIndex((s: any) => s.id === id)
+    if (idx < 0 || idx >= segments.length - 1) return
+    const a = segments[idx]
+    const b = segments[idx + 1]
+    const before = makeSnapshot()
+    recordBefore(before)
+    setSegments(prev => prev.filter(s => s.id !== b.id).map(s => s.id === a.id ? { ...s, end: b.end, text: `${s.text} ${b.text}`.trim() } : s))
+  }, [segments, makeSnapshot, recordBefore, setSegments])
+
+  const deleteSeg = useCallback((id: string) => {
+    const before = makeSnapshot()
+    recordBefore(before)
+    setSegments(prev => prev.filter(s => s.id !== id))
+    setSelectedSegId(prev => prev === id ? null : prev)
+  }, [makeSnapshot, recordBefore, setSegments])
+
+  const addSeg = useCallback(() => {
+    const start = currentTime
+    const end = Math.min(duration || start + 2.5, start + 2.5)
+    const before = makeSnapshot()
+    recordBefore(before)
+    const seg: any = { id: uid(), start, end: Math.max(start + .2, end), text: 'متن جدید' }
+    setSegments(prev => [...prev, seg].sort((a: any, b: any) => a.start - b.start))
+    setSelectedSegId(seg.id)
+    setEditingSegId(seg.id)
+  }, [currentTime, duration, makeSnapshot, recordBefore, setSegments])
+
+  const onTimelinePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = timelineScrollRef.current
+    if (!el || !duration) return
+    const target = e.target as HTMLElement
+    const block = target.closest('[data-seg-id]') as HTMLElement | null
+    if (block) return
+    const rect = el.getBoundingClientRect()
+    const localX = e.clientX - rect.left + el.scrollLeft
+    seek((localX / Math.max(1, el.scrollWidth)) * duration)
+  }
+
+  const beginSegDrag = (id: string, mode: 'move' | 'left' | 'right', e: React.PointerEvent) => {
+    e.stopPropagation()
+    const seg = segments.find((s: any) => s.id === id)
+    const el = timelineScrollRef.current
+    if (!seg || !el || !duration) return
+    setSelectedSegId(id)
+    beforeDragRef.current = makeSnapshot()
+    dragRef.current = { id, mode, startX: e.clientX, start: seg.start, end: seg.end }
+    ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+  }
+
+  const onTimelinePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current
+    const el = timelineScrollRef.current
+    if (!drag || !el || !duration) return
+    const deltaPx = e.clientX - drag.startX
+    const delta = (deltaPx / Math.max(1, el.scrollWidth)) * duration
+    const minDur = 0.2
+    let start = drag.start
+    let end = drag.end
+    if (drag.mode === 'move') {
+      const len = drag.end - drag.start
+      start = Math.max(0, Math.min(duration - len, drag.start + delta))
+      end = start + len
+    } else if (drag.mode === 'left') {
+      start = Math.max(0, Math.min(drag.end - minDur, drag.start + delta))
+    } else {
+      end = Math.min(duration, Math.max(drag.start + minDur, drag.end + delta))
+    }
+    setSegments(prev => prev.map(s => s.id === drag.id ? { ...s, start, end } : s).sort((a: any, b: any) => a.start - b.start))
+  }
+
+  const endSegDrag = () => {
+    if (!dragRef.current) return
+    const before = beforeDragRef.current
+    dragRef.current = null
+    beforeDragRef.current = null
+    if (before) recordBefore(before)
+  }
+
+  const applyPreset = (preset: Preset) => {
+    updateStyle({
+      template: preset.id,
+      fontId: preset.fontId,
+      fontFamily: preset.fontId,
+      size: preset.size,
+      color: preset.color,
+      bgColor: preset.bgColor,
+      bgOpacity: preset.bgOpacity,
+      outline: preset.outline,
+      karaoke: preset.karaoke,
+      hlColor: preset.hlColor,
+      textShadowBlur: preset.textShadowBlur,
+      textShadowColor: preset.textShadowColor,
+      bgRadius: preset.bgRadius,
+    })
+    toastMsg(`قالب «${preset.name}» اعمال شد.`)
+  }
+
+  const applyFont = (id: string) => updateStyle({ fontId: id, fontFamily: id })
+
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    updateStyle({ 
+      x: Math.max(5, Math.min(95, ((e.clientX - rect.left) / rect.width) * 100)), 
+      y: Math.max(5, Math.min(95, ((e.clientY - rect.top) / rect.height) * 100)) 
+    })
+  }
+
+  const handleSubtitleDragStart = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const clickX = ((e.clientX - rect.left) / rect.width) * 100
+    const clickY = ((e.clientY - rect.top) / rect.height) * 100
+    const tolerance = 15
+    if (Math.abs(clickX - x) < tolerance && Math.abs(clickY - y) < tolerance) {
+      setIsDraggingSubtitle(true)
+      subtitleDragStart.current = { x: e.clientX, y: e.clientY, styleX: x, styleY: y }
+    }
+  }
+
+  const handleSubtitleDragMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDraggingSubtitle || !subtitleDragStart.current) return
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const deltaX = e.clientX - subtitleDragStart.current.x
+    const deltaY = e.clientY - subtitleDragStart.current.y
+    const deltaXPercent = (deltaX / rect.width) * 100
+    const deltaYPercent = (deltaY / rect.height) * 100
+    const newX = Math.max(5, Math.min(95, subtitleDragStart.current.styleX + deltaXPercent))
+    const newY = Math.max(5, Math.min(95, subtitleDragStart.current.styleY + deltaYPercent))
+    updateStyle({ x: newX, y: newY }, false)
+  }
+
+  const handleSubtitleDragEnd = () => {
+    if (isDraggingSubtitle) {
+      setIsDraggingSubtitle(false)
+      subtitleDragStart.current = null
+      recordBefore()
+    }
+  }
+
+  const handleCanvasDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const clickX = ((e.clientX - rect.left) / rect.width) * 100
+    const clickY = ((e.clientY - rect.top) / rect.height) * 100
+    const tolerance = 15
+    if (Math.abs(clickX - x) < tolerance && Math.abs(clickY - y) < tolerance) {
+      const activeSegment = segments.find((s: any) => currentTime >= s.start && currentTime < s.end)
+      if (activeSegment) {
+        setCanvasEditText(activeSegment.text)
+        setEditingOnCanvas(true)
+      }
+    }
+  }
+
+  const handleCanvasEditSave = () => {
+    if (activeSeg && canvasEditText.trim()) {
+      recordBefore()
+      setSegments(prev => prev.map((s: any) => 
+        s.id === activeSeg.id ? { ...s, text: canvasEditText.trim() } : s
+      ))
+      toastMsg('متن زیرنویس به‌روز شد.')
+    }
+    setEditingOnCanvas(false)
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    if (!videoUrl) { setWaveform([]); return }
+    ;(async () => {
+      try {
+        const response = await fetch(videoUrl)
+        const buffer = await response.arrayBuffer()
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+        if (!AudioCtx) return
+        const ctx = new AudioCtx()
+        const audio = await ctx.decodeAudioData(buffer.slice(0))
+        const channel = audio.getChannelData(0)
+        const count = 700
+        const step = Math.max(1, Math.floor(channel.length / count))
+        const peaks = new Array(count).fill(0).map((_, i) => {
+          let peak = 0
+          const end = Math.min(channel.length, (i + 1) * step)
+          for (let j = i * step; j < end; j += 8) peak = Math.max(peak, Math.abs(channel[j]))
+          return Math.min(1, peak * 1.8)
+        })
+        if (!cancelled) setWaveform(peaks)
+        await ctx.close()
+      } catch {
+        if (!cancelled) setWaveform([])
+      }
+    })()
+    return () => { cancelled = true }
+  }, [videoUrl])
+
+  const drawFrame = useCallback(() => {
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    if (!video || !canvas || video.readyState < 2) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    let W = video.videoWidth || 1080
+    let H = video.videoHeight || 1920
+    if (style.aspectRatio === '9:16') { W = 1080; H = 1920 }
+    else if (style.aspectRatio === '16:9') { W = 1920; H = 1080 }
+    else if (style.aspectRatio === '1:1') { W = 1080; H = 1080 }
+    else if (style.aspectRatio === '4:5') { W = 1080; H = 1350 }
+    const out = clampCanvasDimensions(W, H, 1920)
+    if (canvas.width !== out.width || canvas.height !== out.height) { 
+      canvas.width = out.width
+      canvas.height = out.height 
+    }
+    renderStudioFrame({ 
+      ctx, 
+      canvasWidth: out.width, 
+      canvasHeight: out.height, 
+      video, 
+      currentTime: video.currentTime, 
+      segments: segments as any, 
+      style: styleConfig 
+    })
+  }, [segments, styleConfig, style])
+
+  useEffect(() => {
+    if (!fontLoaded) return
+    if (!isPlaying) { drawFrame(); return }
+    let raf = 0
+    const loop = () => { drawFrame(); raf = requestAnimationFrame(loop) }
+    raf = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(raf)
+  }, [drawFrame, fontLoaded, isPlaying])
+
+  useEffect(() => {
+    if (!segments.length || !fileName) return
+    const project = { version: 2, fileName, segments, style: styleConfig, currentTime, savedAt: Date.now() }
+    const key = `subtitle-project:${fileName}`
+    setSaving(true)
+    const timer = window.setTimeout(() => {
+      try { 
+        localStorage.setItem(key, JSON.stringify(project))
+        setLastSaved(new Date())
+        setSaving(false) 
+      } catch { 
+        setSaving(false)
+        toastMsg('ذخیره خودکار انجام نشد.') 
+      }
+    }, 900)
+    return () => window.clearTimeout(timer)
+  }, [segments, styleConfig, fileName, currentTime, toastMsg])
+
+  useEffect(() => {
+    if (!fileName || restored) return
+    const key = `subtitle-project:${fileName}`
+    try {
+      const raw = localStorage.getItem(key)
+      if (!raw) { setRestored(true); return }
+      const saved = JSON.parse(raw)
+      if (saved?.segments?.length) {
+        setSegments(clone(saved.segments))
+        if (saved.style) {
+          setStyleConfig(saved.style as StudioStyleConfig)
+          saveStoredStyle(saved.style as any)
+        }
+        if (typeof saved.currentTime === 'number') seek(saved.currentTime)
+        toastMsg('نسخه ذخیره‌شده بازیابی شد.')
+      }
+    } catch { /* ignore corrupt local draft */ }
+    setRestored(true)
+  }, [fileName, restored, setSegments, seek, toastMsg])
+
+  useEffect(() => {
+    const el = timelineScrollRef.current
+    if (!el || !duration) return
+    const xPx = (currentTime / duration) * el.scrollWidth
+    const left = el.scrollLeft
+    const right = left + el.clientWidth
+    const margin = el.clientWidth * .22
+    if (xPx < left + margin || xPx > right - margin) {
+      el.scrollTo({ left: Math.max(0, xPx - el.clientWidth * .5), behavior: 'smooth' })
+    }
+  }, [currentTime, duration, timelineZoom])
+
+  useEffect(() => {
+    let resizeTimer: any
+    const handleResize = () => {
+      clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(() => { drawFrame() }, 100)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      clearTimeout(resizeTimer)
+    }
+  }, [drawFrame])
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (segments.length && fileName) {
+        const project = { version: 2, fileName, segments, style: styleConfig, currentTime, savedAt: Date.now() }
+        const key = `subtitle-project:${fileName}`
+        try { localStorage.setItem(key, JSON.stringify(project)) } catch {}
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [segments, styleConfig, fileName, currentTime])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const editing = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable
+      if (editing && !(e.ctrlKey || e.metaKey)) return
+      const mod = e.ctrlKey || e.metaKey
+      if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return }
+      if ((mod && e.key.toLowerCase() === 'y') || (mod && e.shiftKey && e.key.toLowerCase() === 'z')) { e.preventDefault(); redo(); return }
+      if (editing) return
+      if (e.code === 'Space') { e.preventDefault(); togglePlay(); return }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); seek(currentTime - (e.shiftKey ? 1 : .1)); return }
+      if (e.key === 'ArrowRight') { e.preventDefault(); seek(currentTime + (e.shiftKey ? 1 : .1)); return }
+      if (e.key.toLowerCase() === 's') { e.preventDefault(); const id = selectedSegId ?? activeSeg?.id; if (id) splitAt(id); return }
+      if (e.key === 'Delete' || e.key === 'Backspace') { if (selectedSegId) { e.preventDefault(); deleteSeg(selectedSegId) } }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [undo, redo, currentTime, seek, selectedSegId, activeSeg?.id, splitAt, deleteSeg, togglePlay])
+
+  const readingSpeed = (seg: any): number => seg.text.length / Math.max(.05, seg.end - seg.start)
+
+  const handleTranslate = async (targetLang: 'fa' | 'en') => {
+    if (!segments.length || translating) return
+    setTranslating(true)
+    try {
+      const pad = (n: number, z = 2) => String(Math.floor(n)).padStart(z, '0')
+      const time = (sec: number) => `${pad(sec / 3600)}:${pad((sec % 3600) / 60)}:${pad(sec % 60)},${String(Math.floor((sec % 1) * 1000)).padStart(3, '0')}`
+      const srt = segments.map((s: any, i: number) => `${i + 1}\n${time(s.start)} --> ${time(s.end)}\n${s.text}`).join('\n\n')
+      const res = await fetch('/api/translate-srt', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ srtContent: srt, targetLang }) 
+      })
+      if (!res.ok) throw new Error('translate failed')
+      const data = await res.json()
+      if (!data.srt) throw new Error(data.error || 'پاسخی دریافت نشد')
+      const parsed = data.srt.trim().replace(/\r\n/g, '\n').split(/\n\s*\n/).map((b: string) => b.trim().split('\n').slice(2).join(' ').trim())
+      recordBefore(makeSnapshot())
+      setSegments(segments.map((seg: any, i: number) => ({ ...seg, text: parsed[i] || seg.text })))
+      toastMsg('ترجمه انجام شد.')
+    } catch { toastMsg('خطا در ترجمه.') }
+    finally { setTranslating(false) }
+  }
+
+  const handleGenerateCaption = async () => {
+    if (!segments.length || generatingCaption) return
+    setGeneratingCaption(true)
+    try {
+      const res = await fetch('/api/generate-caption', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ text: segments.map((s: any) => s.text).join(' '), language: 'fa', style: 'instagram' }) 
+      })
+      const data = await res.json()
+      if (!res.ok || !data.caption) throw new Error(data.error || 'خطا')
+      setCaptionText(data.caption)
+      setCaptionHashtags(data.hashtags || '')
+      toastMsg('کپشن اینستاگرام ساخته شد.')
+    } catch (e: any) { toastMsg(`خطا در تولید کپشن: ${e?.message || 'نامشخص'}`) }
+    finally { setGeneratingCaption(false) }
+  }
+
+  if (!videoUrl) {
+    return <UploadScreen onFileSelect={handleFile} />
+  }
+
+  const timelineWidth = Math.max(100, timelineZoom)
+
+  return (
+    <div className="flex h-[100dvh] min-h-0 w-full min-w-0 flex-col overflow-hidden bg-[#070605] text-white transition-all duration-300 ease-in-out" dir="rtl">
+      <header className="shrink-0 border-b border-stone-800 bg-[#110f0d] px-3 py-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h1 className="min-w-0 max-w-[22rem] truncate text-sm font-black">{fileName}</h1>
+          <span className="text-[10px] text-stone-500">{saving ? 'در حال ذخیره…' : lastSaved ? `ذخیره ${fmt(lastSaved.getTime() / 1000)}` : ''}</span>
+          <div className="mr-auto flex max-w-full flex-wrap items-center gap-1">
+            <button aria-label="Undo" onClick={undo} disabled={!history.length} className="rounded-lg bg-stone-800 px-2 py-1.5 text-xs disabled:opacity-30"></button>
+            <button aria-label="Redo" onClick={redo} disabled={!redoStack.length} className="rounded-lg bg-stone-800 px-2 py-1.5 text-xs disabled:opacity-30">↷</button>
+            <button onClick={() => setShowStyle(true)} className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-400">⚙ استایل</button>
+            <button onClick={() => setShowExport(true)} className="rounded-xl bg-amber-500 px-3 py-1.5 text-xs font-black text-black">خروجی MP4</button>
+          </div>
+        </div>
+      </header>
+
+      <main className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-black transition-all duration-300 ease-in-out">
+          {busy && (
+            <div className="absolute left-1/2 top-14 z-30 w-[min(28rem,calc(100%-2rem))] -translate-x-1/2 rounded-2xl border border-amber-500/40 bg-stone-900/95 p-3">
+              <div className="mb-1 flex justify-between text-xs">
+                <span className="text-amber-400">{status}</span>
+                <button onClick={stop} className="text-red-400">توقف</button>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-stone-800">
+                <div className="h-full bg-amber-500" style={{ width: `${progress}%` }} />
+              </div>
+            </div>
+          )}
+
+          <div className="flex min-h-0 flex-1 items-center justify-center p-2 sm:p-4">
+            <canvas 
+              ref={canvasRef} 
+              onClick={handleCanvasClick}
+              onMouseDown={handleSubtitleDragStart}
+              onMouseMove={handleSubtitleDragMove}
+              onMouseUp={handleSubtitleDragEnd}
+              onMouseLeave={handleSubtitleDragEnd}
+              onDoubleClick={handleCanvasDoubleClick}
+              className={`block max-h-full max-w-full ${isDraggingSubtitle ? 'cursor-grabbing' : 'cursor-crosshair'} object-contain`} 
+            />
+            <video ref={videoRef} src={videoUrl} className="hidden" playsInline />
+          </div>
+
+          <div className="shrink-0 border-t border-stone-800 bg-[#110f0d] px-3 py-2">
+            <div className="flex items-center gap-2">
+              <button aria-label={isPlaying ? 'Pause' : 'Play'} onClick={togglePlay} className="h-9 w-9 shrink-0 rounded-xl bg-amber-500 text-black">
+                {isPlaying ? '⏸' : '▶'}
+              </button>
+              <input 
+                aria-label="Video progress" 
+                type="range" 
+                min={0} 
+                max={duration || 1} 
+                step={.05} 
+                value={currentTime} 
+                onChange={e => seek(Number(e.target.value))} 
+                className="min-w-0 flex-1 accent-amber-500" 
+              />
+              <span className="shrink-0 font-mono text-[10px] text-stone-400">{fmt(currentTime)} / {fmt(duration)}</span>
+            </div>
+          </div>
+
+          <div className="shrink-0 border-t border-stone-800 bg-[#0e0d0b] p-2 sm:p-3">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="text-[10px] text-stone-400">Timeline</span>
+              <input 
+                aria-label="Timeline zoom" 
+                type="range" 
+                min={50} 
+                max={800} 
+                value={timelineZoom} 
+                onChange={e => setTimelineZoom(Number(e.target.value))} 
+                className="w-28 accent-amber-500" 
+              />
+              <span className="text-[10px] text-stone-500">{timelineZoom}%</span>
+              <button onClick={() => setShowSafe(v => !v)} className={`rounded-lg px-2 py-1 text-[10px] ${showSafe ? 'bg-amber-500 text-black' : 'bg-stone-800 text-stone-400'}`}>Safe Zone</button>
+              <button onClick={() => { const id = selectedSegId ?? activeSeg?.id; if (id) splitAt(id) }} className="rounded-lg bg-stone-800 px-2 py-1 text-[10px]"> Split</button>
+              <button onClick={() => selectedSegId && mergeSeg(selectedSegId)} className="rounded-lg bg-stone-800 px-2 py-1 text-[10px]">Merge</button>
+              <button onClick={addSeg} className="rounded-lg bg-amber-500/10 px-2 py-1 text-[10px] text-amber-400">+ افزودن</button>
+              <button onClick={() => handleTranslate('fa')} disabled={translating} className="rounded-lg bg-blue-500/10 px-2 py-1 text-[10px] text-blue-400">ترجمه FA</button>
+              <button onClick={() => handleTranslate('en')} disabled={translating} className="rounded-lg bg-green-500/10 px-2 py-1 text-[10px] text-green-400">ترجمه EN</button>
+              <button onClick={handleGenerateCaption} disabled={generatingCaption} className="rounded-lg bg-purple-500/10 px-2 py-1 text-[10px] text-purple-400">کپشن AI</button>
+            </div>
+
+            <div 
+              ref={timelineScrollRef} 
+              onPointerDown={onTimelinePointerDown} 
+              onPointerMove={onTimelinePointerMove} 
+              onPointerUp={endSegDrag} 
+              onPointerCancel={endSegDrag} 
+              className="relative h-24 overflow-x-auto overflow-y-hidden rounded-xl bg-stone-950 overscroll-x-contain" 
+              style={{ scrollbarGutter: 'stable' }}
+            >
+              <div className="relative h-full" style={{ width: `${timelineWidth}%`, minWidth: '100%' }}>
+                <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-between px-1 text-[8px] text-stone-600">
+                  <span>0:00</span>
+                  <span>{fmt(duration)}</span>
+                </div>
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 top-7 flex items-end gap-px px-1 opacity-25">
+                  {waveform.map((v, i) => (
+                    <span key={`wave-${i}`} className="min-w-[1px] flex-1 rounded-t bg-stone-300" style={{ height: `${Math.max(4, v * 100)}%` }} />
+                  ))}
+                </div>
+                {segments.map((seg: any) => {
+                  const safeId = seg.id || uid()
+                  const left = duration ? (seg.start / duration) * 100 : 0
+                  const width = duration ? ((seg.end - seg.start) / duration) * 100 : 0
+                  const fast = readingSpeed(seg) > 17
+                  const selected = selectedSegId === seg.id
+                  return (
+                    <div 
+                      key={safeId} 
+                      data-seg-id={safeId} 
+                      onClick={e => { e.stopPropagation(); setSelectedSegId(safeId); seek(seg.start) }} 
+                      className={`absolute bottom-2 top-7 rounded-lg border cursor-pointer ${
+                        selected ? 'border-amber-300 bg-amber-500/60' : 'border-amber-500/20 bg-amber-500/25'
+                      } ${fast ? 'ring-2 ring-red-500/80' : ''}`} 
+                      style={{ left: `${left}%`, width: `${Math.max(width, .35)}%`, minWidth: 16 }}
+                    >
+                      <div 
+                        onPointerDown={e => beginSegDrag(safeId, 'left', e)} 
+                        className="absolute inset-y-0 left-0 z-20 w-2 cursor-ew-resize rounded-l bg-amber-400/60" 
+                      />
+                      <div 
+                        onPointerDown={e => beginSegDrag(safeId, 'move', e)} 
+                        className="absolute inset-0 cursor-grab px-2 py-2 text-[9px] text-white active:cursor-grabbing"
+                      >
+                        <span className="block truncate">{seg.text}</span>
+                        {fast && <span className="absolute bottom-0 right-1 text-[8px] text-red-300">CPS {readingSpeed(seg).toFixed(1)}</span>}
+                      </div>
+                      <div 
+                        onPointerDown={e => beginSegDrag(safeId, 'right', e)} 
+                        className="absolute inset-y-0 right-0 z-20 w-2 cursor-ew-resize rounded-r bg-amber-400/60" 
+                      />
+                    </div>
+                  )
+                })}
+                <div 
+                  className="pointer-events-none absolute bottom-0 top-0 z-30 w-0.5 bg-amber-400" 
+                  style={{ left: `${duration ? (currentTime / duration) * 100 : 0}%` }} 
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <aside className="flex max-h-[42vh] min-h-0 w-full shrink-0 flex-col border-t border-stone-800 bg-[#0e0d0b] transition-all duration-300 ease-in-out lg:max-h-none lg:w-[min(400px,38vw)] lg:border-l lg:border-t-0">
+          <div className="shrink-0 border-b border-stone-800 bg-[#12100d] p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold">کپشن‌ها ({segments.length})</span>
+              <span className="text-[10px] text-stone-500">CPS بالای 17 = هشدار</span>
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-3 space-y-2">
+            {segments.map((seg: any) => {
+              const safeId = seg.id || uid()
+              const selected = selectedSegId === seg.id
+              const active = activeSeg?.id === seg.id
+              const fast = readingSpeed(seg) > 17
+              return (
+                <div 
+                  key={safeId} 
+                  className={`rounded-xl border ${
+                    active ? 'border-amber-500/70 bg-amber-500/10' 
+                    : selected ? 'border-amber-500/40 bg-stone-800/70' 
+                    : 'border-stone-800 bg-stone-900/60'
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center gap-1 border-b border-stone-800/70 p-2">
+                    <button onClick={() => seek(seg.start)} className="font-mono text-[10px] text-amber-400">{fmt(seg.start)}</button>
+                    <span className="text-stone-600">→</span>
+                    <button onClick={() => seek(seg.end)} className="font-mono text-[10px] text-amber-400">{fmt(seg.end)}</button>
+                    <span className={`mr-auto text-[9px] ${fast ? 'text-red-400' : 'text-stone-500'}`}>
+                      CPS {readingSpeed(seg).toFixed(1)}
+                    </span>
+                    <button aria-label="Split caption" onClick={() => splitAt(safeId)} className="rounded bg-stone-800 px-1.5 py-1 text-[10px]">✂</button>
+                    <button aria-label="Merge caption" onClick={() => mergeSeg(safeId)} className="rounded bg-stone-800 px-1.5 py-1 text-[10px]">↔</button>
+                    <button aria-label="Delete caption" onClick={() => deleteSeg(safeId)} className="rounded bg-red-500/10 px-1.5 py-1 text-[10px] text-red-400">✕</button>
+                  </div>
+                  {editingSegId === safeId ? (
+                    <textarea 
+                      autoFocus 
+                      dir="auto" 
+                      value={seg.text} 
+                      onChange={e => setSegments((prev: any[]) => prev.map(s => s.id === safeId ? { ...s, text: e.target.value } : s))} 
+                      onBlur={() => { 
+                        if (beforeEditRef.current) recordBefore(beforeEditRef.current)
+                        beforeEditRef.current = null
+                        setEditingSegId(null) 
+                      }} 
+                      onKeyDown={e => { 
+                        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { 
+                          e.preventDefault()
+                          ;(e.target as HTMLTextAreaElement).blur() 
+                        } 
+                      }} 
+                      className="m-2 w-[calc(100%-1rem)] resize-none rounded-lg border border-amber-500/50 bg-black/50 p-2 text-xs outline-none" 
+                      rows={3} 
+                    />
+                  ) : (
+                    <button 
+                      onClick={() => { 
+                        beforeEditRef.current = makeSnapshot()
+                        setEditingSegId(safeId)
+                        setSelectedSegId(safeId) 
+                      }} 
+                      className="block w-full p-2 text-right text-xs leading-6 text-white/90" 
+                      dir="auto"
+                    >
+                      {seg.text}
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          {(captionText || captionHashtags) && (
+            <div className="shrink-0 border-t border-stone-800 bg-[#12100d] p-3">
+              <h4 className="mb-2 text-xs font-bold">کپشن اینستاگرام</h4>
+              <textarea 
+                value={captionText + (captionHashtags ? `\n\n${captionHashtags}` : '')} 
+                onChange={e => { 
+                  const parts = e.target.value.split('\n\n')
+                  setCaptionText(parts[0] || '')
+                  setCaptionHashtags(parts.slice(1).join('\n\n')) 
+                }} 
+                className="mb-2 w-full resize-none rounded-lg border border-stone-700 bg-black/40 p-2 text-xs" 
+                rows={4} 
+              />
+              <button 
+                onClick={() => navigator.clipboard.writeText(captionText + (captionHashtags ? `\n\n${captionHashtags}` : '')).then(() => toastMsg('کپی شد.')).catch(() => toastMsg('کپی انجام نشد.'))} 
+                className="w-full rounded-lg border border-amber-500/30 bg-amber-500/10 py-1.5 text-xs font-bold text-amber-400"
+              >
+                📋 کپی کپشن
+              </button>
+            </div>
+          )}
+        </aside>
+      </main>
+
+      {showSafe && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 hidden border-t border-amber-500/20 bg-amber-500/5 lg:block" style={{ height: '0px' }} />
+      )}
+
+      {showStyle && (
+        <StylePanel
+          style={style}
+          fontId={fontId}
+          onClose={() => setShowStyle(false)}
+          onApplyPreset={applyPreset}
+          onApplyFont={applyFont}
+          onUpdateStyle={updateStyle}
+          makeSnapshot={makeSnapshot}
+          recordBefore={recordBefore}
+        />
+      )}
+
+      {/* ✅ اصلاح ۲: استفاده از هوک پیشرفته useVideoExport */}
+      {showExport && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-3" onMouseDown={() => !exporting && setShowExport(false)}>
+          <div 
+            onMouseDown={e => e.stopPropagation()} 
+            className="w-full max-w-md rounded-3xl border border-stone-800 bg-[#14120f] p-6 shadow-2xl"
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white">خروجی نهایی ویدیو</h3>
+              {!exporting && <button onClick={() => setShowExport(false)} className="text-stone-400 hover:text-white">✕</button>}
+            </div>
+            
+            {exporting ? (
+              <div className="space-y-4 text-center">
+                <div className="text-xs text-amber-400 font-mono">{exportStage || 'در حال پردازش...'}</div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-stone-800">
+                  <div className="h-full bg-amber-500 transition-all duration-300" style={{ width: `${exportProgress}%` }} />
+                </div>
+                <button onClick={cancelExport} className="w-full rounded-lg border border-red-500/30 bg-red-500/10 py-2 text-xs font-bold text-red-400 hover:bg-red-500/20">
+                  لغو عملیات
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-xs text-stone-400 text-center">
+                  ویدیو با نسبت تصویر <span className="text-amber-400 font-bold">{(styleConfig as any).aspectRatio || '16:9'}</span> و کیفیت بالا رندر خواهد شد.
+                </p>
+                <button 
+                  onClick={() => exportVideo(videoUrl, segments as any, styleConfig as any, fileName.replace(/\.[^.]+$/, ''))}
+                  className="w-full rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 py-3 text-xs font-black text-black transition-all hover:from-amber-500 hover:to-amber-400"
+                >
+                  شروع رندر و دانلود MP4 ⚡
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {editingOnCanvas && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50" onMouseDown={() => setEditingOnCanvas(false)}>
+          <div 
+            onMouseDown={e => e.stopPropagation()}
+            className="w-full max-w-md rounded-2xl border border-amber-500/50 bg-[#12100d] p-4 shadow-2xl"
+          >
+            <h3 className="mb-2 text-sm font-bold text-white">ویرایش متن زیرنویس</h3>
+            <textarea
+              autoFocus
+              value={canvasEditText}
+              onChange={e => setCanvasEditText(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                  e.preventDefault()
+                  handleCanvasEditSave()
+                }
+                if (e.key === 'Escape') setEditingOnCanvas(false)
+              }}
+              className="w-full rounded-lg border border-stone-700 bg-black/50 p-3 text-sm text-white focus:border-amber-500 focus:outline-none"
+              rows={3}
+              dir="rtl"
+            />
+            <div className="mt-3 flex gap-2">
+              <button onClick={handleCanvasEditSave} className="flex-1 rounded-lg bg-amber-500 py-2 text-xs font-bold text-black">ذخیره (Ctrl+Enter)</button>
+              <button onClick={() => setEditingOnCanvas(false)} className="flex-1 rounded-lg bg-stone-800 py-2 text-xs text-stone-300">انصراف (Esc)</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div role="status" aria-live="polite" className="fixed bottom-4 left-1/2 z-[200] -translate-x-1/2 rounded-xl border border-stone-700 bg-stone-900 px-4 py-2 text-xs shadow-2xl">
+          {toast}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+
+
+================================================================================
+FILE: src\components\transcribe\SubtitleVideoExport.tsx
+================================================================================
+
+
+'use client'
+// این فایل دیگر استفاده نمی‌شود. منطق اصلی به useVideoExport در @/lib/video-extract منتقل شده است.
+export default function SubtitleVideoExport() {
+  return null
+}
+
+
+
+================================================================================
+FILE: src\components\transcribe\Timeline.tsx
+================================================================================
+
+
+'use client'
+import { useRef } from 'react'
+import { Seg } from './types'
+
+interface Props {
+  segments: Seg[]
+  duration: number
+  currentTime: number
+  selectedSegId: string | null
+  timelineZoom: number
+  waveform: number[]
+  readingSpeed: (seg: Seg) => number
+  onSeek: (time: number) => void
+  onSegmentClick: (id: string) => void
+  onDragStart: (id: string, mode: 'move' | 'left' | 'right', e: React.PointerEvent) => void
+  onDragMove: (e: React.PointerEvent) => void
+  onDragEnd: () => void
+}
+
+export default function Timeline({
+  segments, duration, currentTime, selectedSegId, timelineZoom, waveform,
+  readingSpeed, onSeek, onSegmentClick, onDragStart, onDragMove, onDragEnd
+}: Props) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const fmt = (t: number) => `${Math.floor(t / 60)}:${Math.floor(t % 60).toString().padStart(2, '0')}`
+
+  const handleTimelineClick = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = scrollRef.current
+    if (!el || !duration) return
+    if ((e.target as HTMLElement).closest('[data-seg-id]')) return
+    const rect = el.getBoundingClientRect()
+    const localX = e.clientX - rect.left + el.scrollLeft
+    onSeek((localX / Math.max(1, el.scrollWidth)) * duration)
+  }
+
+  return (
+    <div ref={scrollRef} onPointerDown={handleTimelineClick} onPointerMove={onDragMove} onPointerUp={onDragEnd} onPointerCancel={onDragEnd} className="relative h-24 overflow-x-auto overflow-y-hidden rounded-xl bg-stone-950" style={{ scrollbarGutter: 'stable' }}>
+      <div className="relative h-full" style={{ width: `${timelineZoom}%`, minWidth: '100%' }}>
+        <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-between px-1 text-[8px] text-stone-600"><span>0:00</span><span>{fmt(duration)}</span></div>
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 top-7 flex items-end gap-px px-1 opacity-25">
+          {waveform.map((v, i) => <span key={i} className="min-w-[1px] flex-1 rounded-t bg-stone-300" style={{ height: `${Math.max(4, v * 100)}%` }} />)}
+        </div>
+        {segments.map((seg) => {
+          const left = duration ? (seg.start / duration) * 100 : 0
+          const width = duration ? ((seg.end - seg.start) / duration) * 100 : 0
+          const fast = readingSpeed(seg) > 17
+          const selected = selectedSegId === seg.id
+          const safeId = seg.id || `fallback_${seg.start}_${seg.end}`
+    return (
+            <div key={safeId} data-seg-id={safeId} onClick={() => onSegmentClick(safeId)} className={`absolute bottom-2 top-7 rounded-lg border cursor-pointer ${selected ? 'border-amber-300 bg-amber-500/60' : 'border-amber-500/20 bg-amber-500/25'} ${fast ? 'ring-2 ring-red-500/80' : ''}`} style={{ left: `${left}%`, width: `${Math.max(width, 0.35)}%`, minWidth: 16 }}>
+              <div onPointerDown={(e) => onDragStart(safeId, 'left', e)} className="absolute inset-y-0 left-0 z-20 w-2 cursor-ew-resize rounded-l bg-amber-400/60" />
+              <div onPointerDown={(e) => onDragStart(safeId, 'move', e)} className="absolute inset-0 cursor-grab px-2 py-2 text-[9px] text-white active:cursor-grabbing">
+                <span className="block truncate">{seg.text}</span>
+                {fast && <span className="absolute bottom-0 right-1 text-[8px] text-red-300">CPS {readingSpeed(seg).toFixed(1)}</span>}
+              </div>
+              <div onPointerDown={(e) => onDragStart(safeId, 'right', e)} className="absolute inset-y-0 right-0 z-20 w-2 cursor-ew-resize rounded-r bg-amber-400/60" />
+            </div>
+          )
+        })}
+        <div className="pointer-events-none absolute bottom-0 top-0 z-30 w-0.5 bg-amber-400" style={{ left: `${duration ? (currentTime / duration) * 100 : 0}%` }} />
+      </div>
+    </div>
+  )
+}
+
+
+
+
+================================================================================
+FILE: src\components\transcribe\types.ts
+================================================================================
+
+
+export type Seg = { 
+  id: string
+  start: number
+  end: number
+  text: string
+  [key: string]: any
+}
+
+export type Snapshot = { 
+  segments: Seg[]
+  style: Record<string, unknown>
+}
+
+export type Preset = {
+  id: string
+  name: string
+  fontId: string
+  size: number
+  color: string
+  bgColor: string
+  bgOpacity: number
+  outline: boolean
+  karaoke: boolean
+  hlColor: string
+  textShadowBlur: number
+  textShadowColor: string
+  bgRadius: number
+}
+
+export type FontOption = {
+  id: string
+  label: string
+  category: string
+}
+
+
+
+
+================================================================================
+FILE: src\components\transcribe\UploadScreen.tsx
+================================================================================
+
+
+'use client'
+import { useState } from 'react'
+
+interface Props {
+  onFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void
+}
+
+export default function UploadScreen({ onFileSelect }: Props) {
+  const [speed, setSpeed] = useState<1 | 2 | 4 | 8>(4)
+
+  return (
+    <div className="min-h-screen bg-[#070605] text-white flex items-center justify-center p-4" dir="rtl">
+      <div className="w-full max-w-md rounded-3xl border border-stone-800 bg-[#12100d] p-8 text-center">
+        <div className="text-7xl mb-4">🎬</div>
+        <h2 className="text-lg font-black mb-2">ویدیوی خود را وارد کنید</h2>
+        <p className="text-xs text-stone-400 mb-6">حداکثر ۲۵۰ مگابایت</p>
+        
+        <div className="flex items-center justify-center gap-2 mb-6">
+          <span className="text-xs text-stone-400">سرعت:</span>
+          {([1, 2, 4, 8] as const).map(s => (
+            <button 
+              key={s} 
+              onClick={() => setSpeed(s)} 
+              className={`rounded-lg px-3 py-1 text-xs font-bold transition-all ${
+                speed === s ? 'bg-amber-500 text-black' : 'bg-stone-900 text-stone-400'
+              }`}
+            >
+              {s}x
+            </button>
+          ))}
+        </div>
+
+        <label className="block cursor-pointer rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 py-3 text-xs font-black text-black transition-all hover:from-amber-500 hover:to-amber-400">
+          انتخاب ویدیو
+          <input type="file" accept="video/*,.mov,.mp4" onChange={onFileSelect} className="hidden" />
+        </label>
+      </div>
+    </div>
+  )
+}
+
+
+
+
+
+================================================================================
+FILE: src\components\transcribe\VideoSubtitleClient.tsx
+================================================================================
+
+
+'use client'
+import { useAuth } from '@/lib/use-auth'
+import SubtitleEditor from './SubtitleEditor'
+
+export default function VideoSubtitleClient() {
+  const auth = useAuth()
+
+  if (auth === 'checking') return <div className="p-10 text-center text-white/40">در حال بررسی…</div>
+  if (auth === 'no') return (
+    <div className="container-app mx-auto max-w-3xl p-6" dir="rtl">
+      <div className="space-y-4 rounded-2xl border-2 border-dashed border-amber-500/40 bg-amber-500/5 p-8 text-center">
+        <p className="text-sm text-stone-300">برای استفاده از این بخش، ابتدا باید وارد حساب کاربری خود شوید.</p>
+        <a href="/login" className="inline-block rounded-xl border border-amber-500/60 bg-amber-500/10 px-6 py-2.5 text-sm font-bold text-amber-400 transition hover:bg-amber-500/20">
+          ورود به حساب کاربری
+        </a>
+      </div>
+    </div>
+  )
+
+  return <SubtitleEditor />
+}
+

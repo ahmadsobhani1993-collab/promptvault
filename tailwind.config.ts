@@ -1,4 +1,4 @@
-import type { Config } from 'tailwindcss'
+﻿import type { Config } from 'tailwindcss'
 
 const config: Config = {
   content: ['./src/**/*.{ts,tsx}'],
@@ -36,7 +36,6 @@ const config: Config = {
         'fade-in': 'fade-in 280ms ease-out both',
         'slide-up': 'slide-up 340ms ease-out both',
       },
-      // سفارشی‌سازی استایل‌های Typography برای ادیتور
       typography: {
         gold: {
           css: {

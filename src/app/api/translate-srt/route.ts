@@ -1,43 +1,77 @@
-﻿import { NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { generateText } from '@/lib/gemini'
 
-export const dynamic = 'force-dynamic'
+type Cue = {
+  header: string[]
+  timing: string
+  text: string
+}
 
-export async function POST(req: Request) {
+function parseSrt(srt: string): Cue[] {
+  return srt
+    .replace(/^\uFEFF/, '')
+    .replace(/\r/g, '')
+    .trim()
+    .split(/\n\s*\n/)
+    .map((block) => {
+      const lines = block.split('\n')
+      const timingIndex = lines.findIndex((line) => line.includes('-->'))
+      if (timingIndex < 0 || timingIndex === lines.length - 1) return null
+      return {
+        header: lines.slice(0, timingIndex),
+        timing: lines[timingIndex],
+        text: lines.slice(timingIndex + 1).join('\n').trim(),
+      }
+    })
+    .filter((cue): cue is Cue => Boolean(cue?.text))
+}
+
+export async function POST(request: Request) {
   try {
-    const body = await req.json().catch(() => ({}))
-    const srtContent = body.srtContent || body.srt || ''
-    // این خط قبلاً وجود نداشت — targetLang هرگز خوانده و استفاده نمی‌شد
-    const targetLang = body.targetLang === 'en' ? 'en' : 'fa'
+    const body = await request.json()
+    const srtContent = typeof body.srtContent === 'string' ? body.srtContent.trim() : ''
+    const targetLang = body.targetLang
 
-    if (!srtContent || typeof srtContent !== 'string') {
+    if (!srtContent) {
       return NextResponse.json({ error: 'محتوای زیرنویس معتبر ارسال نشده است' }, { status: 400 })
     }
+    if (targetLang !== 'fa' && targetLang !== 'en') {
+      return NextResponse.json({ error: 'زبان مقصد باید فارسی یا انگلیسی باشد' }, { status: 400 })
+    }
 
-    const targetLabel = targetLang === 'en' ? 'English (en)' : 'Persian (fa)'
+    const cues = parseSrt(srtContent)
+    if (!cues.length) {
+      return NextResponse.json({ error: 'هیچ بخش قابل ترجمه‌ای در زیرنویس پیدا نشد' }, { status: 400 })
+    }
 
-    const instruction = `You are a professional subtitle translator.
-Translate the spoken dialogue lines in the following SRT subtitles into natural, fluent ${targetLabel}.
+    const targetLanguage = targetLang === 'fa' ? 'natural, fluent Persian (Farsi)' : 'natural, fluent English'
+    const instruction = `You are a professional subtitle translator. Translate each subtitle cue into ${targetLanguage}.
+Preserve the meaning, tone, names, and punctuation naturally. Translate only the dialogue text; do not add explanations.
+Return ONLY valid JSON in this exact shape, with exactly ${cues.length} translated strings and in the same order:
+{"translations":["translation for cue 1","translation for cue 2"]}
+Do not combine, split, omit, reorder, or add cues. The source cues are:
+${JSON.stringify(cues.map((cue) => cue.text))}`
 
-CRITICAL REQUIREMENTS:
-1. Preserve every subtitle counter index (1, 2, 3...) and timestamp (00:00:00,000 --> 00:00:00,000) EXACTLY as provided.
-2. Only translate the dialogue lines.
-3. Return ONLY raw SRT text. Do NOT include explanations or markdown codeblocks (no \`\`\`srt).
+    const { text: generated } = await generateText({ instruction, expectJson: true })
+    const cleaned = generated.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+    const objectText = cleaned.match(/\{[\s\S]*\}/)?.[0]
+    if (!objectText) throw new Error('پاسخ ترجمه قالب معتبری نداشت؛ دوباره تلاش کنید.')
 
-SRT:
-${srtContent}`
+    const parsed = JSON.parse(objectText)
+    const translations: unknown[] = parsed.translations
+    if (!Array.isArray(translations) || translations.length !== cues.length) {
+      throw new Error('تعداد ترجمه‌ها با تعداد زیرنویس‌ها برابر نیست؛ دوباره تلاش کنید.')
+    }
 
-    console.log('[TRANSLATE-NATIVE] Calling gemini.ts generateText... target:', targetLang)
-    const result = await generateText({ instruction })
+    const translatedSrt = cues.map((cue, index) => {
+      const translatedText = String(translations[index] ?? '').trim()
+      if (!translatedText) throw new Error(`ترجمهٔ بخش ${index + 1} خالی است؛ دوباره تلاش کنید.`)
+      return [...cue.header, cue.timing, translatedText].join('\n')
+    }).join('\n\n')
 
-    const cleaned = (result.text || '')
-      .replace(/^```[a-z]*\n?/i, '')
-      .replace(/```$/i, '')
-      .trim()
-
-    return NextResponse.json({ srt: cleaned || srtContent })
-  } catch (err: any) {
-    console.error('[TRANSLATE-NATIVE: ERROR]', err)
-    return NextResponse.json({ error: err.message || 'خطا در ارتباط با هوش مصنوعی' }, { status: 500 })
+    return NextResponse.json({ srt: translatedSrt })
+  } catch (error: any) {
+    console.error('[Translate API Error]:', error)
+    return NextResponse.json({ error: error.message || 'خطا در ترجمهٔ زیرنویس' }, { status: 500 })
   }
 }

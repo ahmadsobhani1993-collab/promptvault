@@ -12,15 +12,21 @@ export default async function MobileHeader({ locale }: MobileHeaderProps) {
   const session = await auth()
   const userInitial = session?.user?.name ? session.user.name.charAt(0).toUpperCase() : 'U'
 
-  // دریافت نوتیفیکیشن‌های کاربر
+  // دریافت نوتیفیکیشن‌های کاربر با مدیریت خطا
   let notifications: Array<{ id: string; text: string; url: string; createdAt: Date }> = []
+  
   if (session?.user?.id) {
-    const notifs = await prisma.notification.findMany({
-      where: { userId: session.user.id },
-      orderBy: { createdAt: 'desc' },
-      take: 5,
-    })
-    notifications = notifs
+    try {
+      const notifs = await prisma.notification.findMany({
+        where: { userId: session.user.id },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+      })
+      notifications = notifs
+    } catch (error) {
+      // در صورت خطای دیتابیس، فقط لاگ می‌کنیم و صفحه کرش نمی‌کند
+      console.error('[MobileHeader] Failed to fetch notifications:', error)
+    }
   }
 
   return (

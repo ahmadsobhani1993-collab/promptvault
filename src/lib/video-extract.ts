@@ -1,12 +1,5 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 
-async function toBlobURL(url: string, mimeType: string): Promise<string> {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`Fetch failed: ${url} (status: ${res.status})`)
-  const buf = await res.arrayBuffer()
-  return URL.createObjectURL(new Blob([buf], { type: mimeType }))
-}
-
 async function fetchFile(f: File | Blob): Promise<Uint8Array> {
   return new Uint8Array(await f.arrayBuffer())
 }
@@ -14,60 +7,45 @@ async function fetchFile(f: File | Blob): Promise<Uint8Array> {
 let ffmpeg: FFmpeg | null = null
 let activeProgressCallback: ((percent: number) => void) | null = null
 
+export function setFFmpegProgressCallback(callback: ((percent: number) => void) | null): void {
+  activeProgressCallback = callback
+}
+
 export async function loadFFmpeg(): Promise<FFmpeg> {
   if (ffmpeg) return ffmpeg
 
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
-
-  // اولویت مطلق با فایل‌های سلف‌هاست روی سرور خودتان در پوشه public/ffmpeg
-  const CORE_SOURCES = [
-    `${origin}/ffmpeg`,
-    'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm',
-    'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm',
-  ]
-
+  
   let lastErr: unknown = null
+  try {
+    const ff = new FFmpeg()
+    const base = `${origin}/api/ffmpeg`
+    await ff.load({
+      classWorkerURL: `${base}/worker.js`,
+      coreURL: `${base}/ffmpeg-core.js`,
+      wasmURL: `${base}/ffmpeg-core.wasm`,
+    })
 
-  for (const base of CORE_SOURCES) {
-    try {
-      const ff = new FFmpeg()
+    ff.on('progress', ({ progress }) => {
+      if (activeProgressCallback) activeProgressCallback(Math.round(progress * 100))
+    })
 
-      // استفاده از application/javascript برای سازگاری کامل لودر با import.meta
-      const coreBlob = await toBlobURL(`${base}/ffmpeg-core.js`, 'application/javascript')
-      const wasmBlob = await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm')
-
-      await ff.load({
-        coreURL: coreBlob,
-        wasmURL: wasmBlob,
-      })
-
-      // ثبت لیسنر درصد پیشرفت به صورت سراسری و بدون نشت حافظه
-      ff.on('progress', ({ progress }) => {
-        if (activeProgressCallback) {
-          activeProgressCallback(Math.round(progress * 100))
-        }
-      })
-
-      ffmpeg = ff
-      return ffmpeg
-    } catch (e) {
-      console.warn(`[FFmpeg] تلاش برای لود از مسیر ${base} ناموفق بود:`, e)
-      lastErr = e
-    }
+    ffmpeg = ff
+    console.log('[FFmpeg] ✅ با موفقیت از مسیر ESM هم‌مبدأ لود شد.')
+    return ffmpeg
+  } catch (e) {
+    console.warn('[FFmpeg] Same-origin ESM load failed:', e)
+    lastErr = e
   }
 
-  throw lastErr instanceof Error ? lastErr : new Error('FFmpeg load failed')
+  throw new Error(`FFmpeg load failed: ${lastErr instanceof Error ? lastErr.message : 'unknown error'}`)
 }
 
-/**
- * استخراج صوت بدون نشت لیسنر و با ایمن‌سازی کامل
- */
 export async function extractAudioFromVideo(
   videoFile: File | Blob,
   onProgress?: (percent: number) => void
 ): Promise<Blob> {
   const ff = await loadFFmpeg()
-
   activeProgressCallback = onProgress || null
 
   const name = (videoFile as File)?.name || 'input.mov'
@@ -77,23 +55,17 @@ export async function extractAudioFromVideo(
 
   try {
     await ff.writeFile(inputName, await fetchFile(videoFile))
-
-    await ff.exec([
-      '-i', inputName,
-      '-vn',
-      '-acodec', 'pcm_s16le',
-      '-ar', '16000',
-      '-ac', '1',
-      outputName,
-    ])
-
+    await ff.exec(['-i', inputName, '-vn', '-acodec', 'pcm_s16le', '-ar', '16000', '-ac', '1', outputName])
     const data = await ff.readFile(outputName)
-
+    
+    const blobPart = data instanceof Uint8Array ? (data.slice().buffer as ArrayBuffer) : data
+    return new Blob([blobPart], { type: 'audio/wav' })
+  } catch (error) {
+    console.error('[FFmpeg] Audio extraction failed:', error)
+    throw new Error('استخراج صدا با شکست مواجه شد.')
+  } finally {
     await ff.deleteFile(inputName).catch(() => {})
     await ff.deleteFile(outputName).catch(() => {})
-
-    return new Blob([data], { type: 'audio/wav' })
-  } finally {
     activeProgressCallback = null
   }
 }

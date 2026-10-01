@@ -8,6 +8,7 @@ export default function Analytics() {
   const bufferRef = useRef<any[]>([])
 
   useEffect(() => {
+    if (process.env.NODE_ENV === 'development') return
     if (pathname.startsWith('/admin') || 
         pathname.startsWith('/api') || 
         pathname.startsWith('/_next') ||
@@ -29,6 +30,7 @@ export default function Analytics() {
   }, [pathname])
 
   useEffect(() => {
+    if (process.env.NODE_ENV === 'development') return
     const interval = setInterval(() => {
       if (bufferRef.current.length > 0) {
         flushBuffer()
@@ -63,7 +65,6 @@ export default function Analytics() {
         keepalive: true,
       })
     } catch (err) {
-      console.error('Analytics batch failed:', err)
       // Re-add to buffer on failure
       bufferRef.current = [...batch, ...bufferRef.current]
     }
