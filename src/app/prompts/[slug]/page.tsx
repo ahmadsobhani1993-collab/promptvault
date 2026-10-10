@@ -34,11 +34,7 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
 
     let ogImageUrl = `${appUrl}/placeholder.jpg`
     if (item.img && !item.img.includes('placeholder')) {
-      if (item.img.includes('res.cloudinary.com') && item.img.includes('/upload/')) {
-        ogImageUrl = item.img.replace('/upload/', '/upload/w_1200,h_630,c_fill,q_auto:good,f_jpg/')
-      } else {
-        ogImageUrl = item.img
-      }
+      ogImageUrl = getImageUrl(item.img, 1200)
     }
 
     return {
@@ -124,7 +120,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
             '@type': 'TechArticle',
             headline: pageHeading,
             description: item.descFa || item.prompt,
-            image: item.img,
+            image: getImageUrl(item.img, 1200),
             datePublished: item.createdAt,
             author: { '@type': 'Organization', name: 'PromptsFA', url: 'https://promptsfa.ir' },
             publisher: {
@@ -140,7 +136,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
 
       <div className="grid gap-10 lg:grid-cols-[1.2fr_1fr]">
         <div>
-          <SafeImg src={item.img} isDetail={true} alt={`تصویر ${pageHeading}`} className="glow-gold w-full rounded-2xl object-cover" loading="eager" />
+          <SafeImg src={getImageUrl(item.img, 1200)} isDetail={true} alt={`تصویر ${pageHeading}`} className="glow-gold w-full rounded-2xl object-cover" loading="eager" />
         </div>
 
         <div>

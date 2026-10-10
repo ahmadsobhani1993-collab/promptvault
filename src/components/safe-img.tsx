@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useState } from 'react'
+import { getImageUrl } from '@/lib/image-utils'
 
 const FALLBACK = 'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=800&auto=format&fit=crop'
 
@@ -17,7 +18,9 @@ export default function SafeImg({
   loading?: 'lazy' | 'eager'
   isDetail?: boolean
 }) {
-  const [cur, setCur] = useState(src)
+  // تبدیل مستقیم آدرس به آروان‌کلاد
+  const resolvedSrc = getImageUrl(src, isDetail ? 1200 : 600)
+  const [cur, setCur] = useState(resolvedSrc)
   const isVideo = !!cur && (cur.match(/\.(mp4|webm|ogg|mov)$/i) || cur.includes('/video/upload/'))
 
   const getPosterUrl = (url: string) => {
@@ -29,7 +32,7 @@ export default function SafeImg({
 
   // در کارت‌ها: فقط تصویر ثابت (تامبنیل فریم صفر) بدون ساخت پلیر ویدیو
   if (isVideo && !isDetail) {
-    const poster = getPosterUrl(cur)
+    const poster = getImageUrl(getPosterUrl(cur), 600)
     return (
       <div className="relative w-full h-full overflow-hidden">
         <img
@@ -52,7 +55,7 @@ export default function SafeImg({
 
   // در صفحه داخلی: پلیر ویدیویی با ابعاد متناسب و پوستر آماده
   if (isVideo && isDetail) {
-    const poster = getPosterUrl(cur)
+    const poster = getImageUrl(getPosterUrl(cur), 1200)
     return (
       <div className="relative w-full overflow-hidden rounded-2xl border border-line bg-[#0B0B0D] aspect-[4/3] md:aspect-video flex items-center justify-center shadow-lg">
         <video

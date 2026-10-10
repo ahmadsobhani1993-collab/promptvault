@@ -6,14 +6,14 @@
     return '/api/image-proxy?url=' + encodeURIComponent(url)
   }
 
-  // تبدیل هوشمند برای تصاویر Cloudinary
-  if (url.includes('res.cloudinary.com') && url.includes('/upload/')) {
-    // جلوگیری از تکرار پارامترها در صورتی که قبلاً ترنسفورم شده باشند
-    if (url.includes('f_auto') || url.includes('q_auto')) {
-      return url
+  // تغییر مسیر هوشمند از کلودینری به آروان‌کلاد
+  if (url.includes('res.cloudinary.com')) {
+    // حذف بخش پیشوند و ترنسفورمیشن‌های احتمالی کلودینری و استخراج مسیر نهایی فایل
+    const match = url.match(/\/upload\/(?:(?:[a-z]_[^/]+,)*[a-z]_[^/]+\/)?(?:v\d+\/)?(.+)$/)
+    if (match && match[1]) {
+      const cleanPath = match[1]
+      return `https://promptfa.s3.eu-west1.arvanstorage.ir/${cleanPath}`
     }
-    const transformParams = `f_auto,q_auto:good,w_${width},c_limit`
-    return url.replace('/upload/', `/upload/${transformParams}/`)
   }
 
   return url
