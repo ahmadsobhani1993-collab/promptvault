@@ -6,7 +6,6 @@ const ARVAN_SECRET_KEY = process.env.ARVAN_SECRET_KEY
 const ARVAN_ENDPOINT = process.env.ARVAN_ENDPOINT || 'https://s3.eu-west1.arvanstorage.ir'
 const ARVAN_BUCKET = process.env.ARVAN_BUCKET || 'promptfa'
 
-// کلاینت متصل به آبجکت استوریج آروان
 const s3 = new S3Client({
   region: 'default',
   endpoint: ARVAN_ENDPOINT,
@@ -16,9 +15,6 @@ const s3 = new S3Client({
   },
 })
 
-/**
- * آپلود بافر به آروان‌کلاد (جایگزین کلودینری)
- */
 export async function uploadToCloudinary(
   buf: Buffer,
   folder = 'promptsfa'
@@ -27,7 +23,6 @@ export async function uploadToCloudinary(
     throw new Error('ArvanCloud credentials missing in env')
   }
 
-  // تولید نام یونیک برای فایل در صورت نبود اسم خاص
   const randomName = crypto.randomBytes(8).toString('hex')
   const cleanFolder = folder.replace(/^\/+|\/+$/g, '')
   const publicId = `${cleanFolder}/${Date.now()}-${randomName}`
@@ -40,6 +35,7 @@ export async function uploadToCloudinary(
       Body: buf,
       ACL: 'public-read',
       ContentType: 'image/jpeg',
+      CacheControl: 'public, max-age=31536000, immutable', // کش دائمی برای جلوگیری از مصرف ترافیک مکرر
     })
   )
 
@@ -47,9 +43,6 @@ export async function uploadToCloudinary(
   return { url, publicId }
 }
 
-/**
- * دانلود از URL و آپلود مستقیم به آروان‌کلاد
- */
 export async function uploadFromUrl(
   url: string,
   folder = 'promptsfa/articles'
@@ -62,9 +55,6 @@ export async function uploadFromUrl(
   return uploadToCloudinary(buf, folder)
 }
 
-/**
- * آپلود ریموت از تلگرام یا لینک خارجی به آروان‌کلاد
- */
 export async function uploadRemoteDirectly(
   remoteUrl: string,
   folder = 'promptsfa/prompts',
@@ -94,6 +84,7 @@ export async function uploadRemoteDirectly(
       Body: buf,
       ACL: 'public-read',
       ContentType: contentType,
+      CacheControl: 'public, max-age=31536000, immutable',
     })
   )
 
@@ -101,9 +92,6 @@ export async function uploadRemoteDirectly(
   return { url, publicId }
 }
 
-/**
- * بررسی اینکه فایل قبلاً ذخیره شده یا نیاز به آپلود دارد
- */
 export async function ensureCloudinary(
   url: string,
   folder = 'promptsfa/articles'
