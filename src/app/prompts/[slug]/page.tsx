@@ -1,4 +1,5 @@
 export const revalidate = 3600
+
 import Link from 'next/link'
 import { getImageUrl } from '@/lib/image-utils'
 import { notFound } from 'next/navigation'
@@ -6,14 +7,10 @@ import type { Metadata } from 'next'
 import { type Locale } from '@/lib/i18n'
 import { getPromptBySlug, getRelatedPrompts, getPromptTypeLabel, L } from '@/lib/data'
 import { prisma } from '@/lib/db'
-import { auth } from '@/auth'
 import PromptCard from '@/components/prompt-card'
-import RealLikeButton from '@/components/real-like-button'
-import SaveButton from '@/components/save-button'
 import SafeImg from '@/components/safe-img'
-import PromptReveal from '@/components/prompt-reveal'
-import ShareButtons from '@/components/share-buttons'
 import RealCommentBox from '@/components/real-comment-box'
+import PromptUserInteractions from '@/components/prompt-user-interactions'
 
 function buildSeoTitle(raw: string): string {
   const clean = (raw || '').trim().replace(/^پرامپت\s+/i, '').trim()
@@ -83,21 +80,10 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
     )
   }
 
-  const session = await auth()
-  const isAdmin = session?.user?.role === 'ADMIN'
-
-  const item = await getPromptBySlug(slug, isAdmin)
+  const item = await getPromptBySlug(slug, false)
   if (!item) notFound()
 
   const related = await getRelatedPrompts(item.categoryId, slug, item.tagsFa || [])
-
-  const userId = session?.user?.id
-  let liked = false
-  let saved = false
-  if (userId) {
-    liked = !!(await prisma.like.findUnique({ where: { userId_promptId: { userId, promptId: item.id } } }))
-    saved = !!(await prisma.save.findUnique({ where: { userId_promptId: { userId, promptId: item.id } } }))
-  }
 
   const comments = await prisma.comment.findMany({
     where: { promptId: item.id },
@@ -176,43 +162,15 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
             {desc && <p className="mt-3">{desc}</p>}
           </div>
 
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            <RealLikeButton promptId={item.id} initialLiked={liked} initialCount={item.likes} label={L(locale, 'پسند', 'likes')} requireLogin={L(locale, 'برای لایک کردن ابتدا وارد شو', 'Login to like')} />
-            <SaveButton promptId={item.id} initialSaved={saved} initialCount={item.saves} label={L(locale, 'ذخیره', 'saves')} requireLogin={L(locale, 'برای ذخیره کردن ابتدا وارد شو', 'Login to save')} />
-            <ShareButtons title={pageHeading} desc={desc} />
-          </div>
-
-          <div className="mt-5 flex flex-wrap gap-1">
-            {item.tagsFa.map((tag, i) => L(locale, tag, item.tagsEn[i] ?? tag)).map((tag) => (
-              <Link
-                key={tag}
-                href={'/explore?tags=' + encodeURIComponent(tag)}
-                className="badge transition-colors hover:border-gold/60 hover:text-gold-bright"
-              >
-                #{tag}
-              </Link>
-            ))}
-          </div>
-
-          {userId ? (
-            <PromptReveal
-              slug={item.slug}
-              revealLabel={L(locale, 'نمایش پرامپت', 'Reveal Prompt')}
-              copyLabel={L(locale, 'کپی پرامپت', 'Copy Prompt')}
-              copiedLabel={L(locale, 'کپی شد!', 'Copied!')}
-              hint={L(locale, 'پرامپت برای محافظت در برابر اسکرپینگ، فقط بعد از کلیک نمایش داده می‌شود.', 'The prompt is revealed on click to protect against scraping.')}
-              locale={locale}
-            />
-          ) : (
-            <div className="mt-8 rounded-2xl border border-dashed border-gold/40 bg-gold/5 p-6 text-center">
-              <p className="text-sm text-ink-muted">
-                {L(locale, 'برای مشاهده و کپی کردن متن پرامپت، ابتدا باید وارد حساب کاربری خود شوید.', 'To view and copy the prompt text, you must first log in to your account.')}
-              </p>
-              <Link href="/login" className="btn-primary mt-4 inline-flex">
-                {L(locale, 'ورود به حساب کاربری', 'Login to Account')}
-              </Link>
-            </div>
-          )}
+          <PromptUserInteractions
+            promptId={item.id}
+            slug={item.slug}
+            initialLikes={item.likes}
+            initialSaves={item.saves}
+            pageHeading={pageHeading}
+            desc={desc}
+            locale={locale}
+          />
 
           {usage && (
             <div className="mt-6 rounded-2xl border border-line bg-elevated p-5">
@@ -244,7 +202,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
         textPlaceholder={L(locale, 'دیدگاهت را بنویس...', 'Write your comment...')}
         submitLabel={L(locale, 'ارسال دیدگاه', 'Submit')}
         loginRequired={L(locale, 'برای ارسال دیدگاه ابتدا وارد شو', 'Login to comment')}
-        isLoggedIn={!!userId}
+        isLoggedIn={false}
       />
     </section>
   )
