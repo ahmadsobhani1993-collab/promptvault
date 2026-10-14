@@ -4,9 +4,9 @@ import { prisma } from '@/lib/db'
 import { isCronAuthorized } from '@/lib/cron-auth'
 import { tgSendPhoto, tgSendCode, tgSendText } from '@/lib/telegram'
 import { sendToInstagramCustom } from '@/lib/instagram'
+import { faDigits } from '@/lib/fa-digits'
 
 export const maxDuration = 60
-const faDigits = (n: number) => String(n).replace(/\d/g, (d) => '۰۱۳۴۵۶۷۸۹'[+d])
 
 async function getSet(k: string, d: string) {
   return (await prisma.setting.findUnique({ where: { key: k } }))?.value ?? d

@@ -1,8 +1,7 @@
 import { prisma } from '@/lib/db'
 import { tgSendPhoto, tgSendCode, tgSendText } from '@/lib/telegram'
 import { sendToInstagramCustom } from '@/lib/instagram'
-
-const faDigits = (n: number) => String(n).replace(/\d/g, (d) => '۰۱۳۴۵۶۷۸۹'[+d])
+import { faDigits } from '@/lib/fa-digits'
 
 function tehranDate(offsetDays = 0) {
   const d = new Date(Date.now() + offsetDays * 86400000)
