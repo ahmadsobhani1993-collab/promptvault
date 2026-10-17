@@ -31,7 +31,7 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
 
     let ogImageUrl = `${appUrl}/placeholder.jpg`
     if (item.img && !item.img.includes('placeholder')) {
-      ogImageUrl = getImageUrl(item.img, 1200)
+      ogImageUrl = getImageUrl(item.img,)
     }
 
     return {
@@ -106,7 +106,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
             '@type': 'TechArticle',
             headline: pageHeading,
             description: item.descFa || item.prompt,
-            image: getImageUrl(item.img, 1200),
+            image: getImageUrl(item.img,),
             datePublished: item.createdAt,
             author: { '@type': 'Organization', name: 'PromptsFA', url: 'https://promptsfa.ir' },
             publisher: {

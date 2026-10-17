@@ -1,15 +1,44 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import {
-  DEFAULT_STYLE,
-  getAnimationState,
-  loadFont,
-  resolveAlign,
-  resolveDirection,
-  type Seg,
-  type Style,
-} from '@/lib/subtitle-studio'
+
+// Types
+type Seg = {
+  start: number
+  end: number
+  text: string
+  words?: { start: number; end: number; text: string }[]
+  fx?: string
+}
+
+type Style = {
+  fontId?: string
+  size?: number
+  x?: number
+  y?: number
+  align?: string
+  direction?: string
+  color?: string
+  hlColor?: string
+  karaoke?: boolean
+}
+
+const DEFAULT_STYLE: Style = {
+  fontId: 'Vazirmatn',
+  size: 5.2,
+  x: 50,
+  y: 78,
+  align: 'center',
+  direction: 'auto',
+  color: '#FFFFFF',
+  hlColor: '#FFD600',
+  karaoke: false,
+}
+
+const FPS = 30
+const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
+
+const FALLBACK_COLOR_SPACE = { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', fullRange: false } as const
 
 type Props = {
   videoUrl: string
@@ -19,12 +48,6 @@ type Props = {
 }
 
 const STYLE_STORAGE_KEY = 'promptvault.subtitle.style'
-const FPS = 30
-const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
-
-// مقدار پیش‌فرض استاندارد رنگ (SDR/Rec.709) — فقط وقتی که مرورگر (بیشتر دیده‌شده در Safari/iOS)
-// این فیلد را در متادیتای خروجی VideoEncoder پر نمی‌کند، به‌جایش جایگزین می‌شود
-const FALLBACK_COLOR_SPACE = { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', fullRange: false } as const
 
 let cachedFFmpeg: any = null
 
@@ -107,6 +130,32 @@ function fitSubtitle(
     totalHeight: lines.length * (fontSize * 1.3),
     maxLineWidth: Math.max(...lines.map((l) => ctx.measureText(l).width), 0),
   }
+}
+
+function resolveAlign(align: string | undefined, direction: string): CanvasTextAlign {
+  if (align === 'left') return direction === 'rtl' ? 'right' : 'left'
+  if (align === 'right') return direction === 'rtl' ? 'left' : 'right'
+  return 'center'
+}
+
+function resolveDirection(direction: string | undefined, text: string): 'rtl' | 'ltr' {
+  if (direction === 'rtl') return 'rtl'
+  if (direction === 'ltr') return 'ltr'
+  return /[\u0600-\u06FF]/.test(text) ? 'rtl' : 'ltr'
+}
+
+function getAnimationState(fx: string | undefined, elapsed: number, duration: number, width: number) {
+  const opacity = duration > 0 ? Math.min(1, elapsed / 0.3) * Math.min(1, (duration - elapsed) / 0.3) : 1
+  return { opacity, translateX: 0, translateY: 0, scale: 1 }
+}
+
+async function loadFont(fontId: string) {
+  if (typeof document === 'undefined') return
+  const font = new FontFace(fontId, `url(https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/fonts/webfonts/Vazirmatn-Bold.woff2)`)
+  try {
+    const loadedFont = await font.load()
+    ;(document as any).fonts.add(loadedFont)
+  } catch {}
 }
 
 export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segments, style }: Props) {
@@ -195,7 +244,8 @@ export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segm
       ctx.lineJoin = 'round'
       ctx.lineCap = 'round'
 
-      const mp4Mod: any = await import(/* webpackIgnore: true */ 'https://esm.sh/mp4-muxer@5.1.4')
+      // Dynamic import for mp4-muxer
+      const mp4Mod: any = await import('mp4-muxer')
       const MuxerClass = mp4Mod.Muxer || mp4Mod.default?.Muxer
       const TargetClass = mp4Mod.ArrayBufferTarget || mp4Mod.default?.ArrayBufferTarget
       if (typeof MuxerClass !== 'function' || typeof TargetClass !== 'function') {
@@ -216,12 +266,6 @@ export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segm
       }
 
       const encoder = new (window as any).VideoEncoder({
-        // ─── تنها تغییر نسبت به نسخه‌ی قبلی ───
-        // در برخی مرورگرها (به‌خصوص Safari/iOS) متادیتای خروجی VideoEncoder گاهی
-        // decoderConfig یا decoderConfig.colorSpace را کامل پر نمی‌کند. mp4-muxer
-        // همین فیلد را مستقیماً برای ساخت باکس رنگ mp4 می‌خواند و بدون آن کرش می‌کند
-        // (ارور «null is not an object (evaluating 't.info.decoderConfig.colorSpace')»).
-        // این‌جا فقط یک مقدار پیش‌فرض امن جایگزین می‌کنیم، بدون تغییر منطق اصلی.
         output: (chunk: any, meta: any) => {
           if (meta && !meta.decoderConfig) {
             meta = { ...meta, decoderConfig: { codec: 'avc1.4d002a', codedWidth: W, codedHeight: H, colorSpace: FALLBACK_COLOR_SPACE } }
@@ -419,7 +463,8 @@ export default function SubtitleVideoExport({ videoUrl, baseName = 'video', segm
       ])
 
       const finalData = (await ffmpeg.readFile(outFileName)) as Uint8Array
-      const finalBlob = new Blob([finalData], { type: mimeType })
+      // Convert Uint8Array to Blob properly
+      const finalBlob = new Blob([finalData.buffer], { type: mimeType })
 
       setProgress(100)
       setStatus('✅ ذخیره‌سازی ویدیو...')

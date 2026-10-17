@@ -1,11 +1,9 @@
 ﻿import Link from 'next/link'
-import { cookies } from 'next/headers'
-import { L, type Locale } from '@/lib/data'
+import { type Locale } from '@/lib/i18n'
 import PWAInstallButton from '@/components/pwa-install-button'
 
-export default async function Footer() {
-  const cookieStore = await cookies()
-  const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
+export default async function Footer({ locale }: { locale: Locale }) {
+  // خواندن کوکی حذف شد چون locale را مستقیماً از layout دریافت می‌کنیم
 
   return (
     <footer className="border-t border-line/70 bg-[#0a0805] text-ink">
@@ -102,3 +100,4 @@ export default async function Footer() {
     </footer>
   )
 }
+

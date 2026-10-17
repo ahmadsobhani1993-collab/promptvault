@@ -25,7 +25,6 @@ export const getPromptTypeLabel = (type: string, locale: Locale) => {
   return t ? L(locale, t.fa, t.en) : type
 }
 
-// فیلدهای لازم برای کارت‌ها (بدون متن کامل prompt)
 const cardSelect = {
   id: true,
   slug: true,
@@ -44,8 +43,6 @@ const cardSelect = {
   sub: { select: { fa: true, en: true, slug: true } },
 }
 
-// توجه: unstable_cache خروجی را JSON می‌کند؛ فیلدهای Date به string تبدیل می‌شوند.
-// اگر مدل Category فیلد Date دارد و جایی از آن استفاده می‌کنی، این مورد را بررسی کن.
 const getCategoriesCached = unstable_cache(
   async () =>
     prisma.category.findMany({
@@ -65,7 +62,7 @@ export async function getPrompts(opts?: {
   subSlug?: string
   tags?: string[]
   take?: number
-  light?: boolean // true: فقط فیلدهای کارت (سبک‌تر برای لیست‌ها)
+  light?: boolean
 }) {
   const where: any = { status: 'PUBLISHED' }
   if (opts?.type) where.type = opts.type
@@ -102,9 +99,6 @@ export async function getPrompts(opts?: {
   })
 }
 
-// cache ری‌اکت: generateMetadata و خود صفحه یک کوئری مشترک می‌زنند
-// هشدار: include user یعنی همه‌ی ستون‌های کاربر خوانده می‌شود؛
-// مطمئن شو این فیلدها (مثل ایمیل) به Client Component پاس داده نمی‌شوند.
 export const getPromptBySlug = cache(async (slug: string, includeUnpublished = false) => {
   return prisma.prompt.findFirst({
     where: includeUnpublished ? { slug } : { slug, status: 'PUBLISHED' },
@@ -112,46 +106,67 @@ export const getPromptBySlug = cache(async (slug: string, includeUnpublished = f
   })
 })
 
+// استخر چرخشی روزانه برای نمایش پرامپت‌های قدیمی و جدید
 async function fetchRelatedPrompts(categoryId: string, excludeSlug: string, tagsFa: string[]) {
-  const [byTags, byCategory]: [any[], any[]] = await Promise.all([
-    tagsFa.length > 0
-      ? prisma.prompt.findMany({
-          where: {
-            status: 'PUBLISHED',
-            tagsFa: { hasSome: tagsFa },
-            NOT: { slug: excludeSlug },
-          },
-          orderBy: { views: 'desc' },
-          take: 12,
-          select: cardSelect,
-        })
-      : Promise.resolve([]),
-    prisma.prompt.findMany({
-      where: {
-        status: 'PUBLISHED',
-        categoryId,
-        NOT: { slug: excludeSlug },
-      },
-      orderBy: { views: 'desc' },
-      take: 12,
+  const currentDay = new Date().getDate()
+  const primeMultiplier = 17
+  const poolSize = 60
+
+  const getRotatingPool = async (whereCondition: any) => {
+    const total = await prisma.prompt.count({ where: whereCondition })
+    
+    if (total <= poolSize) {
+      return prisma.prompt.findMany({ 
+        where: whereCondition, 
+        take: poolSize, 
+        select: cardSelect 
+      })
+    }
+    
+    const maxOffset = total - poolSize
+    const dailySkip = (currentDay * primeMultiplier) % maxOffset
+
+    return prisma.prompt.findMany({
+      where: whereCondition,
+      skip: dailySkip,
+      take: poolSize,
       select: cardSelect,
-    }),
+    })
+  }
+
+  const whereTags = tagsFa.length > 0 ? {
+    status: 'PUBLISHED',
+    tagsFa: { hasSome: tagsFa },
+    NOT: { slug: excludeSlug },
+  } : null
+
+  const whereCategory = {
+    status: 'PUBLISHED',
+    categoryId,
+    NOT: { slug: excludeSlug },
+  }
+
+  const [byTags, byCategory] = await Promise.all([
+    whereTags ? getRotatingPool(whereTags) : Promise.resolve([]),
+    getRotatingPool(whereCategory),
   ])
 
-  // اولویت با بیشترین اشتراک تگ، بعد بازدید
-  const tagSet = new Set(tagsFa)
-  const overlap = (item: any) =>
-    (item.tagsFa as string[]).reduce((n, t) => n + (tagSet.has(t) ? 1 : 0), 0)
+  const shuffle = (array: any[]) => array.sort(() => Math.random() - 0.5)
+  const shuffledTags = shuffle(byTags)
+  const shuffledCategory = shuffle(byCategory)
 
-  const rankedByTags = byTags
-    .map((item) => ({ item, score: overlap(item) }))
-    .sort((a, b) => b.score - a.score || (b.item.views ?? 0) - (a.item.views ?? 0))
-    .map((x) => x.item)
+  const seen = new Set<string>()
+  const result: any[] = []
 
-  const seen = new Set(rankedByTags.map((i) => i.id))
-  const fill = byCategory.filter((i) => !seen.has(i.id))
+  for (const item of [...shuffledTags, ...shuffledCategory]) {
+    if (result.length >= 6) break
+    if (!seen.has(item.id)) {
+      seen.add(item.id)
+      result.push(item)
+    }
+  }
 
-  return [...rankedByTags, ...fill].slice(0, 6)
+  return result
 }
 
 const getRelatedPromptsCached = unstable_cache(
@@ -168,7 +183,6 @@ const fetchArticles = cache(async (take: number) =>
   prisma.article.findMany({ take, orderBy: { createdAt: 'desc' } })
 )
 
-// هر دو شکل صدا زدن پشتیبانی می‌شود: getArticles(6) و getArticles({ take: 6 })
 export function getArticles(opts?: number | { take?: number }) {
   const take = typeof opts === 'number' ? opts : opts?.take ?? 50
   return fetchArticles(take)
