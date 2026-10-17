@@ -46,7 +46,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body suppressHydrationWarning className={`bg-[#070503] text-ink antialiased ${locale === 'fa' ? 'font-sans' : ''}`}>
         <Header locale={locale} />
         <main>{children}</main>
-        <Footer locale={locale} />
+        <Footer />
         <Analytics />
         <PWAControls />
         <ClientProviders />
