@@ -66,22 +66,80 @@ export function calculateVideoRect(
   return { drawX, drawY, drawW, drawH }
 }
 
+// ───────────────────────── کش زمان‌بندی کلمات ─────────────────────────
+interface TimingCacheEntry {
+  text: string
+  start: number
+  end: number
+  src: WordTiming[] | undefined
+  value: WordTiming[]
+}
+const timingCache = new WeakMap<StudioSegment, TimingCacheEntry>()
+
 function getWordTimings(segment: StudioSegment): WordTiming[] {
-  if (segment.words && segment.words.length > 0) return segment.words
+  const cached = timingCache.get(segment)
+  if (
+    cached &&
+    cached.text === segment.text &&
+    cached.start === segment.start &&
+    cached.end === segment.end &&
+    cached.src === segment.words
+  ) {
+    return cached.value
+  }
 
-  const words = segment.text.trim().split(/\s+/).filter(Boolean)
-  if (!words.length) return []
-  const totalChars = words.reduce((acc, w) => acc + Math.max(1, w.length), 0)
-  const duration = Math.max(0.1, segment.end - segment.start)
+  const tokens = segment.text.trim().split(/\s+/).filter(Boolean)
+  let value: WordTiming[]
 
-  let cursor = segment.start
-  return words.map((w) => {
-    const wordDur = (Math.max(1, w.length) / totalChars) * duration
-    const start = cursor
-    const end = cursor + wordDur
-    cursor = end
-    return { text: w, start, end }
+  if (segment.words && segment.words.length > 0 && segment.words.length === tokens.length) {
+    // فقط وقتی تعداد کلمات با متن یکی است، زمان‌های واقعی قابل اتکا هستند
+    value = segment.words
+  } else if (!tokens.length) {
+    value = []
+  } else {
+    const totalChars = tokens.reduce((acc, w) => acc + Math.max(1, w.length), 0)
+    const duration = Math.max(0.1, segment.end - segment.start)
+    let cursor = segment.start
+    value = tokens.map((w) => {
+      const wordDur = (Math.max(1, w.length) / totalChars) * duration
+      const start = cursor
+      const end = cursor + wordDur
+      cursor = end
+      return { text: w, start, end }
+    })
+  }
+
+  timingCache.set(segment, {
+    text: segment.text,
+    start: segment.start,
+    end: segment.end,
+    src: segment.words,
+    value,
   })
+  return value
+}
+
+// ───────────────────────── کش چیدمان متن ─────────────────────────
+interface LayoutWord {
+  text: string
+  width: number
+}
+interface LayoutLine {
+  width: number
+  words: LayoutWord[]
+}
+interface TextLayout {
+  lines: LayoutLine[]
+  spaceWidth: number
+  maxLineWidth: number
+}
+
+const MAX_LAYOUT_CACHE = 300
+const layoutCache = new Map<string, TextLayout>()
+
+// اگر فونت دیرتر لود شد، اندازه‌گیری‌های قبلی (با فونت جایگزین) نامعتبر می‌شوند
+if (typeof document !== 'undefined' && (document as any).fonts?.addEventListener) {
+  ;(document as any).fonts.addEventListener('loadingdone', () => layoutCache.clear())
 }
 
 function wrapTextRTL(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
@@ -101,6 +159,37 @@ function wrapTextRTL(ctx: CanvasRenderingContext2D, text: string, maxWidth: numb
   }
   if (currentLine) lines.push(currentLine)
   return lines
+}
+
+// پیش‌شرط: ctx.font و ctx.direction قبل از صدا زدن ست شده‌اند
+function getTextLayout(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  fontSpec: string,
+  maxWidth: number
+): TextLayout {
+  const key = `${fontSpec}|${Math.round(maxWidth * 100)}|${text}`
+  const hit = layoutCache.get(key)
+  if (hit) return hit
+
+  const lineTexts = wrapTextRTL(ctx, text, maxWidth)
+  const spaceWidth = ctx.measureText(' ').width
+  let maxLineWidth = 0
+
+  const lines: LayoutLine[] = lineTexts.map((line) => {
+    const width = ctx.measureText(line).width
+    if (width > maxLineWidth) maxLineWidth = width
+    const words = line
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => ({ text: w, width: ctx.measureText(w).width }))
+    return { width, words }
+  })
+
+  const layout: TextLayout = { lines, spaceWidth, maxLineWidth }
+  if (layoutCache.size >= MAX_LAYOUT_CACHE) layoutCache.clear()
+  layoutCache.set(key, layout)
+  return layout
 }
 
 export function drawRoundedRect(
@@ -146,19 +235,23 @@ export function renderStudioFrame({
   segments,
   style,
 }: RenderParams) {
-  ctx.fillStyle = '#000000'
-  ctx.fillRect(0, 0, canvasWidth, canvasHeight)
-
   const vW = video.videoWidth || 1920
   const vH = video.videoHeight || 1080
   const vRect = calculateVideoRect(canvasWidth, canvasHeight, vW, vH, style.contentFit)
 
-  ctx.save()
-  ctx.beginPath()
-  ctx.rect(0, 0, canvasWidth, canvasHeight)
-  ctx.clip()
+  // پس‌زمینه‌ی مشکی فقط وقتی لازم است که ویدیو کل کانوس را نپوشاند (نوارهای contain)
+  const coversCanvas =
+    vRect.drawX <= 0 &&
+    vRect.drawY <= 0 &&
+    vRect.drawX + vRect.drawW >= canvasWidth &&
+    vRect.drawY + vRect.drawH >= canvasHeight
+  if (!coversCanvas) {
+    ctx.fillStyle = '#000000'
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight)
+  }
+
+  // کانوس خودش هر چیز بیرون از مرزهایش را کلیپ می‌کند؛ clip جداگانه لازم نیست
   ctx.drawImage(video, vRect.drawX, vRect.drawY, vRect.drawW, vRect.drawH)
-  ctx.restore()
 
   const activeSegment = segments.find(
     (seg) => currentTime >= seg.start && currentTime <= seg.end
@@ -181,7 +274,8 @@ export function renderStudioFrame({
   const activeBoundW = style.contentFit === 'cover' ? canvasWidth : vRect.drawW
 
   const maxTextWidth = activeBoundW * 0.88
-  const lines = wrapTextRTL(ctx, activeSegment.text, maxTextWidth)
+  const layout = getTextLayout(ctx, activeSegment.text, fontSpec, maxTextWidth)
+  const lines = layout.lines
   const lineHeight = calcFontSize * 1.38
   const totalTextHeight = lines.length * lineHeight
 
@@ -191,7 +285,8 @@ export function renderStudioFrame({
   const animation = style.subtitleAnimation ?? 'none'
   const elapsed = Math.max(0, currentTime - activeSegment.start)
   const animationState = getAnimationState(animation, elapsed, activeSegment.end - activeSegment.start, canvasWidth)
-  if (animation !== 'none' && (elapsed < 0.35 || animation === 'zoomIn' || animation === 'zoomOut')) {
+  const animating = animation !== 'none' && (elapsed < 0.35 || animation === 'zoomIn' || animation === 'zoomOut')
+  if (animating) {
     ctx.save()
     ctx.globalAlpha = animationState.opacity
     ctx.translate(anchorX + animationState.translateX, anchorY + animationState.translateY)
@@ -206,13 +301,7 @@ export function renderStudioFrame({
 
   // باکس بدون سایه
   if (style.hasBg) {
-    let maxLineWidth = 0
-    lines.forEach((l) => {
-      const w = ctx.measureText(l).width
-      if (w > maxLineWidth) maxLineWidth = w
-    })
-
-    const bgBoxW = maxLineWidth + style.bgPaddingX * 2
+    const bgBoxW = layout.maxLineWidth + style.bgPaddingX * 2
     const bgBoxH = totalTextHeight + style.bgPaddingY * 2
     let bgBoxX = anchorX - bgBoxW / 2
     if (style.alignment === 'right') bgBoxX = anchorX - bgBoxW + style.bgPaddingX
@@ -237,19 +326,18 @@ export function renderStudioFrame({
   }
 
   let globalWordCounter = 0
+  const spaceWidth = layout.spaceWidth
 
   lines.forEach((line, lineIdx) => {
     const yPos = anchorY - ((lines.length - 1) * lineHeight) / 2 + lineIdx * lineHeight
-    const lineWords = line.split(/\s+/).filter(Boolean)
-    const spaceWidth = ctx.measureText(' ').width
-    const fullLineWidth = ctx.measureText(line).width
 
-    let currentX = anchorX + fullLineWidth / 2
+    let currentX = anchorX + line.width / 2
     if (style.alignment === 'right') currentX = anchorX
-    if (style.alignment === 'left') currentX = anchorX + fullLineWidth
+    if (style.alignment === 'left') currentX = anchorX + line.width
 
-    lineWords.forEach((word) => {
-      const wordW = ctx.measureText(word).width
+    line.words.forEach((lw) => {
+      const word = lw.text
+      const wordW = lw.width
       const isCurrentActive = globalWordCounter === activeWordIdx
       const drawWordCenterX = currentX - wordW / 2
 
@@ -296,6 +384,6 @@ export function renderStudioFrame({
     })
   })
 
-  if (animation !== 'none' && (elapsed < 0.35 || animation === 'zoomIn' || animation === 'zoomOut')) ctx.restore()
+  if (animating) ctx.restore()
   drawWatermarks(ctx, style.watermarks, canvasWidth, canvasHeight)
 }

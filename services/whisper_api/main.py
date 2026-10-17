@@ -38,38 +38,6 @@ app.add_middleware(
 
 _align_models: dict[str, tuple[Any, Any]] = {}
 _align_lock = threading.Lock()
-_nltk_lock = threading.Lock()
-NLTK_DATA_DIR = Path(__file__).resolve().parent / "nltk_data"
-
-
-def ensure_nltk_punkt_data() -> None:
-    import nltk
-    from nltk import pathsec
-
-    NLTK_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    nltk_path = str(NLTK_DATA_DIR)
-    if nltk_path not in nltk.data.path:
-        nltk.data.path.insert(0, nltk_path)
-
-    try:
-        nltk.data.find("tokenizers/punkt_tab/english/")
-        return
-    except LookupError:
-        pass
-
-    with _nltk_lock:
-        try:
-            nltk.data.find("tokenizers/punkt_tab/english/")
-            return
-        except LookupError:
-            # Local Windows installs often use an HTTPS proxy. NLTK 3.10 blocks
-            # downloader fetches through proxies unless the operator explicitly
-            # opts in. The local launcher sets this flag; downloads stay scoped
-            # to the fixed punkt_tab package and the service's private data dir.
-            if os.getenv("NLTK_ALLOW_PROXIED_URLOPEN") == "1":
-                pathsec.ALLOW_PROXIED_FETCH = True
-            if not nltk.download("punkt_tab", download_dir=nltk_path, quiet=True):
-                raise RuntimeError("دانلود دادهٔ NLTK punkt_tab ناموفق شد؛ اتصال اینترنت سرویس را بررسی کنید.")
 
 
 def _decode_segment(value: str) -> bytes:
@@ -112,7 +80,6 @@ def verify_ticket(authorization: str | None) -> None:
 
 
 def align_transcript(path: str, transcript: str, language: str) -> dict[str, Any]:
-    ensure_nltk_punkt_data()
     try:
         import whisperx
     except ImportError as exc:

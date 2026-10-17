@@ -3,6 +3,34 @@ import { drawWatermarks } from '@/lib/studio/watermark-renderer'
 
 export const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
 
+// ───────────────────────── کش اندازه‌گیری متن ─────────────────────────
+interface FitResult {
+  fontSize: number
+  lines: string[]
+  lineHeight: number
+  totalHeight: number
+  maxLineWidth: number
+}
+interface LineMetrics {
+  width: number
+  words: { text: string; width: number }[]
+  spaceWidth: number
+}
+
+const MAX_CACHE = 300
+const fitCache = new Map<string, FitResult>()
+const lineCache = new Map<string, LineMetrics>()
+
+function clearMeasureCaches() {
+  fitCache.clear()
+  lineCache.clear()
+}
+
+// اگر فونت دیرتر لود شد، اندازه‌گیری‌های قبلی (با فونت جایگزین) نامعتبر می‌شوند
+if (typeof document !== 'undefined' && (document as any).fonts?.addEventListener) {
+  ;(document as any).fonts.addEventListener('loadingdone', clearMeasureCaches)
+}
+
 export function wrapTextSafe(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const words = text.trim().split(/\s+/).filter(Boolean)
   if (!words.length) return ['']
@@ -21,7 +49,7 @@ export function wrapTextSafe(ctx: CanvasRenderingContext2D, text: string, maxWid
   return lines.length ? lines : ['']
 }
 
-export function fitSubtitle(ctx: CanvasRenderingContext2D, text: string, desiredFontSize: number, maxWidth: number, maxHeight: number, fontFamily: string) {
+function fitSubtitleUncached(ctx: CanvasRenderingContext2D, text: string, desiredFontSize: number, maxWidth: number, maxHeight: number, fontFamily: string): FitResult {
   let fontSize = Math.max(12, desiredFontSize)
   for (let i = 0; i < 20; i++) {
     ctx.font = `800 ${fontSize}px "${fontFamily}", -apple-system, sans-serif`
@@ -37,6 +65,37 @@ export function fitSubtitle(ctx: CanvasRenderingContext2D, text: string, desired
   ctx.font = `800 ${fontSize}px "${fontFamily}", -apple-system, sans-serif`
   const lines = wrapTextSafe(ctx, text, maxWidth)
   return { fontSize, lines, lineHeight: fontSize * 1.3, totalHeight: lines.length * (fontSize * 1.3), maxLineWidth: Math.max(...lines.map((l) => ctx.measureText(l).width), 0) }
+}
+
+export function fitSubtitle(ctx: CanvasRenderingContext2D, text: string, desiredFontSize: number, maxWidth: number, maxHeight: number, fontFamily: string): FitResult {
+  const key = `${fontFamily}|${desiredFontSize}|${maxWidth}|${maxHeight}|${text}`
+  const hit = fitCache.get(key)
+  if (hit) {
+    ctx.font = `800 ${hit.fontSize}px "${fontFamily}", -apple-system, sans-serif`
+    return hit
+  }
+  const result = fitSubtitleUncached(ctx, text, desiredFontSize, maxWidth, maxHeight, fontFamily)
+  if (fitCache.size >= MAX_CACHE) fitCache.clear()
+  fitCache.set(key, result)
+  return result
+}
+
+// پیش‌شرط: ctx.font و ctx.direction قبل از صدا زدن ست شده‌اند
+function getLineMetrics(ctx: CanvasRenderingContext2D, line: string, fontSpec: string, direction: string): LineMetrics {
+  const key = `${fontSpec}|${direction}|${line}`
+  const hit = lineCache.get(key)
+  if (hit) return hit
+  const metrics: LineMetrics = {
+    width: ctx.measureText(line).width,
+    spaceWidth: ctx.measureText(' ').width,
+    words: line
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => ({ text: w, width: ctx.measureText(w).width })),
+  }
+  if (lineCache.size >= MAX_CACHE) lineCache.clear()
+  lineCache.set(key, metrics)
+  return metrics
 }
 
 export function drawSubtitleOnCanvas(ctx: CanvasRenderingContext2D, video: HTMLVideoElement, W: number, H: number, mediaTime: number, duration: number, segments: Seg[], activeStyle: Style) {
@@ -138,10 +197,10 @@ export function drawSubtitleOnCanvas(ctx: CanvasRenderingContext2D, video: HTMLV
     ctx.restore()
   }
 
-  ctx.font = `800 ${finalFontSize}px "${fontFamily}", -apple-system, sans-serif`
+  const fontSpec = `800 ${finalFontSize}px "${fontFamily}", -apple-system, sans-serif`
+  ctx.font = fontSpec
   ctx.textBaseline = 'middle'
   ctx.textAlign = align
-  const strokeWidth = Math.max(4, finalFontSize * 0.16)
 
   if (!s.karaoke || !seg.words || !seg.words.length) {
     lines.forEach((line, index) => {
@@ -160,15 +219,16 @@ export function drawSubtitleOnCanvas(ctx: CanvasRenderingContext2D, video: HTMLV
     })
   } else {
     const activeWordIndex = seg.words.findIndex((w) => t >= w.start && t <= w.end)
-    const spaceWidth = ctx.measureText(' ').width
     let currentWordIndex = 0
     lines.forEach((line, index) => {
       const y = anchorY + (index - (lines.length - 1) / 2) * lineHeight
-      const lineWords = line.split(/\s+/).filter(Boolean)
-      const lineWidth = ctx.measureText(line).width
+      const metrics = getLineMetrics(ctx, line, fontSpec, direction)
+      const lineWidth = metrics.width
+      const spaceWidth = metrics.spaceWidth
       let cursorOffset = 0
-      lineWords.forEach((word) => {
-        const wordWidth = ctx.measureText(word).width
+      metrics.words.forEach((lw) => {
+        const word = lw.text
+        const wordWidth = lw.width
         const isWordActive = currentWordIndex === activeWordIndex
         let wordX = anchorX
         if (direction === 'rtl') wordX = (anchorX + lineWidth / 2) - cursorOffset - (wordWidth / 2)
@@ -183,7 +243,7 @@ export function drawSubtitleOnCanvas(ctx: CanvasRenderingContext2D, video: HTMLV
           ctx.fill()
           ctx.restore()
         }
-        
+
         const prevAlign = ctx.textAlign
         ctx.textAlign = 'center'
         ctx.shadowColor = s.textShadowColor || 'rgba(0, 0, 0, 0.85)'

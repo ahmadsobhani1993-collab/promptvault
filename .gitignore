@@ -9,6 +9,5 @@ out
 .env*
 .whisper-token-secret
 .alignment-token-secret
-services/whisper_api/nltk_data/
 .aider*
 gemini-live-proxy/

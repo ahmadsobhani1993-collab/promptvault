@@ -8,6 +8,11 @@ import type { Seg, Style } from '@/lib/subtitle-studio'
 
 export type ExportQuality = 'balanced' | 'high'
 
+// true: ویدئوی H.264 ضبط‌شده بدون انکود مجدد (فقط mux با صدا). false: مسیر قدیمی با libx264
+const FAST_MUX = true
+// انکودر سخت‌افزاری مرورگر در بیت‌ریت یکسان کمی ضعیف‌تر از x264 است؛ این ضریب جبرانش می‌کند
+const HW_ENCODER_HEADROOM = 1.25
+
 let ffmpegLock: Promise<any> = Promise.resolve()
 function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
   const result = ffmpegLock.then(fn, fn)
@@ -15,21 +20,29 @@ function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
   return result
 }
 
+// در ffmpeg.wasm نسخه 0.12 تابع exec روی خطای ffmpeg معمولاً reject نمی‌کند و کد خروج غیرصفر برمی‌گرداند
+async function execOk(ff: any, args: string[]): Promise<boolean> {
+  try {
+    const code = await ff.exec(args)
+    return typeof code === 'number' ? code === 0 : true
+  } catch {
+    return false
+  }
+}
+
 async function extractAudioSafe(ff: any, inputName: string, outputName: string, limitDuration?: number): Promise<boolean> {
   const durationArgs = limitDuration ? ['-t', String(limitDuration)] : []
-  try {
-    await ff.exec(['-i', inputName, '-map', '0:a:0', '-vn', '-c:a', 'copy', ...durationArgs, outputName])
+
+  if (await execOk(ff, ['-i', inputName, '-map', '0:a:0', '-vn', '-c:a', 'copy', ...durationArgs, outputName])) {
     return true
-  } catch (err) {
-    try {
-      await ff.deleteFile(outputName).catch(() => {})
-      await ff.exec(['-i', inputName, '-map', '0:a:0', '-vn', '-c:a', 'aac', '-b:a', '192k', ...durationArgs, outputName])
-      return true
-    } catch {
-      await ff.deleteFile(outputName).catch(() => {})
-      return false
-    }
   }
+  await ff.deleteFile(outputName).catch(() => {})
+
+  if (await execOk(ff, ['-i', inputName, '-map', '0:a:0', '-vn', '-c:a', 'aac', '-b:a', '192k', ...durationArgs, outputName])) {
+    return true
+  }
+  await ff.deleteFile(outputName).catch(() => {})
+  return false
 }
 
 // ترجیح می‌دهیم MediaRecorder مستقیم H.264/MP4 ضبط کند؛ در این حالت دیگر انکود سنگین libx264 در WASM لازم نیست.
@@ -160,16 +173,40 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
 
       canvasStream = canvas.captureStream(targetFps)
       const { mime, isMp4 } = pickRecorderMime()
-      console.log('[EXPORT] recorder mime:', mime, '| direct MP4:', isMp4)
-      // بیت‌ریت متناسب با رزولوشن (بیت بر پیکسل). برای حجم کمتر عدد 0.04 را به 0.025 کاهش بده.
+      const fastPath = FAST_MUX && isMp4
+      console.log('[EXPORT] recorder mime:', mime, '| direct MP4:', isMp4, '| fast mux:', fastPath)
+
+      // بودجه‌ی بیت‌ریت بر اساس حجم فایل اصلی (همان منطق قبلی)
+      const sizeFactor = quality === 'high' ? 0.94 : 0.86
+      const knownSourceBytes = sourceFile?.size ?? 0
+      const knownSourceKbps = knownSourceBytes > 0 && duration > 0
+        ? (knownSourceBytes * 8) / duration / 1000
+        : 0
+
+      // بیت‌ریت بر پیکسل. برای حجم کمتر عدد 0.04 را به 0.025 کاهش بده.
       const bitsPerPixel = quality === 'high' ? 0.07 : 0.04
       const directBitrate = Math.min(
         12_000_000,
         Math.max(1_500_000, Math.round(W * H * Math.min(targetFps, 30) * bitsPerPixel))
       )
-      const videoBitrate = isMp4
-        ? directBitrate
-        : (duration > 120 ? 9_000_000 : 15_000_000)
+
+      let videoBitrate: number
+      if (fastPath) {
+        // در مسیر سریع، همین ضبط خروجی نهایی است؛ پس بیت‌ریتش را از بودجه‌ی فایل اصلی می‌سازیم
+        if (knownSourceKbps > 0) {
+          const totalKbps = Math.max(80, Math.floor(knownSourceKbps * sizeFactor))
+          const audioKbps = Math.max(32, Math.min(96, Math.floor(totalKbps * 0.25)))
+          const videoKbps = Math.max(32, totalKbps - audioKbps)
+          videoBitrate = Math.min(
+            12_000_000,
+            Math.max(1_000_000, Math.round(videoKbps * 1000 * HW_ENCODER_HEADROOM))
+          )
+        } else {
+          videoBitrate = directBitrate
+        }
+      } else {
+        videoBitrate = isMp4 ? directBitrate : (duration > 120 ? 9_000_000 : 15_000_000)
+      }
 
       const rec = new MediaRecorder(canvasStream, { mimeType: mime, videoBitsPerSecond: videoBitrate })
       recorder = rec
@@ -214,12 +251,14 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
         const finish = () => { if (settled) return; cleanup(); resolve() }
         const fail = (msg: string) => { if (settled) return; cleanup(); reject(new Error(msg)) }
 
+        // در مسیر سریع، مرحله‌ی بعد (mux) فقط چند ثانیه است؛ پس بازه‌ی پیشرفت ضبط بزرگ‌تر می‌شود
+        const recordShare = fastPath ? 90 : 50
         const paint = (mediaTime: number) => {
           drawSubtitleOnCanvas(ctx, video, W, H, mediaTime, duration, segments, style)
           const sec = Math.floor(mediaTime)
           if (sec !== lastUiSecond) {
             lastUiSecond = sec
-            setProgress(Math.min(50, Math.round((mediaTime / duration) * 50)))
+            setProgress(Math.min(recordShare, Math.round((mediaTime / duration) * recordShare)))
             setStageText(`رندر کانویس (${Math.max(0, Math.ceil(duration - mediaTime))}s باقی‌مانده)`)
           }
         }
@@ -268,7 +307,7 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
       if (cancelRef.current) return
 
       setStageText('ادغام صدا و ساخت فایل نهایی...')
-      setProgress(55)
+      setProgress(fastPath ? 92 : 55)
 
       const finalBlob = await runExclusive(async () => {
         const ff = await loadFFmpeg()
@@ -288,7 +327,7 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
 
         const rawBlob = new Blob(rawChunks, { type: mime })
 
-        // ویدیو مستقیم MP4/H.264 است و صدایی برای ادغام نیست: همان را تحویل بده
+        // اگر صدای اصلی پیدا نشد، در حالت MP4 خروجی ضبط‌شده را بدون انکود مجدد نگه می‌داریم.
         if (isMp4 && !audioFileToUse) return new Blob([rawBlob], { type: 'video/mp4' })
 
         const rawVideoName = `raw_${Date.now()}.${isMp4 ? 'mp4' : 'webm'}`
@@ -297,27 +336,69 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
 
         const audioArgs = audioFileToUse ? ['-i', audioFileToUse] : []
         const mapArgs = audioFileToUse ? ['-map', '0:v:0', '-map', '1:a:0'] : ['-map', '0:v:0']
-        const audioCodecArgs = audioFileToUse ? ['-c:a', 'copy'] : []
 
-        // درصد پیشرفت را از لاگ خود ffmpeg (time=...) می‌خوانیم تا UI قفل‌شده به نظر نرسد
+        // بودجه‌ی بیت‌ریت (برای مسیر قدیمی ویدئو، و برای بیت‌ریت صدا در هر دو مسیر)
+        const sourceBytes = workingSource?.size ?? 0
+        const sourceAverageKbps = sourceBytes > 0 && duration > 0
+          ? (sourceBytes * 8) / duration / 1000
+          : (rawBlob.size * 8) / Math.max(duration, 0.1) / 1000
+        const targetTotalKbps = Math.max(80, Math.floor(sourceAverageKbps * sizeFactor))
+        const targetAudioKbps = audioFileToUse
+          ? Math.max(32, Math.min(96, Math.floor(targetTotalKbps * 0.25)))
+          : 0
+        const targetVideoKbps = Math.max(32, targetTotalKbps - targetAudioKbps)
+        const targetVideoBps = targetVideoKbps * 1000
+
+        // صدا: timestamp از صفر و جبران اختلاف جزئی ساعت‌ها (انکود صدا سبک و سریع است)
+        const audioCodecArgs = audioFileToUse
+          ? ['-af', 'asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0', '-c:a', 'aac', '-b:a', `${targetAudioKbps}k`]
+          : []
+        console.log('[EXPORT] source avg kbps:', Math.round(sourceAverageKbps), 'target video kbps:', targetVideoKbps)
+
+        // درصد پیشرفت را از لاگ خود ffmpeg (time=...) می‌خوانیم
+        const muxBase = fastPath ? 92 : 55
+        const muxSpan = fastPath ? 7 : 44
         const onLog = ({ message }: { message: string }) => {
-          console.log('[ffmpeg]', message)
           const m = message.match(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/)
           if (m) {
             const t = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])
             const r = Math.max(0, Math.min(1, t / duration))
-            setProgress(55 + Math.round(r * 44))
-            setStageText(`${isMp4 ? 'ادغام صدا' : 'فشرده‌سازی'}... ${Math.round(r * 100)}%`)
+            setProgress(muxBase + Math.round(r * muxSpan))
+            setStageText(`${fastPath ? 'ادغام صدا' : 'فشرده‌سازی'}... ${Math.round(r * 100)}%`)
           }
         }
         ff.on('log', onLog)
 
         try {
-          const videoCodecArgs = isMp4
-            ? ['-c:v', 'copy'] // بدون انکود دوباره؛ فقط ادغام
-            : ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', quality === 'high' ? '20' : '23', '-preset', quality === 'high' ? 'veryfast' : 'ultrafast']
-          console.log('[EXPORT] ffmpeg start, mode:', isMp4 ? 'remux' : 'libx264')
-          await ff.exec(['-i', rawVideoName, ...audioArgs, ...mapArgs, ...videoCodecArgs, ...audioCodecArgs, '-shortest', '-movflags', '+faststart', finalOutputName])
+          const videoCodecArgs = fastPath
+            ? ['-c:v', 'copy'] // بدون انکود مجدد
+            : [
+                '-vf', `fps=${targetFps},setpts=PTS-STARTPTS`,
+                '-r', String(targetFps),
+                '-c:v', 'libx264',
+                '-pix_fmt', 'yuv420p',
+                '-b:v', String(targetVideoBps),
+                '-maxrate', String(targetVideoBps),
+                '-bufsize', String(targetVideoBps * 2),
+                '-preset', 'veryfast',
+              ]
+          console.log('[EXPORT] ffmpeg start, mode:', fastPath ? 'video copy + audio sync' : 'CFR re-encode + audio sync')
+
+          const code = await ff.exec([
+            '-fflags', '+genpts',
+            '-i', rawVideoName,
+            ...audioArgs,
+            ...mapArgs,
+            ...videoCodecArgs,
+            ...audioCodecArgs,
+            '-avoid_negative_ts', 'make_zero',
+            '-shortest',
+            '-movflags', '+faststart',
+            finalOutputName,
+          ])
+          if (typeof code === 'number' && code !== 0) {
+            throw new Error(`ffmpeg با کد ${code} متوقف شد`)
+          }
           console.log('[EXPORT] ffmpeg finished')
         } finally {
           ff.off('log', onLog)
