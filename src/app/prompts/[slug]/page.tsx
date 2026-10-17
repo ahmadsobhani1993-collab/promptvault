@@ -122,7 +122,14 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
 
       <div className="grid gap-10 lg:grid-cols-[1.2fr_1fr]">
         <div>
-          <SafeImg src={getImageUrl(item.img, 1200)} isDetail={true} alt={`تصویر ${pageHeading}`} className="glow-gold w-full rounded-2xl object-cover" loading="eager" />
+          {/* ارسال URL خام به SafeImg تا خودش پردازش سایز را انجام دهد */}
+          <SafeImg 
+            src={item.img} 
+            isDetail={true} 
+            alt={`تصویر ${pageHeading}`} 
+            className="glow-gold w-full rounded-2xl object-cover" 
+            loading="eager" 
+          />
         </div>
 
         <div>
