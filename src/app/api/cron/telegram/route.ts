@@ -130,22 +130,29 @@ export async function GET(req: Request) {
       // send to output channel
       let tg: any = null
       const out = process.env.TELEGRAM_OUTPUT
-      if (out) {
+            if (out) {
         const { hour, date } = tehranNow()
         const sentDate = await getSetting('tg_sent_date', '')
-        let sentCount = sentDate === date ? parseInt(await getSetting('tg_sent_count', '0'), 10) : 0
-        if (hour >= 12 && hour <= 23 && sentCount < 24) {
+        const sentHour = await getSetting('tg_sent_hour', '-1')
+        const isDispatchHour = [0, 6, 12, 18].includes(hour)
+
+        if (isDispatchHour && (sentDate !== date || sentHour !== String(hour))) {
           const tagLine = ai.tagsFa.map((t) => '#' + t.replace(/\s+/g, '_')).join(' ')
           const usageFa = (ai.usageFa || '').trim()
           const full = '✨ ' + ai.titleFa + '\n\n📘 ' + usageFa + '\n\n📝 ' + finalPrompt + '\n\n' + tagLine + TG_FOOTER
           const short = '✨ ' + ai.titleFa + '\n\n📘 ' + usageFa + '\n\n' + tagLine + TG_FOOTER
-          const selfUrl = APP() + '/api/img/' + prompt.id
-          if (full.length <= 1024) tg = { single: await tgSendPhoto(out, selfUrl, full) }
-          else tg = { photo: await tgSendPhoto(out, selfUrl, short), code: await tgSendCode(out, finalPrompt, TG_FOOTER) }
+          
+          // استفاده از file_id مستقیم تلگرام برای اطمینان از نمایش صحیح تصویر
+          const photoUrl = m.fileId 
+          
+          if (full.length <= 1024) tg = { single: await tgSendPhoto(out, photoUrl, full) }
+          else tg = { photo: await tgSendPhoto(out, photoUrl, short), code: await tgSendCode(out, finalPrompt, TG_FOOTER) }
+          
           await setSetting('tg_sent_date', date)
-          await setSetting('tg_sent_count', String(sentCount + 1))
-        } else tg = { skipped: true, hour }
+          await setSetting('tg_sent_hour', String(hour))
+        } else tg = { skipped: true, reason: 'not dispatch hour or already sent this hour', hour }
       }
+
 
       results.push({ id: m.id, slug: prompt.slug, published: true, tg })
     } catch (e: any) {
