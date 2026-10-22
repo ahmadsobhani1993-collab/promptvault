@@ -1,4 +1,4 @@
-
+﻿
 
 import Link from 'next/link'
 import { getImageUrl } from '@/lib/image-utils';
@@ -30,18 +30,13 @@ function fmt(n: number) {
   return String(n)
 }
 
-export default function PromptCard({
-  item,
-  locale,
-  cornerTags,
-  isNew,
-}: {
+export default function PromptCard(props: any): {
   item: PromptItem
   locale: Locale
   cornerTags?: string[]
   isNew?: boolean
 }) {
-  const dead = item.likes + item.saves + item.views === 0
+  const item = props?.item || props?.prompt || {}; const dead = (Number(item?.likes) || 0) + (Number(item?.saves) || 0) + (Number(item?.views) || 0) === 0
   return (
     <article className="card-cream glow-gold p-3 transition-transform hover:-translate-y-1">
       <Link href={'/prompts/' + item.slug} className="block">
@@ -99,3 +94,4 @@ export default function PromptCard({
     </article>
   )
 }
+
