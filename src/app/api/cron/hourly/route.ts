@@ -1,4 +1,4 @@
-export const dynamic = 'force-dynamic';
+﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { isCronAuthorized } from '@/lib/cron-auth'
@@ -20,7 +20,7 @@ async function photoBuffer(promptId: string, fallback: string): Promise<Buffer |
     const row = await prisma.promptImage.findUnique({ where: { promptId } })
     if (row?.type === 'tg') {
       const token = process.env.TELEGRAM_READ_TOKEN || process.env.TELEGRAM_BOT_TOKEN
-      const g = await (// await fetch('https://api.telegram.org/bot' + token + '/getFile?file_id=' + encodeURIComponent(row.data), { signal: AbortSignal.timeout(8000) })).json()
+      const g = await fetch('https://api.telegram.org/bot' + token + '/getFile?file_id=' + encodeURIComponent(row.data), { signal: AbortSignal.timeout(8000) }).then(r => r.json()).catch(() => null)
       if (g?.result?.file_path) {
         const r = await fetch('https://api.telegram.org/file/bot' + token + '/' + g.result.file_path, { signal: AbortSignal.timeout(20000) })
         if (r.ok) {
@@ -101,4 +101,5 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ ok: true, slug: p.slug, sentTo: ['telegram', 'instagram'], igNumber: n })
 }
+
 
