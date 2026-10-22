@@ -4,38 +4,39 @@ export const maxDuration = 60
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { fetchPage, verifyImage } from '@/lib/telegram'
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { generateText } from '@/lib/gemini'
 
 const CHANNEL_USERNAME = 'promptsfa1'
 const DEFAULT_START_ID = 8143
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
-
-async function analyzePromptWithGemini(rawText: string) {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
-
-  const promptInstructions = `
-وظیفه تو استخراج و استانداردسازی پرامپت هوش مصنوعی برای انتشار در یک دایرکتوری تخصصی است.
-متن خام تلگرام:
+async function analyzePromptForDirectory(rawText: string) {
+  const instruction = `شما یک دستیار فنی استخراج پرامپت هوش مصنوعی هستید.
+متن خام دریافت شده از کانال تلگرام:
 """
 ${rawText}
 """
 
-خروجی را الزاما و فقط به صورت یک آبجکت JSON معتبر (بدون تگ های اضافی markdown) برگردان:
+خروجی را الزاما و فقط به صورت یک شیء JSON معتبر (بدون بلاک مارک‌داون و بدون هیچ متن اضافه) برگردانید با این مشخصات:
 {
-  "titleFa": "عنوان کاملا توصیفی، صریح و سرچ‌پذیر فارسی بر اساس ماهیت و کارکرد دقیق پرامپت (اصلا تبلیغاتی، استعاری یا کلیشه‌ای نباشد. مثلا: پرامپت افزایش کیفیت عکس / پرامپت پرتره استودیویی تاریک)",
-  "descFa": "توضیح کوتاه در حداکثر ۱ تا ۲ خط که صریحا توضیح می‌دهد این پرامپت اگر به ابزار داده شود دقیقا چه تغییری ایجاد می‌کند یا چه تصویری می‌سازد.",
-  "promptEn": "پرامپت انگلیسی خالص استخراج شده از متن (بدون آیدی کانال، ایموجی‌های زائد، هشتگ‌ها و متن‌های فارسی)",
+  "titleFa": "عنوان کاملا توصیفی، صریح و سرچ‌پذیر فارسی بر اساس ماهیت دقیق پرامپت. حتما با کلمه 'پرامپت ' شروع شود. اصلا تبلیغاتی، استعاری یا جذاب نباشد. دقیقا بگوید چه چیزی تولید می‌کند یا چه تغییری در تصویر می‌دهد (مثال: پرامپت افزایش کیفیت عکس، پرامپت پرتره سینمایی مردانه، پرامپت تبدیل عکس به کارتون، پرامپت طراحی لوگو مینیمال)",
+  "descFa": "توضیح کوتاه در حداکثر ۱ تا ۲ خط که صریحا توضیح می‌دهد اگر عکس یا این پرامپت را به هوش مصنوعی بدهند، دقیقا چه تغییری در خروجی می‌دهد و چه کاری انجام می‌دهد.",
+  "promptEn": "متن انگلیسی پرامپت به صورت خالص، بدون آیدی کانال، ایموجی‌ها، متن‌های فارسی و لینک‌ها",
   "categorySlug": "یک اسلاگ استاندارد متناسب: photo, portrait, realistic, art, 3d, cinematic, edit, logo"
-}
-`
+}`
 
   try {
-    const result = await model.generateContent(promptInstructions)
-    const text = result.response.text().trim().replace(/^```json/, '').replace(/```$/, '').trim()
-    return JSON.parse(text)
-  } catch (e) {
-    console.error('Gemini extraction failed:', e)
+    const { text } = await generateText({
+      instruction,
+      expectJson: true,
+      temperature: 0.2,
+      timeoutMs: 30000,
+    })
+
+    const cleaned = text.replace(/^```[a-z]*\n?/i, '').replace(/```$/i, '').trim()
+    const m = cleaned.match(/\{[\s\S]*\}/)
+    return JSON.parse(m ? m[0] : cleaned)
+  } catch (err) {
+    console.error('[Gemini Import] Analyze failed:', err)
     return null
   }
 }
@@ -45,26 +46,23 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}))
     const limit = body.limit || 5
 
-    // خواندن آخرین آیدی پردازش‌شده از دیتابیس یا شروع از 8143
     const savedSetting = await prisma.setting.findUnique({ where: { key: 'tg_last_imported_id' } })
     let lastId = savedSetting ? parseInt(savedSetting.value, 10) : DEFAULT_START_ID
     if (isNaN(lastId)) lastId = DEFAULT_START_ID
 
-    // دریافت پیام‌های کانال تلگرام
     const messages = await fetchPage(CHANNEL_USERNAME)
-    
-    // فیلتر کردن پست‌های جدیدتر از آخرین آیدی
+
     const candidates = messages
-      .filter((m) => m.id > lastId && m.img && m.text.trim().length > 30)
+      .filter((m) => m.id > lastId && m.img && m.text.trim().length > 25)
       .slice(0, limit)
 
     if (candidates.length === 0) {
       return NextResponse.json({
         ok: true,
-        message: 'هیچ پست جدیدی پس از آیدی ' + lastId + ' یافت نشد.',
+        message: `پست جدیدی پس از آیدی ${lastId} یافت نشد.`,
         lastId,
         processedCount: 0,
-        prompts: []
+        prompts: [],
       })
     }
 
@@ -75,26 +73,27 @@ export async function POST(req: Request) {
       const isImgValid = await verifyImage(msg.img)
       if (!isImgValid) continue
 
-      const analysis = await analyzePromptWithGemini(msg.text)
+      const analysis = await analyzePromptForDirectory(msg.text)
       if (!analysis || !analysis.promptEn) continue
 
-      // یافتن یا ایجاد دسته‌بندی
       let category = await prisma.category.findFirst({
-        where: { slug: analysis.categorySlug || 'general' }
+        where: { slug: analysis.categorySlug || 'photo' },
       })
       if (!category) {
         category = await prisma.category.findFirst()
       }
 
       const slug = `tg-${msg.id}`
+      const baseTitle = String(analysis.titleFa || 'پرامپت هوش مصنوعی').trim()
+      const titleFa = baseTitle.startsWith('پرامپت') ? baseTitle : `پرامپت ${baseTitle}`
 
-      // ثبت در دیتابیس بدون دستکاری بیهوده
       const created = await prisma.prompt.upsert({
         where: { slug },
         update: {
-          titleFa: analysis.titleFa,
-          descFa: analysis.descFa,
-          promptEn: analysis.promptEn,
+          titleFa,
+          descFa: String(analysis.descFa || '').trim(),
+          promptEn: String(analysis.promptEn).trim(),
+          promptFa: msg.text,
           img: msg.img,
           status: 'PUBLISHED',
           type: 'IMAGE',
@@ -102,14 +101,15 @@ export async function POST(req: Request) {
         },
         create: {
           slug,
-          titleFa: analysis.titleFa,
-          descFa: analysis.descFa,
-          promptEn: analysis.promptEn,
+          titleFa,
+          descFa: String(analysis.descFa || '').trim(),
+          promptEn: String(analysis.promptEn).trim(),
+          promptFa: msg.text,
           img: msg.img,
           status: 'PUBLISHED',
           type: 'IMAGE',
           categoryId: category ? category.id : null,
-        }
+        },
       })
 
       processed.push({
@@ -119,28 +119,26 @@ export async function POST(req: Request) {
         descFa: created.descFa,
         promptEn: created.promptEn,
         img: created.img,
-        slug: created.slug
+        slug: created.slug,
       })
 
       lastId = Math.max(lastId, msg.id)
     }
 
-    // به‌روزرسانی نشانگر آخرین آیدی پردازش‌شده در دیتابیس
     await prisma.setting.upsert({
       where: { key: 'tg_last_imported_id' },
       update: { value: String(lastId) },
-      create: { key: 'tg_last_imported_id', value: String(lastId) }
+      create: { key: 'tg_last_imported_id', value: String(lastId) },
     })
 
     return NextResponse.json({
       ok: true,
       lastId,
       processedCount: processed.length,
-      prompts: processed
+      prompts: processed,
     })
-
   } catch (error: any) {
-    console.error('Batch import error:', error)
+    console.error('[Batch Import] Server error:', error)
     return NextResponse.json({ ok: false, error: String(error?.message ?? error) }, { status: 500 })
   }
 }
