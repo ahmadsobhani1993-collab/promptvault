@@ -18,7 +18,7 @@ export default function ImportConsolePage() {
 
   const handleRunBatch = async () => {
     setLoading(true)
-    setMessage('در حال استخراج ۵ پست بعدی و پالایش پرامپت‌ها با Gemini...')
+    setMessage('در حال اسکن پست‌ها، اتصال جفت‌های دو‌مرحله‌ای و پالایش با هوش مصنوعی...')
     try {
       const res = await fetch('/api/admin/batch-import', {
         method: 'POST',
@@ -30,9 +30,9 @@ export default function ImportConsolePage() {
         setLastId(data.lastId)
         if (data.prompts && data.prompts.length > 0) {
           setLogs((prev) => [...data.prompts, ...prev])
-          setMessage(`تعداد ${data.prompts.length} پرامپت جدید با موفقیت ذخیره و منتشر شد.`)
+          setMessage(`تعداد ${data.prompts.length} پرامپت تاییدشده با موفقیت ذخیره و منتشر شد.`)
         } else {
-          setMessage(data.message || 'پست جدیدی برای ثبت یافت نشد.')
+          setMessage(data.message || 'هیچ پرامپت معتبری در پیام‌های جدید یافت نشد (اخبار/متفرقه رد شدند).')
         }
       } else {
         setMessage('خطا: ' + (data.error || 'عملیات ناموفق بود.'))
@@ -48,8 +48,10 @@ export default function ImportConsolePage() {
     <div className="container-app py-10 max-w-5xl mx-auto px-4 dir-rtl text-right">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between border-b border-line pb-6 mb-8 gap-4">
         <div>
-          <h1 className="text-2xl font-black text-ink">کنسول ایمپورت هوشمند از تلگرام</h1>
-          <p className="text-sm text-ink-muted mt-1">استخراج ساختاریافته، عنوان‌گذاری صریح بر اساس سئو و پالایش با جمینای</p>
+          <h1 className="text-2xl font-black text-ink">کنسول ایمپورت هوشمند تلگرام</h1>
+          <p className="text-sm text-ink-muted mt-1">
+            شناسایی پست‌های دونقطه‌ای، حذف اخبار و پالایش عنوان‌های صریح سئومحور
+          </p>
         </div>
 
         <div className="flex items-center gap-4 bg-surface px-4 py-2 rounded-2xl border border-line">
@@ -64,11 +66,7 @@ export default function ImportConsolePage() {
           disabled={loading}
           className="btn-primary px-6 py-3 rounded-2xl font-bold flex items-center gap-2 text-sm transition-all"
         >
-          {loading ? (
-            <>در حال پردازش ۵ پست بعدی...</>
-          ) : (
-            <>دریافت و پردازش ۵ پرامپت بعدی ⚡</>
-          )}
+          {loading ? 'در حال پالایش و استخراج...' : 'دریافت و پردازش ۵ پرامپت بعدی ⚡'}
         </button>
 
         {message && (
@@ -79,11 +77,11 @@ export default function ImportConsolePage() {
       </div>
 
       <div className="space-y-4">
-        <h2 className="text-base font-bold text-ink">پرامپت‌های پردازش‌شده در این نشست:</h2>
+        <h2 className="text-base font-bold text-ink">پرامپت‌های استخراج‌شده در این نشست:</h2>
         
         {logs.length === 0 ? (
           <div className="card p-12 text-center text-ink-muted border-dashed border-2 border-line">
-            هنوز در این سشن دکمه را نزده‌اید. با فشردن دکمه بالا ۵ پست پردازش می‌شوند.
+            پیامی ثبت نشده است. با فشردن دکمه بالا فرآیند استخراج اجرا می‌شود.
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
