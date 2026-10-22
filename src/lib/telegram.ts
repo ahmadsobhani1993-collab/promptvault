@@ -104,14 +104,14 @@ export async function diagnoseChannel(username: string) {
   }
 }
 
-const TG = () => 'https://api.telegram.org/bot' + process.env.TELEGRAM_BOT_TOKEN
+const TG = () => 'https://api.telegram.org/bot' + (process.env.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_READ_TOKEN)
 
-export async function tgSendText(chat: string, text: string): Promise<boolean> {
+export async function tgSendText(chat: string, text: string, parseMode: 'HTML' | 'Markdown' = 'HTML'): Promise<boolean> {
   try {
     const res = await fetch(TG() + '/sendMessage', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chat, text }),
+      body: JSON.stringify({ chat_id: chat, text, parse_mode: parseMode }),
       signal: AbortSignal.timeout(8000),
     })
     return res.ok
@@ -120,12 +120,23 @@ export async function tgSendText(chat: string, text: string): Promise<boolean> {
   }
 }
 
-export async function tgSendPhoto(chat: string, photo: string, caption: string): Promise<boolean> {
+// ارسال عکس همراه با پشتیبانی از فرمت‌های متنی HTML و مارک‌داون
+export async function tgSendPhoto(
+  chat: string,
+  photo: string,
+  caption?: string,
+  parseMode: 'HTML' | 'Markdown' = 'HTML'
+): Promise<boolean> {
   try {
     const res = await fetch(TG() + '/sendPhoto', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chat, photo, caption }),
+      body: JSON.stringify({
+        chat_id: chat,
+        photo,
+        caption,
+        parse_mode: parseMode,
+      }),
       signal: AbortSignal.timeout(10000),
     })
     return res.ok
@@ -163,7 +174,6 @@ export async function verifyImage(url: string): Promise<boolean> {
     return false
   }
 }
-
 
 // get a FRESH signed image URL by opening the single post page
 export async function fetchFreshImage(username: string, id: number): Promise<string | null> {
