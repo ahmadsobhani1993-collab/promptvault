@@ -1,4 +1,4 @@
-export const revalidate = 3600
+﻿export const revalidate = 3600
 
 import Link from 'next/link'
 import { getImageUrl } from '@/lib/image-utils'
@@ -20,18 +20,18 @@ function buildSeoTitle(raw: string): string {
 export async function generateMetadata({ params }: { params: any }): Promise<Metadata> {
   try {
     const resolvedParams = params ? (params instanceof Promise ? await params : params) : null
-    const slug = resolvedParams && typeof resolvedParams === 'object' ? (resolvedParams as any).slug : undefined
+    const slug = resolvedParams?.slug
     if (!slug || typeof slug !== 'string') return {}
     const item = await getPromptBySlug(slug, true)
     if (!item) return {}
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://promptsfa.ir'
     const pageTitle = buildSeoTitle(item.titleFa || '')
-    const pageDesc = `${pageTitle}. مشاهده، کپی و راهنمای استفاده از پرامپت برای مدل هوش مصنوعی ${item.model}.`.slice(0, 160)
+    const pageDesc = (item.descFa || `${pageTitle}. مشاهده، کپی و راهنمای استفاده از پرامپت برای مدل هوش مصنوعی ${item.model}.`).slice(0, 160)
 
     let ogImageUrl = `${appUrl}/placeholder.jpg`
     if (item.img && !item.img.includes('placeholder')) {
-      ogImageUrl = getImageUrl(item.img,)
+      ogImageUrl = getImageUrl(item.img)
     }
 
     return {
@@ -67,7 +67,7 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
 
 export default async function PromptDetailPage({ params, forcedLocale }: { params: any; forcedLocale?: Locale }) {
   const resolvedParams = params ? (params instanceof Promise ? await params : params) : null
-  const slug = resolvedParams && typeof resolvedParams === 'object' ? (resolvedParams as any).slug : undefined
+  const slug = resolvedParams?.slug
   const locale: Locale = forcedLocale || 'fa'
 
   if (!slug || typeof slug !== 'string') {
@@ -83,18 +83,19 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
   const item = await getPromptBySlug(slug, false)
   if (!item) notFound()
 
-  const related = await getRelatedPrompts(item.categoryId, slug, item.tagsFa || [])
+  const related = await getRelatedPrompts(item.categoryId || '', slug, item.tagsFa || [])
 
   const comments = await prisma.comment.findMany({
     where: { promptId: item.id },
     orderBy: { createdAt: 'desc' },
     include: { user: true },
-  })
+  }).catch(() => [])
 
   const desc = L(locale, item.descFa ?? '', item.descEn ?? '')
   const usage = L(locale, item.usageFa ?? '', item.usageEn ?? '')
   const pageHeading = buildSeoTitle(item.titleFa || '')
-  const categoryName = L(locale, item.category?.nameFa ?? '', item.category?.nameEn ?? '')
+  const categoryName = L(locale, item.category?.nameFa ?? 'عمومی', item.category?.nameEn ?? 'General')
+  const categorySlug = item.category?.slug ?? 'all'
 
   return (
     <section className="container-app py-16">
@@ -106,7 +107,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
             '@type': 'TechArticle',
             headline: pageHeading,
             description: item.descFa || item.prompt,
-            image: getImageUrl(item.img,),
+            image: getImageUrl(item.img),
             datePublished: item.createdAt,
             author: { '@type': 'Organization', name: 'PromptsFA', url: 'https://promptsfa.ir' },
             publisher: {
@@ -122,9 +123,8 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
 
       <div className="grid gap-10 lg:grid-cols-[1.2fr_1fr]">
         <div>
-          {/* ارسال URL خام به SafeImg تا خودش پردازش سایز را انجام دهد */}
           <SafeImg 
-            src={item.img} 
+            src={getImageUrl(item.img)} 
             isDetail={true} 
             alt={`تصویر ${pageHeading}`} 
             className="glow-gold w-full rounded-2xl object-cover" 
@@ -134,11 +134,11 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
 
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <Link href={'/categories/' + item.category.slug} className="gold-badge transition-colors hover:bg-gold/25">
+            <Link href={'/categories/' + categorySlug} className="gold-badge transition-colors hover:bg-gold/25">
               {categoryName}
             </Link>
             {item.sub && (
-              <Link href={'/categories/' + item.category.slug + '?sub=' + item.sub.slug} className="badge transition-colors hover:border-gold/60 hover:text-gold-bright">
+              <Link href={'/categories/' + categorySlug + '?sub=' + item.sub.slug} className="badge transition-colors hover:border-gold/60 hover:text-gold-bright">
                 {L(locale, item.sub.fa, item.sub.en)}
               </Link>
             )}
@@ -172,8 +172,8 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
           <PromptUserInteractions
             promptId={item.id}
             slug={item.slug}
-            initialLikes={item.likes}
-            initialSaves={item.saves}
+            initialLikes={item.likes || 0}
+            initialSaves={item.saves || 0}
             pageHeading={pageHeading}
             desc={desc}
             locale={locale}
@@ -182,7 +182,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
           {usage && (
             <div className="mt-6 rounded-2xl border border-line bg-elevated p-5">
               <h2 className="text-sm font-bold text-gold-bright">
-                {L(locale, '📘 راهنمای استفاده', '📘 How to use')}
+                {L(locale, '📖 راهنمای استفاده', '📖 How to use')}
               </h2>
               <p className="mt-3 text-sm leading-7 text-ink-muted">{usage}</p>
             </div>
@@ -190,27 +190,22 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
         </div>
       </div>
 
-      {related.length > 0 && (
+      {comments && (
         <div className="mt-16">
-          <h2 className="font-display text-xl font-bold tracking-tight">{L(locale, 'پرامپت‌های مشابه', 'Related prompts')}</h2>
-          <div className="mt-6 grid grid-cols-2 gap-5 md:grid-cols-3">
-            {related.map((r) => (
-              <PromptCard key={r.id} item={r} locale={locale} />
+          <RealCommentBox promptId={item.id} initialComments={comments} />
+        </div>
+      )}
+
+      {related && related.length > 0 && (
+        <div className="mt-20 border-t border-line/60 pt-10">
+          <h2 className="text-xl font-bold mb-6 text-ink">پرامپت‌های مرتبط</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {related.map((rel: any) => (
+              <PromptCard key={rel.id} prompt={rel} />
             ))}
           </div>
         </div>
       )}
-
-      <RealCommentBox
-        initial={comments.map((c) => ({ id: c.id, name: c.user?.name ?? c.name, image: c.user?.image ?? null, text: c.text, createdAt: new Date(c.createdAt).toLocaleString('fa-IR') }))}
-        targetId={item.id}
-        targetType="prompt"
-        titleLabel={L(locale, 'دیدگاه‌ها', 'Comments')}
-        textPlaceholder={L(locale, 'دیدگاهت را بنویس...', 'Write your comment...')}
-        submitLabel={L(locale, 'ارسال دیدگاه', 'Submit')}
-        loginRequired={L(locale, 'برای ارسال دیدگاه ابتدا وارد شو', 'Login to comment')}
-        isLoggedIn={false}
-      />
     </section>
   )
 }
