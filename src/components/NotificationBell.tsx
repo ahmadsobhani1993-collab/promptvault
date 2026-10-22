@@ -74,6 +74,7 @@ export default function NotificationBell() {
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
+        aria-label="اعلان‌های مرورگر"
         className="relative grid h-9 w-9 place-items-center rounded-full border border-line bg-surface text-ink-muted hover:border-gold/50 hover:text-gold-bright transition-all"
       >
         <span className="text-base">🔔</span>

@@ -53,7 +53,6 @@ export default async function DesktopHeader({ locale }: DesktopHeaderProps) {
   const session = await auth()
   const categories = await getCategories()
   
-  // دریافت نوتیفیکیشن‌های کاربر
   let notifications: Array<{ id: string; text: string; url: string; createdAt: Date }> = []
   if (session?.user?.id) {
     const notifs = await prisma.notification.findMany({
@@ -89,9 +88,13 @@ export default async function DesktopHeader({ locale }: DesktopHeaderProps) {
               {L(locale, 'کاوش', 'Explore')}
             </Link>
 
-            {/* دسته‌بندی‌ها با آیکون SVG */}
+            {/* دسته‌بندی‌ها */}
             <div className="group relative">
-              <button type="button" className="flex items-center gap-1 rounded-lg px-3 py-1.5 transition-colors hover:bg-gold/10 hover:text-gold-bright whitespace-nowrap">
+              <button 
+                type="button" 
+                aria-label={L(locale, 'مشاهده دسته‌بندی‌ها', 'View Categories')}
+                className="flex items-center gap-1 rounded-lg px-3 py-1.5 transition-colors hover:bg-gold/10 hover:text-gold-bright whitespace-nowrap"
+              >
                 {L(locale, 'دسته‌بندی‌ها', 'Categories')}
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -125,7 +128,11 @@ export default async function DesktopHeader({ locale }: DesktopHeaderProps) {
 
             {/* ابزارها */}
             <div className="group relative">
-              <button type="button" className="flex items-center gap-1 rounded-lg px-3 py-1.5 transition-colors hover:bg-gold/10 hover:text-gold-bright whitespace-nowrap">
+              <button 
+                type="button" 
+                aria-label={L(locale, 'مشاهده ابزارها', 'View Tools')}
+                className="flex items-center gap-1 rounded-lg px-3 py-1.5 transition-colors hover:bg-gold/10 hover:text-gold-bright whitespace-nowrap"
+              >
                 {L(locale, 'ابزارها', 'Tools')}
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -162,9 +169,12 @@ export default async function DesktopHeader({ locale }: DesktopHeaderProps) {
 
           <LocaleSwitcher />
 
-          {/* نوتیفیکیشن - با لینک به /notifications */}
+          {/* نوتیفیکیشن */}
           <div className="group relative">
-            <button className="relative flex h-9 w-9 items-center justify-center rounded-full border border-line/60 bg-surface/50 text-ink-muted transition-colors hover:border-gold/40 hover:text-gold-bright">
+            <button 
+              aria-label={L(locale, 'مشاهده اعلان‌ها', 'View Notifications')}
+              className="relative flex h-9 w-9 items-center justify-center rounded-full border border-line/60 bg-surface/50 text-ink-muted transition-colors hover:border-gold/40 hover:text-gold-bright"
+            >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
@@ -199,10 +209,11 @@ export default async function DesktopHeader({ locale }: DesktopHeaderProps) {
             </div>
           </div>
 
-          {/* آواتار */}
+          {/* آواتار / لاگین */}
           {session?.user ? (
             <Link
               href="/account"
+              aria-label={session.user.name || 'حساب کاربری'}
               className="relative h-9 w-9 overflow-hidden rounded-full border-2 border-gold-bright/50 bg-[#120f09] transition-all hover:border-gold-bright"
               title={session.user.name || 'پروفایل'}
             >
@@ -219,7 +230,11 @@ export default async function DesktopHeader({ locale }: DesktopHeaderProps) {
               )}
             </Link>
           ) : (
-            <Link href="/login" className="flex h-9 w-9 items-center justify-center rounded-full border border-line/60 bg-surface/50 text-ink-muted transition-colors hover:border-gold/40 hover:text-gold-bright">
+            <Link 
+              href="/login" 
+              aria-label={L(locale, 'ورود به حساب کاربری', 'Login to account')}
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-line/60 bg-surface/50 text-ink-muted transition-colors hover:border-gold/40 hover:text-gold-bright"
+            >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
               </svg>
