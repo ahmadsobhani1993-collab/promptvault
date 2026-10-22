@@ -10,9 +10,8 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   images: {
-    // فعال‌سازی کش طولانی‌مدت (۱ سال) برای جلوگیری از رندر مجدد روی ورسل
-    minimumCacheTTL: 31536000,
-    formats: ['image/avif', 'image/webp'],
+    // ۱. صفر کردن کامل مصرف CPU ورسل
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: 'https',
@@ -66,6 +65,7 @@ const nextConfig = {
           { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
         ],
       },
+      // ۲. قطع درخواست‌های تکراری به آروان با کش محلی ۱ ساله در مرورگر کاربر
       {
         source: '/(.*)\\.(jpg|jpeg|png|webp|avif|ico|svg|mp4)',
         headers: [
