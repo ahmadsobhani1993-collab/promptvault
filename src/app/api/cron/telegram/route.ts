@@ -30,14 +30,12 @@ export async function GET(req: Request) {
   const url = new URL(req.url)
   const isForceTest = url.searchParams.get('force') === 'true'
 
-  // اعتبارسنجی هدر کران‌جاب (در تست دستی نادیده گرفته می‌شود)
   if (!isForceTest && !isCronAuthorized(req)) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
   const outChannel = process.env.TELEGRAM_OUTPUT || TG_ID
 
-  // زمان‌بندی ۶ ساعته (ساعت‌های ۰، ۶، ۱۲، ۱۸ تهران)
   const { hour, date } = tehranNow()
   const sentDate = await getSetting('tg_sent_date', '')
   const sentHour = await getSetting('tg_sent_hour', '-1')
@@ -53,7 +51,6 @@ export async function GET(req: Request) {
   }
 
   try {
-    // ۱. شمارش پرامپت‌های منتشرشده دارای تصویر
     const totalCount = await prisma.prompt.count({
       where: {
         status: 'PUBLISHED',
@@ -66,7 +63,6 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: 'هیچ پرامپت معتبری یافت نشد' }, { status: 404 })
     }
 
-    // ۲. انتخاب تصادفی یک پرامپت
     const skip = Math.floor(Math.random() * totalCount)
     const prompt = await prisma.prompt.findFirst({
       where: {
@@ -82,20 +78,28 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: 'خطا در لود پرامپت تصادفی' }, { status: 404 })
     }
 
-    // ۳. آماده‌سازی آدرس عکس (آروان با SSL پایدار)
     let finalPhotoUrl = getImageUrl(prompt.img)
     if (finalPhotoUrl.includes('media.promptsfa.ir')) {
       finalPhotoUrl = finalPhotoUrl.replace('media.promptsfa.ir', 'promptfa.s3.eu-west1.arvanstorage.ir')
     }
 
-    // ۴. ساخت ساختار کپشن درخواستی: عکس + عنوان + لینک + آیدی کانال
     const promptUrl = `${APP()}/prompts/${prompt.slug}`
-    const caption = `✨ <b>${prompt.titleFa}</b>\n\n🔗 <b>دیدن و کپی پرامپت در سایت:</b>\n${promptUrl}\n\n🆔 ${TG_ID}`
 
-    // ۵. ارسال عکس و کپشن تک‌مرحله‌ای
+    // پاک‌سازی کاراکترهای رزرو شده مارک‌داون برای جلوگیری از شکستن فرمت تلگرام
+    const cleanTitle = (prompt.titleFa || 'پرامپت جدید هوش مصنوعی')
+      .replace(/[_*[\]()~`>#+-=|{}.!]/g, ' ')
+      .trim()
+
+    // ساخت کپشن با Markdown تمیز و هایپرلینک بدون تگ HTML
+    const caption = 
+`✨ *${cleanTitle}*
+
+🔗 [دیدن و کپی پرامپت در سایت](${promptUrl})
+
+🆔 ${TG_ID}`
+
     const sent = await tgSendPhoto(outChannel, finalPhotoUrl, caption)
 
-    // ثبت زمان ارسال در صورت موفقیت
     if (sent && !isForceTest) {
       await setSetting('tg_sent_date', date)
       await setSetting('tg_sent_hour', String(hour))

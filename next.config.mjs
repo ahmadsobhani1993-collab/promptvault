@@ -10,9 +10,7 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   images: {
-    // ۱. صفر کردن مصرف CPU و محدودیت‌های ورسل
-    unoptimized: true,
-    // ۲. کش حداکثری ۱ ساله برای بهینه‌سازی کلاینت
+    // فعال‌سازی کش طولانی‌مدت (۱ سال) برای جلوگیری از رندر مجدد روی ورسل
     minimumCacheTTL: 31536000,
     formats: ['image/avif', 'image/webp'],
     remotePatterns: [
@@ -57,12 +55,10 @@ const nextConfig = {
   },
   async headers() {
     return [
-      // هدرهای امنیتی عمومی
       {
         source: '/:path*',
         headers: securityHeaders,
       },
-      // هدرهای ایزولاسیون برای FFmpeg WebAssembly
       {
         source: '/ffmpeg/(.*)',
         headers: [
@@ -70,7 +66,6 @@ const nextConfig = {
           { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
         ],
       },
-      // هدر کش ۱ ساله برای تمام فرمت‌های تصویری و ویدیویی در مرورگر
       {
         source: '/(.*)\\.(jpg|jpeg|png|webp|avif|ico|svg|mp4)',
         headers: [
