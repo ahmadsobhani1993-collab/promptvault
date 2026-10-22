@@ -85,14 +85,12 @@ export async function GET(req: Request) {
 
     const promptUrl = `${APP()}/prompts/${prompt.slug}`
 
-    // فرار دادن کاراکترهای رزرو شده HTML برای جلوگیری از خطای تلگرام
     const cleanTitle = (prompt.titleFa || 'پرامپت جدید هوش مصنوعی')
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .trim()
 
-    // ساخت کپشن با تگ‌های معتبر HTML
     const caption = 
 `✨ <b>${cleanTitle}</b>
 
@@ -100,7 +98,7 @@ export async function GET(req: Request) {
 
 🆔 ${TG_ID}`
 
-    const sent = await tgSendPhoto(outChannel, finalPhotoUrl, caption)
+    const sent = await tgSendPhoto(outChannel, finalPhotoUrl, caption, 'HTML')
 
     if (sent && !isForceTest) {
       await setSetting('tg_sent_date', date)

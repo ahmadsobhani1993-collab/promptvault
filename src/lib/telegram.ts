@@ -106,7 +106,7 @@ export async function diagnoseChannel(username: string) {
 
 const TG = () => 'https://api.telegram.org/bot' + (process.env.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_READ_TOKEN)
 
-export async function tgSendText(chat: string, text: string, parseMode: 'HTML' | 'Markdown' = 'HTML'): Promise<boolean> {
+export async function tgSendText(chat: string, text: string, parseMode: string = 'HTML'): Promise<boolean> {
   try {
     const res = await fetch(TG() + '/sendMessage', {
       method: 'POST',
@@ -120,12 +120,11 @@ export async function tgSendText(chat: string, text: string, parseMode: 'HTML' |
   }
 }
 
-// ارسال عکس همراه با پشتیبانی از فرمت‌های متنی HTML و مارک‌داون
 export async function tgSendPhoto(
   chat: string,
   photo: string,
   caption?: string,
-  parseMode: 'HTML' | 'Markdown' = 'HTML'
+  parseMode: string = 'HTML'
 ): Promise<boolean> {
   try {
     const res = await fetch(TG() + '/sendPhoto', {
@@ -175,7 +174,6 @@ export async function verifyImage(url: string): Promise<boolean> {
   }
 }
 
-// get a FRESH signed image URL by opening the single post page
 export async function fetchFreshImage(username: string, id: number): Promise<string | null> {
   const url = 'https://t.me/' + username + '/' + id
   let html: string | null = null
