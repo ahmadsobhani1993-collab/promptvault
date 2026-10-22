@@ -83,19 +83,28 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
   const item = await getPromptBySlug(slug, false)
   if (!item) notFound()
 
-  const related = await getRelatedPrompts(item.categoryId || '', slug, item.tagsFa || [])
+  const safeTagsFa = Array.isArray(item.tagsFa) ? item.tagsFa : []
+  const related = await getRelatedPrompts(item.categoryId || '', slug, safeTagsFa).catch(() => [])
 
-  const comments = await prisma.comment.findMany({
+  // دریافت و سریالایز کامنت‌ها برای جلوگیری از ارور Hydration / Client Exception تاریخ Date
+  const rawComments = await prisma.comment.findMany({
     where: { promptId: item.id },
     orderBy: { createdAt: 'desc' },
     include: { user: true },
   }).catch(() => [])
+
+  const serializedComments = rawComments.map((c: any) => ({
+    ...c,
+    createdAt: c.createdAt ? new Date(c.createdAt).toISOString() : null,
+    updatedAt: c.updatedAt ? new Date(c.updatedAt).toISOString() : null,
+  }))
 
   const desc = L(locale, item.descFa ?? '', item.descEn ?? '')
   const usage = L(locale, item.usageFa ?? '', item.usageEn ?? '')
   const pageHeading = buildSeoTitle(item.titleFa || '')
   const categoryName = L(locale, item.category?.nameFa ?? 'عمومی', item.category?.nameEn ?? 'General')
   const categorySlug = item.category?.slug ?? 'all'
+  const finalImgUrl = getImageUrl(item.img)
 
   return (
     <section className="container-app py-16">
@@ -107,8 +116,8 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
             '@type': 'TechArticle',
             headline: pageHeading,
             description: item.descFa || item.prompt,
-            image: getImageUrl(item.img),
-            datePublished: item.createdAt,
+            image: finalImgUrl,
+            datePublished: item.createdAt ? new Date(item.createdAt).toISOString() : undefined,
             author: { '@type': 'Organization', name: 'PromptsFA', url: 'https://promptsfa.ir' },
             publisher: {
               '@type': 'Organization',
@@ -116,7 +125,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
               logo: { '@type': 'ImageObject', url: 'https://promptsfa.ir/favicon.ico' },
             },
             inLanguage: locale === 'fa' ? 'fa-IR' : 'en-US',
-            keywords: (item.tagsFa || []).join(', '),
+            keywords: safeTagsFa.join(', '),
           }),
         }}
       />
@@ -124,7 +133,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
       <div className="grid gap-10 lg:grid-cols-[1.2fr_1fr]">
         <div>
           <SafeImg 
-            src={getImageUrl(item.img)} 
+            src={finalImgUrl} 
             isDetail={true} 
             alt={`تصویر ${pageHeading}`} 
             className="glow-gold w-full rounded-2xl object-cover" 
@@ -172,8 +181,8 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
           <PromptUserInteractions
             promptId={item.id}
             slug={item.slug}
-            initialLikes={item.likes || 0}
-            initialSaves={item.saves || 0}
+            initialLikes={Number(item.likes) || 0}
+            initialSaves={Number(item.saves) || 0}
             pageHeading={pageHeading}
             desc={desc}
             locale={locale}
@@ -190,11 +199,9 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
         </div>
       </div>
 
-      {comments && (
-        <div className="mt-16">
-          <RealCommentBox promptId={item.id} initialComments={comments} />
-        </div>
-      )}
+      <div className="mt-16">
+        <RealCommentBox promptId={item.id} initialComments={serializedComments} />
+      </div>
 
       {related && related.length > 0 && (
         <div className="mt-20 border-t border-line/60 pt-10">
