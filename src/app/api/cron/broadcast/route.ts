@@ -1,4 +1,4 @@
-﻿export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { tgSendPhoto } from '@/lib/telegram'
@@ -43,9 +43,9 @@ export async function GET(req: Request) {
 
   const tagLine = (pick.tagsFa ?? []).map((t) => '#' + t.replace(/\s+/g, '_')).join(' ')
   const url = APP() + '/prompts/' + pick.slug
-  const caption = '✨ ' + pick.titleFa + '\n\n📘 ' + (pick.usageFa ?? '') + '\n\n' + tagLine + '\n\n🌐 ' + url + TG_FOOTER
+  const caption = '? ' + pick.titleFa + '\n\n?? ' + (pick.usageFa ?? '') + '\n\n' + tagLine + '\n\n?? ' + url + TG_FOOTER
 
-  const r = await tgSendPhoto(out, pick.img, caption)
+  const r = // await tgSendPhoto(out, pick.img, caption)
 
   await setSetting('bc_sent_date', date)
   await setSetting('bc_sent_count', String(sent + 1))

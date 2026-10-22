@@ -1,4 +1,4 @@
-﻿export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { isCronAuthorized } from '@/lib/cron-auth'
@@ -20,7 +20,7 @@ async function photoBuffer(promptId: string, fallback: string): Promise<Buffer |
     const row = await prisma.promptImage.findUnique({ where: { promptId } })
     if (row?.type === 'tg') {
       const token = process.env.TELEGRAM_READ_TOKEN || process.env.TELEGRAM_BOT_TOKEN
-      const g = await (await fetch('https://api.telegram.org/bot' + token + '/getFile?file_id=' + encodeURIComponent(row.data), { signal: AbortSignal.timeout(8000) })).json()
+      const g = await (// await fetch('https://api.telegram.org/bot' + token + '/getFile?file_id=' + encodeURIComponent(row.data), { signal: AbortSignal.timeout(8000) })).json()
       if (g?.result?.file_path) {
         const r = await fetch('https://api.telegram.org/file/bot' + token + '/' + g.result.file_path, { signal: AbortSignal.timeout(20000) })
         if (r.ok) {
@@ -43,7 +43,7 @@ async function tgPhotoBytes(chat: string, buf: Buffer, caption: string) {
   form.append('chat_id', chat)
   form.append('photo', new Blob([new Uint8Array(buf)], { type: 'image/jpeg' }), 'photo.jpg')
   form.append('caption', caption)
-  const r = await fetch('https://api.telegram.org/bot' + token + '/sendPhoto', { method: 'POST', body: form, signal: AbortSignal.timeout(30000) })
+  const r = // await fetch('https://api.telegram.org/bot' + token + '/sendPhoto', { method: 'POST', body: form, signal: AbortSignal.timeout(30000) })
   return await r.json()
 }
 
@@ -83,7 +83,7 @@ export async function GET(req: Request) {
   const tgOut = process.env.TELEGRAM_OUTPUT
   if (tgOut) {
     const buf = await photoBuffer(p.id, p.img)
-    if (buf) await tgPhotoBytes(tgOut, buf, '✨ ' + p.titleFa + ' \n\n🔗 ' + slugLink).catch(() => {})
+    if (buf) await tgPhotoBytes(tgOut, buf, '? ' + p.titleFa + ' \n\n?? ' + slugLink).catch(() => {})
     await tgSendCode(tgOut, p.prompt, '\n\n' + tagLine + '\n\nPROMPTSFA.IR\n@Prompts_fa').catch(() => {})
   }
 
@@ -91,8 +91,8 @@ export async function GET(req: Request) {
   const n = parseInt(await getSet('ig_counter', '20'), 10)
   const igCaption =
     tagLine +
-    '\n\nبرای دریافت پرامپت‌های بیشتر به سایت ما مراجعه کنید\n' +
-    'برای دریافت این پرامپت ابتدا ما را فالو کرده و سپس عدد ' + faDigits(n) + ' را ارسال کنید.'
+    '\n\n???? ?????? ?????????? ????? ?? ???? ?? ?????? ????\n' +
+    '???? ?????? ??? ?????? ????? ?? ?? ???? ???? ? ??? ??? ' + faDigits(n) + ' ?? ????? ????.'
   await sendToInstagramCustom(p, igCaption).catch(() => {})
   await setSet('ig_counter', String(n + 1))
 

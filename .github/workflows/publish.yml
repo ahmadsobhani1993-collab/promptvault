@@ -1,4 +1,4 @@
-name: publish-prompts
+﻿name: Telegram Auto Dispatch
 
 on:
   schedule:
@@ -6,10 +6,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  publish:
+  dispatch:
     runs-on: ubuntu-latest
     steps:
-      - name: Publish 5 pending prompts
+      - name: Trigger Clean Telegram Dispatch
         run: |
-          curl -sS "https://promptsfa.ir/api/cron/publish" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+          curl -sS -f "https://promptsfa.ir/api/cron/telegram?force=true" || true
