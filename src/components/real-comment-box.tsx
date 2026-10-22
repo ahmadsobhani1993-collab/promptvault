@@ -58,8 +58,8 @@ export default function RealCommentBox({
     }
   }
 
-  const roots = list.filter((c) => !c.parentId)
-  const kids = (id: string) => list.filter((c) => c.parentId === id)
+  const safeList = Array.isArray(list) ? list : []; const roots = safeList.filter((c) => !c.parentId)
+  const kids = (id: string) => (Array.isArray(list) ? list : []).filter((c) => c.parentId === id)
 
   const renderOne = (c: Comment, depth: number) => {
     const profileSlug = c.username || c.userId
@@ -158,3 +158,4 @@ export default function RealCommentBox({
     </div>
   )
 }
+
