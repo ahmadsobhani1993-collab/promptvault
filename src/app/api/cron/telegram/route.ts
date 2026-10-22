@@ -85,16 +85,18 @@ export async function GET(req: Request) {
 
     const promptUrl = `${APP()}/prompts/${prompt.slug}`
 
-    // پاک‌سازی کاراکترهای رزرو شده مارک‌داون برای جلوگیری از شکستن فرمت تلگرام
+    // فرار دادن کاراکترهای رزرو شده HTML برای جلوگیری از خطای تلگرام
     const cleanTitle = (prompt.titleFa || 'پرامپت جدید هوش مصنوعی')
-      .replace(/[_*[\]()~`>#+-=|{}.!]/g, ' ')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
       .trim()
 
-    // ساخت کپشن با Markdown تمیز و هایپرلینک بدون تگ HTML
+    // ساخت کپشن با تگ‌های معتبر HTML
     const caption = 
-`✨ *${cleanTitle}*
+`✨ <b>${cleanTitle}</b>
 
-🔗 [دیدن و کپی پرامپت در سایت](${promptUrl})
+🔗 <a href="${promptUrl}">دیدن و کپی پرامپت در سایت</a>
 
 🆔 ${TG_ID}`
 
