@@ -1,23 +1,24 @@
-﻿export const dynamic = 'force-dynamic';
-import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import { tgSendText, tgSendPhoto, tgSendCode } from '@/lib/telegram'
-import { analyzeWithGemini } from '@/lib/gemini'
-import { isCronAuthorized } from '@/lib/cron-auth'
-import { sendDueTelegram, sendDueInstagram } from '@/lib/schedule'
-
+﻿export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const TG_FOOTER = '\n\n@Prompts_fa'
+import { NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
+import { tgSendPhoto } from '@/lib/telegram'
+import { isCronAuthorized } from '@/lib/cron-auth'
+import { getImageUrl } from '@/lib/image-utils'
+
+const TG_ID = '@Prompts_fa'
 const APP = () => process.env.NEXT_PUBLIC_APP_URL ?? 'https://promptsfa.ir'
 
 async function getSetting(key: string, def: string) {
   const s = await prisma.setting.findUnique({ where: { key } })
   return s?.value ?? def
 }
+
 async function setSetting(key: string, value: string) {
   await prisma.setting.upsert({ where: { key }, update: { value }, create: { key, value } })
 }
+
 function tehranNow() {
   const now = new Date()
   const hour = parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tehran', hour: 'numeric', hour12: false }).format(now), 10)
@@ -26,142 +27,93 @@ function tehranNow() {
 }
 
 export async function GET(req: Request) {
-  if (!isCronAuthorized(req)) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  const url = new URL(req.url)
+  const isForceTest = url.searchParams.get('force') === 'true'
 
-  const token = process.env.TELEGRAM_READ_TOKEN || process.env.TELEGRAM_BOT_TOKEN
-  if (!token) return NextResponse.json({ error: 'no bot token' }, { status: 500 })
-  const api = (m: string, q?: Record<string, string>) =>
-    'https://api.telegram.org/bot' + token + '/' + m + (q ? '?' + new URLSearchParams(q).toString() : '')
-
-  const channelUser = process.env.TELEGRAM_CHANNEL ?? 'Prompts_fa'
-
-  // clean old scraping queue once
-  if ((await getSetting('tg_queue_cleaned', '0')) !== '1') {
-    await prisma.telegramQueue.updateMany({ where: { status: 'PENDING' }, data: { status: 'SKIPPED' } }).catch(() => {})
-    await setSetting('tg_queue_cleaned', '1')
+  // اعتبارسنجی هدر کران‌جاب (در تست دستی نادیده گرفته می‌شود)
+  if (!isForceTest && !isCronAuthorized(req)) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
-  // channel id
-  let chatId = await getSetting('tg_chat_id', '')
-  if (!chatId) {
-    const cr = await (await fetch(api('getChat', { chat_id: '@' + channelUser }), { signal: AbortSignal.timeout(8000) })).json()
-    if (!cr.ok) return NextResponse.json({ ok: false, error: 'getChat failed: ' + (cr.description ?? '') }, { status: 500 })
-    chatId = String(cr.result.id)
-    await setSetting('tg_chat_id', chatId)
+  const outChannel = process.env.TELEGRAM_OUTPUT || TG_ID
+
+  // زمان‌بندی ۶ ساعته (ساعت‌های ۰، ۶، ۱۲، ۱۸ تهران)
+  const { hour, date } = tehranNow()
+  const sentDate = await getSetting('tg_sent_date', '')
+  const sentHour = await getSetting('tg_sent_hour', '-1')
+  const isDispatchHour = [0, 6, 12, 18].includes(hour)
+
+  if (!isForceTest && (!isDispatchHour || (sentDate === date && sentHour === String(hour)))) {
+    return NextResponse.json({
+      ok: true,
+      skipped: true,
+      reason: 'ساعت ارسال فرا نرسیده یا در این بازه قبلاً ارسال شده است.',
+      tehranHour: hour,
+    })
   }
 
-  // get new channel posts
-  let offset = parseInt(await getSetting('tg_update_offset2', '0'), 10)
-  const ur = await (await fetch(api('getUpdates', { offset: String(offset), limit: '100', timeout: '3' }), { signal: AbortSignal.timeout(30000) })).json()
-  const ups: any[] = ur.result ?? []
+  try {
+    // ۱. شمارش پرامپت‌های منتشرشده دارای تصویر
+    const totalCount = await prisma.prompt.count({
+      where: {
+        status: 'PUBLISHED',
+        type: 'IMAGE',
+        img: { not: '' },
+      },
+    })
 
-  const posts: any[] = []
-  for (const u of ups) {
-    const p = u.channel_post
-    if (p && String(p.chat.id) === chatId && !p.from?.is_bot) posts.push(p)
-    if (u.update_id + 1 > offset) offset = u.update_id + 1
-  }
-  await setSetting('tg_update_offset2', String(offset))
-
-  if (!posts.length) {
-    
-    const scheduledTg = await sendDueTelegram().catch(() => [])
-    const scheduledIg = await sendDueInstagram().catch(() => [])
-    return NextResponse.json({ ok: true, phase: 'idle', offset, scheduledTg, scheduledIg })
-  }
-
-  // merge photo + following long text (look ahead up to 3)
-  const merged: { id: number; text: string; fileId: string | null }[] = []
-  for (let i = 0; i < posts.length; i++) {
-    const cur = posts[i]
-    const curText = (cur.caption || cur.text || '').trim()
-    const fileId = cur.photo?.length ? cur.photo[cur.photo.length - 1].file_id : null
-    if (fileId && curText.length < 60) {
-      let j = i + 1
-      let longText = ''
-      while (j < posts.length && j <= i + 3) {
-        const cand = posts[j]
-        if (!cand.photo && ((cand.text || cand.caption || '').trim().length > 60)) { longText = (cand.text || cand.caption).trim(); break }
-        j++
-      }
-      if (longText) { merged.push({ id: cur.message_id, text: longText, fileId }); i = j }
-      else merged.push({ id: cur.message_id, text: curText, fileId })
-    } else {
-      merged.push({ id: cur.message_id, text: curText, fileId })
+    if (totalCount === 0) {
+      return NextResponse.json({ ok: false, error: 'هیچ پرامپت معتبری یافت نشد' }, { status: 404 })
     }
-  }
 
-  const results: any[] = []
-  for (const m of merged.slice(0, 1)) {
-    if (!m.fileId || !m.text) { results.push({ id: m.id, skipped: 'no image or text' }); continue }
+    // ۲. انتخاب تصادفی یک پرامپت
+    const skip = Math.floor(Math.random() * totalCount)
+    const prompt = await prisma.prompt.findFirst({
+      where: {
+        status: 'PUBLISHED',
+        type: 'IMAGE',
+        img: { not: '' },
+      },
+      skip,
+      include: { category: true },
+    })
 
-    // keep only file_id (image lives on Telegram forever)
-    const fileId = m.fileId
-    if (!fileId) { results.push({ id: m.id, skipped: 'no file id' }); continue }
-
-    try {
-      const categories = await prisma.category.findMany()
-      let ai
-      try {
-        ai = await analyzeWithGemini({ text: m.text, imgBase64: null, categories })
-      } catch {
-        ai = await analyzeWithGemini({ text: m.text, imgBase64: null, categories })
-      }
-
-      const cat = await prisma.category.findUnique({ where: { slug: ai.categorySlug } })
-      const finalPrompt = (ai.promptEn || m.text).trim()
-
-      const prompt = await prisma.prompt.create({
-        data: {
-          titleFa: ai.titleFa, titleEn: ai.titleEn, descFa: ai.descFa, descEn: ai.descEn,
-          usageFa: ai.usageFa, usageEn: ai.usageEn,
-          slug: 'tg-' + m.id,
-          img: APP() + '/api/img/new-' + m.id,
-          model: /--v\s?\d|--ar/.test(finalPrompt) ? 'Midjourney' : 'AI',
-          type: 'IMAGE', status: 'PUBLISHED',
-          categoryId: cat?.id ?? categories[0].id,
-          tagsFa: ai.tagsFa, tagsEn: ai.tagsEn, prompt: finalPrompt,
-                    views: 1 + Math.floor(Math.random() * 10),
-        },
-      })
-      await prisma.prompt.update({ where: { id: prompt.id }, data: { img: APP() + '/api/img/' + prompt.id } })
-      await prisma.promptImage.create({ data: { promptId: prompt.id, data: fileId, type: 'tg' } }).catch(() => {})
-
-      // send to output channel
-      let tg: any = null
-      const out = process.env.TELEGRAM_OUTPUT
-            if (out) {
-        const { hour, date } = tehranNow()
-        const sentDate = await getSetting('tg_sent_date', '')
-        const sentHour = await getSetting('tg_sent_hour', '-1')
-        const isDispatchHour = [0, 6, 12, 18].includes(hour)
-
-        if (isDispatchHour && (sentDate !== date || sentHour !== String(hour))) {
-          const tagLine = ai.tagsFa.map((t) => '#' + t.replace(/\s+/g, '_')).join(' ')
-          const usageFa = (ai.usageFa || '').trim()
-          const full = '✨ ' + ai.titleFa + '\n\n📘 ' + usageFa + '\n\n📝 ' + finalPrompt + '\n\n' + tagLine + TG_FOOTER
-          const short = '✨ ' + ai.titleFa + '\n\n📘 ' + usageFa + '\n\n' + tagLine + TG_FOOTER
-          
-          // استفاده از file_id مستقیم تلگرام برای اطمینان از نمایش صحیح تصویر
-          const photoUrl = m.fileId 
-          
-          if (full.length <= 1024) tg = { single: await tgSendPhoto(out, photoUrl, full) }
-          else tg = { photo: await tgSendPhoto(out, photoUrl, short), code: await tgSendCode(out, finalPrompt, TG_FOOTER) }
-          
-          await setSetting('tg_sent_date', date)
-          await setSetting('tg_sent_hour', String(hour))
-        } else tg = { skipped: true, reason: 'not dispatch hour or already sent this hour', hour }
-      }
-
-
-      results.push({ id: m.id, slug: prompt.slug, published: true, tg })
-    } catch (e: any) {
-      results.push({ id: m.id, error: String(e?.message ?? e) })
+    if (!prompt) {
+      return NextResponse.json({ ok: false, error: 'خطا در لود پرامپت تصادفی' }, { status: 404 })
     }
-  }
 
-  await sendDueTelegram().catch(() => [])
-  await sendDueInstagram().catch(() => [])
-  return NextResponse.json({ ok: true, phase: 'processed', newPosts: posts.length, results })
+    // ۳. آماده‌سازی آدرس عکس (آروان با SSL پایدار)
+    let finalPhotoUrl = getImageUrl(prompt.img)
+    if (finalPhotoUrl.includes('media.promptsfa.ir')) {
+      finalPhotoUrl = finalPhotoUrl.replace('media.promptsfa.ir', 'promptfa.s3.eu-west1.arvanstorage.ir')
+    }
+
+    // ۴. ساخت ساختار کپشن درخواستی: عکس + عنوان + لینک + آیدی کانال
+    const promptUrl = `${APP()}/prompts/${prompt.slug}`
+    const caption = `✨ <b>${prompt.titleFa}</b>\n\n🔗 <b>دیدن و کپی پرامپت در سایت:</b>\n${promptUrl}\n\n🆔 ${TG_ID}`
+
+    // ۵. ارسال عکس و کپشن تک‌مرحله‌ای
+    const sent = await tgSendPhoto(outChannel, finalPhotoUrl, caption)
+
+    // ثبت زمان ارسال در صورت موفقیت
+    if (sent && !isForceTest) {
+      await setSetting('tg_sent_date', date)
+      await setSetting('tg_sent_hour', String(hour))
+    }
+
+    return NextResponse.json({
+      ok: true,
+      sentSuccessfully: sent,
+      prompt: {
+        id: prompt.id,
+        slug: prompt.slug,
+        title: prompt.titleFa,
+        img: finalPhotoUrl,
+        url: promptUrl,
+      },
+    })
+  } catch (err: any) {
+    console.error('Telegram dispatch error:', err)
+    return NextResponse.json({ ok: false, error: String(err?.message ?? err) }, { status: 500 })
+  }
 }
-

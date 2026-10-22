@@ -10,8 +10,20 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   images: {
+    // ۱. صفر کردن مصرف CPU و محدودیت‌های ورسل
+    unoptimized: true,
+    // ۲. کش حداکثری ۱ ساله برای بهینه‌سازی کلاینت
+    minimumCacheTTL: 31536000,
     formats: ['image/avif', 'image/webp'],
     remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'promptfa.s3.eu-west1.arvanstorage.ir',
+      },
+      {
+        protocol: 'https',
+        hostname: 'res.cloudinary.com',
+      },
       {
         protocol: 'https',
         hostname: '**',
@@ -45,17 +57,27 @@ const nextConfig = {
   },
   async headers() {
     return [
-      // ۱. هدرهای امنیتی عمومی برای تمام مسیرها (دست‌نخورده)
+      // هدرهای امنیتی عمومی
       {
         source: '/:path*',
         headers: securityHeaders,
       },
-      // . هدرهای اختصاصی برای FFmpeg (جدید و امن)
+      // هدرهای ایزولاسیون برای FFmpeg WebAssembly
       {
         source: '/ffmpeg/(.*)',
         headers: [
           { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
           { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
+        ],
+      },
+      // هدر کش ۱ ساله برای تمام فرمت‌های تصویری و ویدیویی در مرورگر
+      {
+        source: '/(.*)\\.(jpg|jpeg|png|webp|avif|ico|svg|mp4)',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
         ],
       },
     ]
