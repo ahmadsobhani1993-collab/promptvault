@@ -55,12 +55,16 @@ export default async function DesktopHeader({ locale }: DesktopHeaderProps) {
   
   let notifications: Array<{ id: string; text: string; url: string; createdAt: Date }> = []
   if (session?.user?.id) {
-    const notifs = await prisma.notification.findMany({
-      where: { userId: session.user.id },
-      orderBy: { createdAt: 'desc' },
-      take: 5,
-    })
-    notifications = notifs
+    try {
+      const notifs = await prisma.notification.findMany({
+        where: { userId: session.user.id },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+      })
+      notifications = notifs || []
+    } catch (e) {
+      notifications = []
+    }
   }
 
   const tools = [

@@ -206,8 +206,8 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
       {related && related.length > 0 && (
         <div className="mt-20 border-t border-line/60 pt-10">
           <h2 className="text-xl font-bold mb-6 text-ink">پرامپت‌های مرتبط</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {related.map((rel: any) => (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            {related.slice(0, 4).map((rel: any) => (
               <PromptCard key={rel.id} prompt={rel} />
             ))}
           </div>
@@ -216,3 +216,4 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
     </section>
   )
 }
+

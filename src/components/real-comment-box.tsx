@@ -4,158 +4,173 @@ import { useState } from 'react'
 import Link from 'next/link'
 
 type Comment = {
-  id: string
-  parentId?: string | null
-  userId?: string | null
-  username?: string | null
-  name: string
-  image?: string | null
-  text: string
-  createdAt: string
+  id: string
+  parentId?: string | null
+  userId?: string | null
+  username?: string | null
+  name: string
+  image?: string | null
+  text: string
+  createdAt: string
 }
 
 export default function RealCommentBox({
-  initial,
-  targetId,
-  targetType,
-  titleLabel,
-  textPlaceholder,
-  submitLabel,
-  loginRequired,
-  isLoggedIn,
+  initial = [],
+  initialComments,
+  targetId,
+  promptId,
+  targetType = 'prompt',
+  titleLabel = 'دیدگاه‌ها',
+  textPlaceholder = 'دیدگاه یا تجربه خود را درباره این پرامپت بنویسید...',
+  submitLabel = 'ثبت دیدگاه',
+  loginRequired = 'برای ثبت نظر لطفاً وارد حساب خود شوید.',
+  isLoggedIn = false,
 }: {
-  initial: Comment[]
-  targetId: string
-  targetType: 'prompt' | 'article'
-  titleLabel: string
-  textPlaceholder: string
-  submitLabel: string
-  loginRequired: string
-  isLoggedIn: boolean
+  initial?: Comment[]
+  initialComments?: Comment[]
+  targetId?: string
+  promptId?: string
+  targetType?: 'prompt' | 'article'
+  titleLabel?: string
+  textPlaceholder?: string
+  submitLabel?: string
+  loginRequired?: string
+  isLoggedIn?: boolean
 }) {
-  const [list, setList] = useState<Comment[]>(initial)
-  const [text, setText] = useState('')
-  const [replyTo, setReplyTo] = useState<Comment | null>(null)
+  const effectiveInitial = Array.isArray(initial) && initial.length > 0 
+    ? initial 
+    : (Array.isArray(initialComments) ? initialComments : [])
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!text.trim()) return
-    if (!isLoggedIn) {
-      alert(loginRequired)
-      window.location.href = '/login'
-      return
-    }
-    const res = await fetch('/api/comments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: text.trim(), targetId, targetType, parentId: replyTo?.id ?? null }),
-    })
-    if (res.ok) {
-      const c = await res.json()
-      setList([c, ...list])
-      setText('')
-      setReplyTo(null)
-    }
-  }
+  const [list, setList] = useState<Comment[]>(effectiveInitial)
+  const [text, setText] = useState('')
+  const [replyTo, setReplyTo] = useState<Comment | null>(null)
 
-  const safeList = Array.isArray(list) ? list : []; const roots = safeList.filter((c) => !c.parentId)
-  const kids = (id: string) => (Array.isArray(list) ? list : []).filter((c) => c.parentId === id)
+  const effectiveTargetId = targetId || promptId || ''
 
-  const renderOne = (c: Comment, depth: number) => {
-    const profileSlug = c.username || c.userId
-    const profileUrl = profileSlug ? `/u/${profileSlug}` : null
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!text.trim()) return
+    if (!isLoggedIn) {
+      alert(loginRequired)
+      window.location.href = '/login'
+      return
+    }
+    const res = await fetch('/api/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        text: text.trim(), 
+        targetId: effectiveTargetId, 
+        targetType, 
+        parentId: replyTo?.id ?? null 
+      }),
+    })
+    if (res.ok) {
+      const c = await res.json()
+      setList((prev) => [c, ...(Array.isArray(prev) ? prev : [])])
+      setText('')
+      setReplyTo(null)
+    }
+  }
 
-    return (
-      <div
-        key={c.id}
-        className={
-          depth > 0
-            ? 'mr-6 mt-3 rounded-xl border border-line/60 bg-elevated/60 p-4'
-            : 'rounded-xl border border-line bg-elevated p-4'
-        }
-      >
-        <div className="flex items-center gap-3">
-          {profileUrl ? (
-            <Link
-              href={profileUrl}
-              className="relative block h-8 w-8 shrink-0 overflow-hidden rounded-full border border-gold/40 transition-transform hover:scale-110 hover:border-gold-bright"
-            >
-              {c.image ? (
-                <img src={c.image} alt={c.name} className="h-full w-full object-cover" />
-              ) : (
-                <div className="grid h-full w-full place-items-center bg-gold/20 text-xs font-bold text-gold-bright">
-                  {c.name ? c.name[0] : 'U'}
-                </div>
-              )}
-            </Link>
-          ) : (
-            <div className="relative block h-8 w-8 shrink-0 overflow-hidden rounded-full border border-line bg-surface">
-              {c.image ? (
-                <img src={c.image} alt={c.name} className="h-full w-full object-cover" />
-              ) : (
-                <div className="grid h-full w-full place-items-center bg-gold/20 text-xs font-bold text-gold-bright">
-                  {c.name ? c.name[0] : 'U'}
-                </div>
-              )}
-            </div>
-          )}
+  const safeList = Array.isArray(list) ? list : []
+  const roots = safeList.filter((c) => !c.parentId)
+  const kids = (id: string) => safeList.filter((c) => c.parentId === id)
 
-          <div>
-            {profileUrl ? (
-              <Link
-                href={profileUrl}
-                className="text-xs font-bold text-gold-bright transition-colors hover:underline hover:text-gold"
-              >
-                {c.name}
-              </Link>
-            ) : (
-              <p className="text-xs font-bold text-gold-bright">{c.name}</p>
-            )}
-            <p className="text-[10px] text-ink-faint">{c.createdAt}</p>
-          </div>
-        </div>
+  const renderOne = (c: Comment, depth: number) => {
+    const profileSlug = c.username || c.userId
+    const profileUrl = profileSlug ? `/u/${profileSlug}` : null
 
-        <p className="mt-3 text-sm leading-6 text-ink-muted">{c.text}</p>
-        <button
-          type="button"
-          onClick={() => setReplyTo(c)}
-          className="mt-2 text-[11px] text-ink-faint transition-colors hover:text-gold-bright"
-        >
-          ↩️ پاسخ
-        </button>
+    return (
+      <div
+        key={c.id}
+        className={
+          depth > 0
+            ? 'mr-6 mt-3 rounded-xl border border-line/60 bg-elevated/60 p-4'
+            : 'rounded-xl border border-line bg-elevated p-4'
+        }
+      >
+        <div className="flex items-center justify-between text-xs text-ink-muted mb-2">
+          <div className="flex items-center gap-2">
+            {c.image ? (
+              <img src={c.image} alt="" className="w-6 h-6 rounded-full object-cover" />
+            ) : (
+              <span className="w-6 h-6 rounded-full bg-gold/20 text-gold-bright flex items-center justify-center font-bold text-[10px]">
+                {c.name?.[0] || 'U'}
+              </span>
+            )}
+            {profileUrl ? (
+              <Link href={profileUrl} className="font-bold text-ink hover:text-gold-bright transition-colors">
+                {c.name}
+              </Link>
+            ) : (
+              <span className="font-bold text-ink">{c.name}</span>
+            )}
+          </div>
+          <span className="font-mono text-[11px] text-ink-faint">
+            {c.createdAt ? new Date(c.createdAt).toLocaleDateString('fa-IR') : ''}
+          </span>
+        </div>
 
-        {kids(c.id).map((k) => renderOne(k, Math.min(depth + 1, 2)))}
-      </div>
-    )
-  }
+        <p className="text-sm text-ink leading-relaxed break-words whitespace-pre-wrap">{c.text}</p>
 
-  return (
-    <div className="card mt-10 p-6">
-      <h3 className="font-display text-lg font-bold">{titleLabel}</h3>
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setReplyTo(c)}
+            className="text-xs text-gold-bright hover:underline"
+          >
+            پاسخ به این نظر
+          </button>
+        </div>
 
-      <form className="mt-5 space-y-3" onSubmit={submit}>
-        {replyTo && (
-          <p className="text-[11px] text-gold-bright">
-            در پاسخ به «{replyTo.name}»{' '}
-            <button type="button" onClick={() => setReplyTo(null)} className="text-ink-faint hover:text-danger">
-              ✕ انصراف
-            </button>
-          </p>
-        )}
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={textPlaceholder}
-          rows={3}
-          className="input resize-none"
-        />
-        <button type="submit" className="btn-primary">
-          {submitLabel}
-        </button>
-      </form>
+        {kids(c.id).map((kid) => renderOne(kid, depth + 1))}
+      </div>
+    )
+  }
 
-      <div className="mt-6 space-y-4">{roots.map((c) => renderOne(c, 0))}</div>
-    </div>
-  )
+  return (
+    <div className="space-y-6">
+      <h3 className="text-lg font-bold text-ink flex items-center gap-2">
+        <span>💬</span>
+        <span>{titleLabel}</span>
+        <span className="text-xs font-mono bg-surface px-2 py-0.5 rounded-full border border-line text-ink-muted">
+          {safeList.length}
+        </span>
+      </h3>
+
+      <form onSubmit={submit} className="space-y-3">
+        {replyTo && (
+          <div className="flex items-center justify-between bg-gold/10 border border-gold/30 px-3 py-1.5 rounded-xl text-xs text-gold-bright">
+            <span>در حال پاسخ به: <strong>{replyTo.name}</strong></span>
+            <button type="button" onClick={() => setReplyTo(null)} className="hover:text-red-400">✕ انصراف</button>
+          </div>
+        )}
+
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={textPlaceholder}
+          rows={3}
+          className="w-full rounded-2xl border border-line bg-surface/50 p-3.5 text-sm text-ink placeholder:text-ink-muted/50 focus:border-gold focus:outline-none transition-colors"
+        />
+
+        <div className="flex justify-end">
+          <button type="submit" className="btn-primary px-5 py-2 rounded-xl text-xs font-bold">
+            {submitLabel}
+          </button>
+        </div>
+      </form>
+
+      <div className="space-y-3 pt-4">
+        {roots.length === 0 ? (
+          <p className="text-xs text-ink-muted text-center py-6 bg-surface/20 rounded-2xl border border-line/40">
+            اولین نفری باشید که برای این پرامپت نظر ثبت می‌کند.
+          </p>
+        ) : (
+          roots.map((root) => renderOne(root, 0))
+        )}
+      </div>
+    </div>
+  )
 }
-
