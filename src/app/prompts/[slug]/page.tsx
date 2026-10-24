@@ -1,4 +1,4 @@
-﻿export const revalidate = 3600
+﻿export const revalidate = 86400 // کش استاتیک ۲۴ ساعته (بدون مصرف CPU در بازدیدها)
 
 import Link from 'next/link'
 import { getImageUrl } from '@/lib/image-utils'
@@ -15,6 +15,21 @@ import PromptUserInteractions from '@/components/prompt-user-interactions'
 function buildSeoTitle(raw: string): string {
   const clean = (raw || '').trim().replace(/^پرامپت\s+/i, '').trim()
   return `پرامپت ${clean} | PromptsFA`
+}
+
+// ساخت صفحات استاتیک در زمان بیلد جهت به صفر رساندن مصرف CPU ورسل
+export async function generateStaticParams() {
+  try {
+    const prompts = await prisma.prompt.findMany({
+      where: { status: 'PUBLISHED' },
+      select: { slug: true },
+      take: 200,
+      orderBy: { createdAt: 'desc' }
+    })
+    return prompts.map((p) => ({ slug: p.slug }))
+  } catch (e) {
+    return []
+  }
 }
 
 export async function generateMetadata({ params }: { params: any }): Promise<Metadata> {
@@ -84,20 +99,26 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
   if (!item) notFound()
 
   const safeTagsFa = Array.isArray(item.tagsFa) ? item.tagsFa : []
-  const related = await getRelatedPrompts(item.categoryId || '', slug, safeTagsFa).catch(() => [])
+  const relatedAll = await getRelatedPrompts(item.categoryId || '', slug, safeTagsFa).catch(() => [])
+  const related = Array.isArray(relatedAll) ? relatedAll.slice(0, 4) : []
 
-  // دریافت و سریالایز کامنت‌ها برای جلوگیری از ارور Hydration / Client Exception تاریخ Date
-  const rawComments = await prisma.comment.findMany({
-    where: { promptId: item.id },
-    orderBy: { createdAt: 'desc' },
-    include: { user: true },
-  }).catch(() => [])
-
-  const serializedComments = rawComments.map((c: any) => ({
-    ...c,
-    createdAt: c.createdAt ? new Date(c.createdAt).toISOString() : null,
-    updatedAt: c.updatedAt ? new Date(c.updatedAt).toISOString() : null,
-  }))
+  // دریافت کامنت‌ها به شکل سبک و ایمن
+  let serializedComments: any[] = []
+  try {
+    const rawComments = await prisma.comment.findMany({
+      where: { promptId: item.id },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      include: { user: true },
+    })
+    serializedComments = rawComments.map((c: any) => ({
+      ...c,
+      createdAt: c.createdAt ? new Date(c.createdAt).toISOString() : null,
+      updatedAt: c.updatedAt ? new Date(c.updatedAt).toISOString() : null,
+    }))
+  } catch (e) {
+    serializedComments = []
+  }
 
   const desc = L(locale, item.descFa ?? '', item.descEn ?? '')
   const usage = L(locale, item.usageFa ?? '', item.usageEn ?? '')
@@ -200,14 +221,14 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
       </div>
 
       <div className="mt-16">
-        <RealCommentBox promptId={item.id} initialComments={serializedComments} />
+        <RealCommentBox targetId={item.id} initial={serializedComments} />
       </div>
 
-      {related && related.length > 0 && (
+      {related.length > 0 && (
         <div className="mt-20 border-t border-line/60 pt-10">
           <h2 className="text-xl font-bold mb-6 text-ink">پرامپت‌های مرتبط</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4">
-            {related.slice(0, 4).map((rel: any) => (
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            {related.map((rel: any) => (
               <PromptCard key={rel.id} prompt={rel} />
             ))}
           </div>
@@ -216,4 +237,3 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
     </section>
   )
 }
-
