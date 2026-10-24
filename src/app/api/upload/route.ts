@@ -1,14 +1,8 @@
 ﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
-import { v2 as cloudinary } from 'cloudinary'
+import { uploadToCloudinary } from '@/lib/cloudinary'
 
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-})
-
-const MAX_FILE_SIZE = 3 * 1024 * 1024 // 3MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // افزایش تا ۱۰ مگابایت با خیال راحت
 
 export async function POST(request: Request) {
   try {
@@ -21,7 +15,7 @@ export async function POST(request: Request) {
 
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
-        { error: 'حجم فایل نباید بیشتر از 3 مگابایت باشد' },
+        { error: 'حجم فایل نباید بیشتر از 10 مگابایت باشد' },
         { status: 400 }
       )
     }
@@ -33,21 +27,17 @@ export async function POST(request: Request) {
     const bytes = await file.arrayBuffer()
     const buffer = Buffer.from(bytes)
 
-    const result = await new Promise<any>((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        { folder: 'promptvault', resource_type: 'auto' },
-        (error, result) => {
-          if (error) reject(error)
-          else resolve(result)
-        }
-      )
-      uploadStream.end(buffer)
-    })
+    // آپلود روی ابر آروان با فرمت سبک WebP
+    const result = await uploadToCloudinary(buffer, 'user-uploads')
 
-    return NextResponse.json({ url: result.secure_url, public_id: result.public_id })
+    return NextResponse.json({
+      url: result.url,
+      public_id: result.publicId,
+      secure_url: result.url
+    })
     
-  } catch (error) {
+  } catch (error: any) {
     console.error('Upload error:', error)
-    return NextResponse.json({ error: 'خطا در آپلود' }, { status: 500 })
+    return NextResponse.json({ error: error?.message || 'خطا در آپلود' }, { status: 500 })
   }
 }
