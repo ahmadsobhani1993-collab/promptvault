@@ -34,7 +34,7 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
     const pageDesc = (item.descFa || `${pageTitle}. مشاهده، کپی و راهنمای استفاده از پرامپت برای مدل هوش مصنوعی ${item.model}.`).slice(0, 160)
 
     let ogImageUrl = `${appUrl}/placeholder.jpg`
-    if (item.img && !item.img.includes('placeholder')) {
+    if (item?.img && !item.img.includes('placeholder')) {
       ogImageUrl = getImageUrl(item.img)
     }
 
