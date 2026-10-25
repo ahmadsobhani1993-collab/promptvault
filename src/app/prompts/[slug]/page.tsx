@@ -1,4 +1,4 @@
-﻿export const revalidate = 86400 // کش استاتیک ۲۴ ساعته (بدون مصرف CPU در بازدیدها)
+export const revalidate = 86400
 
 import Link from 'next/link'
 import { getImageUrl } from '@/lib/image-utils'
@@ -17,19 +17,8 @@ function buildSeoTitle(raw: string): string {
   return `پرامپت ${clean} | PromptsFA`
 }
 
-// ساخت صفحات استاتیک در زمان بیلد جهت به صفر رساندن مصرف CPU ورسل
 export async function generateStaticParams() {
-  try {
-    const prompts = await prisma.prompt.findMany({
-      where: { status: 'PUBLISHED' },
-      select: { slug: true },
-      take: 200,
-      orderBy: { createdAt: 'desc' }
-    })
-    return prompts.map((p) => ({ slug: p.slug }))
-  } catch (e) {
-    return []
-  }
+  return []
 }
 
 export async function generateMetadata({ params }: { params: any }): Promise<Metadata> {
@@ -102,7 +91,6 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
   const relatedAll = await getRelatedPrompts(item.categoryId || '', slug, safeTagsFa).catch(() => [])
   const related = Array.isArray(relatedAll) ? relatedAll.slice(0, 4) : []
 
-  // دریافت کامنت‌ها به شکل سبک و ایمن
   let serializedComments: any[] = []
   try {
     const rawComments = await prisma.comment.findMany({
@@ -116,7 +104,7 @@ export default async function PromptDetailPage({ params, forcedLocale }: { param
       createdAt: c.createdAt ? new Date(c.createdAt).toISOString() : null,
       updatedAt: c.updatedAt ? new Date(c.updatedAt).toISOString() : null,
     }))
-  } catch (e) {
+  } catch {
     serializedComments = []
   }
 

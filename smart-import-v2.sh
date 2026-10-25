@@ -25,7 +25,7 @@ for i in {1..50}; do
   
   # 3. Wait to avoid Gemini quota limits
   echo "⏳ Waiting 12 seconds..."
-  sleep 300
+  sleep 12
 done
 
 echo "🏁 Import process finished."
