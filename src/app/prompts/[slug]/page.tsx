@@ -1,4 +1,4 @@
-export const revalidate = 86400
+export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
 import { getImageUrl } from '@/lib/image-utils'
@@ -17,14 +17,9 @@ function buildSeoTitle(raw: string): string {
   return `پرامپت ${clean} | PromptsFA`
 }
 
-export async function generateStaticParams() {
-  return []
-}
-
-export async function generateMetadata({ params }: { params: any }): Promise<Metadata> {
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   try {
-    const resolvedParams = params ? (params instanceof Promise ? await params : params) : null
-    const slug = resolvedParams?.slug
+    const { slug } = await params
     if (!slug || typeof slug !== 'string') return {}
     const item = await getPromptBySlug(slug, true)
     if (!item) return {}
@@ -34,7 +29,7 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
     const pageDesc = (item.descFa || `${pageTitle}. مشاهده، کپی و راهنمای استفاده از پرامپت برای مدل هوش مصنوعی ${item.model}.`).slice(0, 160)
 
     let ogImageUrl = `${appUrl}/placeholder.jpg`
-    if (item?.img && !item.img.includes('placeholder')) {
+    if (item.img && !item.img.includes('placeholder')) {
       ogImageUrl = getImageUrl(item.img)
     }
 
@@ -69,9 +64,14 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
   }
 }
 
-export default async function PromptDetailPage({ params, forcedLocale }: { params: any; forcedLocale?: Locale }) {
-  const resolvedParams = params ? (params instanceof Promise ? await params : params) : null
-  const slug = resolvedParams?.slug
+export default async function PromptDetailPage({ 
+  params, 
+  forcedLocale 
+}: { 
+  params: Promise<{ slug: string }>
+  forcedLocale?: Locale 
+}) {
+  const { slug } = await params
   const locale: Locale = forcedLocale || 'fa'
 
   if (!slug || typeof slug !== 'string') {
