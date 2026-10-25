@@ -33,7 +33,7 @@ export default async function LoginPage() {
             await signIn('google', { redirectTo: '/' })
           }}
         >
-          <button type="submit" className="btn-primary w-full justify-center cursor-pointer">
+          <button type="submit" className="btn-primary w-full justify-center cursor-pointer active:scale-95 transition-transform">
             {fa ? 'ورود با گوگل' : 'Continue with Google'}
           </button>
         </form>
