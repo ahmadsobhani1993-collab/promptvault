@@ -1,7 +1,8 @@
-﻿'use client'
+'use client'
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { type Locale } from '@/lib/i18n'
 import { L } from '@/lib/data'
 import LocaleSwitcher from '@/components/locale-switcher'
@@ -22,7 +23,13 @@ interface MobileHeaderProps {
 
 export default function MobileHeader({ locale, session, notifications = [] }: MobileHeaderProps) {
   const [isNotifOpen, setIsNotifOpen] = useState(false)
+  const router = useRouter()
   const userInitial = session?.user?.name ? session.user.name.charAt(0).toUpperCase() : 'U'
+
+  const handleLoginClick = (e: React.MouseEvent) => {
+    e.preventDefault()
+    router.push('/login')
+  }
 
   return (
     <header className="sticky top-0 z-40 border-b border-line/60 bg-[#070503]/95 backdrop-blur md:hidden">
@@ -57,7 +64,7 @@ export default function MobileHeader({ locale, session, notifications = [] }: Mo
               type="button"
               onClick={() => setIsNotifOpen((prev) => !prev)}
               aria-label={L(locale, 'اعلان‌ها', 'Notifications')}
-              className="relative flex h-9 w-9 items-center justify-center rounded-full border border-line/60 bg-surface/50 text-ink-muted transition-colors hover:border-gold/40 hover:text-gold-bright"
+              className="relative flex h-10 w-10 items-center justify-center rounded-full border border-line/60 bg-surface/50 text-ink-muted transition-colors hover:border-gold/40 hover:text-gold-bright"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
@@ -66,7 +73,6 @@ export default function MobileHeader({ locale, session, notifications = [] }: Mo
 
             {isNotifOpen && (
               <>
-                {/* پس‌زمینه شفاف جهت بستن پنجره با لمس بیرون منو */}
                 <div 
                   className="fixed inset-0 z-40" 
                   onClick={() => setIsNotifOpen(false)} 
@@ -115,7 +121,7 @@ export default function MobileHeader({ locale, session, notifications = [] }: Mo
             <Link
               href="/account"
               aria-label={session.user.name || 'حساب کاربری'}
-              className="relative h-9 w-9 overflow-hidden rounded-full border-2 border-gold-bright/50 bg-[#120f09]"
+              className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border-2 border-gold-bright/60 bg-[#120f09] active:scale-95 transition-transform"
               title="پروفایل"
             >
               {session.user.image ? (
@@ -131,15 +137,17 @@ export default function MobileHeader({ locale, session, notifications = [] }: Mo
               )}
             </Link>
           ) : (
-            <Link 
-              href="/login" 
+            <button 
+              type="button"
+              onClick={handleLoginClick}
               aria-label={L(locale, 'ورود به حساب کاربری', 'Login to account')}
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-line/60 bg-surface/50 text-ink-muted"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-gold/40 bg-gold/10 text-gold-bright active:scale-95 hover:bg-gold/20 transition-all cursor-pointer"
+              title="ورود"
             >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
               </svg>
-            </Link>
+            </button>
           )}
         </div>
       </div>
