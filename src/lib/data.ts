@@ -1,44 +1,39 @@
 ﻿import { cache } from 'react'
 import { unstable_cache } from 'next/cache'
-import type { Locale } from '@/lib/i18n'
 import { prisma } from '@/lib/db'
+import { type Locale } from '@/lib/i18n'
 
-export const L = (locale: Locale, fa: string, en: string) =>
-  locale === 'fa' ? fa : en
-
-export interface PromptType {
-  value: string
-  fa: string
-  en: string
+export function L(locale: Locale, fa: string, en?: string) {
+  if (locale === 'en' && en) return en
+  return fa
 }
 
-export const promptTypes: PromptType[] = [
-  { value: 'IMAGE', fa: 'تصویر', en: 'Image' },
-  { value: 'VIDEO', fa: 'ویدیو', en: 'Video' },
-  { value: 'TEXT', fa: 'متن', en: 'Text' },
-  { value: 'CODE', fa: 'کد', en: 'Code' },
-  { value: 'AUDIO', fa: 'موسیقی', en: 'Music' },
-]
-
-export const getPromptTypeLabel = (type: string, locale: Locale) => {
-  const t = promptTypes.find((x) => x.value === type)
-  return t ? L(locale, t.fa, t.en) : type
+export function getPromptTypeLabel(type: string, locale: Locale) {
+  const map: Record<string, { fa: string; en: string }> = {
+    IMAGE: { fa: 'تصویر', en: 'Image' },
+    TEXT: { fa: 'متن', en: 'Text' },
+    VIDEO: { fa: 'ویدیو', en: 'Video' },
+    CODE: { fa: 'کد', en: 'Code' },
+    MUSIC: { fa: 'موسیقی', en: 'Music' },
+    PRODUCTIVITY: { fa: 'بهره‌وری', en: 'Productivity' },
+  }
+  const t = map[type] || { fa: type, en: type }
+  return L(locale, t.fa, t.en)
 }
 
-const cardSelect = {
+export const cardSelect = {
   id: true,
   slug: true,
   titleFa: true,
   titleEn: true,
-  img: true,
+  descFa: true,
+  descEn: true,
   model: true,
   type: true,
-  tagsFa: true,
-  tagsEn: true,
-  views: true,
+  img: true,
   likes: true,
   saves: true,
-  stars: true,
+  prompt: true,
   category: { select: { nameFa: true, nameEn: true, slug: true } },
   sub: { select: { fa: true, en: true, slug: true } },
 }
@@ -68,41 +63,20 @@ export async function getPrompts(opts?: {
   if (opts?.type) where.type = opts.type
   if (opts?.categorySlug) where.category = { slug: opts.categorySlug }
   if (opts?.subSlug) where.sub = { slug: opts.subSlug }
-  if (opts?.tags && opts.tags.length > 0) where.tagsFa = { hasEvery: opts.tags }
+  if (opts?.tags && opts.tags.length > 0) where.tagsFa = { hasSome: opts.tags }
   if (opts?.q) {
-    const q = opts.q
     where.OR = [
-      { titleFa: { contains: q, mode: 'insensitive' } },
-      { titleEn: { contains: q, mode: 'insensitive' } },
-      { prompt: { contains: q, mode: 'insensitive' } },
-      { tagsFa: { hasSome: [q] } },
-      { tagsEn: { hasSome: [q] } },
+      { titleFa: { contains: opts.q, mode: 'insensitive' } },
+      { titleEn: { contains: opts.q, mode: 'insensitive' } },
+      { descFa: { contains: opts.q, mode: 'insensitive' } },
+      { prompt: { contains: opts.q, mode: 'insensitive' } },
     ]
   }
 
   const base = {
     where,
+    take: opts?.take ?? 24,
     orderBy: { createdAt: 'desc' as const },
-    take: opts?.take,
-  }
-
-    return prisma.prompt.findMany({
-      ...base,
-      select: {
-        id: true,
-        slug: true,
-        titleFa: true,
-        titleEn: true,
-        model: true,
-        type: true,
-        img: true,
-        likes: true,
-        saves: true,
-        createdAt: true,
-        category: { select: { nameFa: true, nameEn: true, slug: true } },
-        sub: { select: { fa: true, en: true, slug: true } },
-      },
-    })
   }
 
   return prisma.prompt.findMany({
@@ -131,7 +105,6 @@ export const getPromptBySlug = cache(async (slug: string, includeUnpublished = f
   })
 })
 
-// استخر چرخشی روزانه برای نمایش پرامپت‌های قدیمی و جدید
 async function fetchRelatedPrompts(categoryId: string, excludeSlug: string, tagsFa: string[]) {
   const currentDay = new Date().getDate()
   const primeMultiplier = 17
@@ -139,7 +112,6 @@ async function fetchRelatedPrompts(categoryId: string, excludeSlug: string, tags
 
   const getRotatingPool = async (whereCondition: any) => {
     const total = await prisma.prompt.count({ where: whereCondition })
-    
     if (total <= poolSize) {
       return prisma.prompt.findMany({ 
         where: whereCondition, 
@@ -173,36 +145,24 @@ async function fetchRelatedPrompts(categoryId: string, excludeSlug: string, tags
 
   const [byTags, byCategory] = await Promise.all([
     whereTags ? getRotatingPool(whereTags) : Promise.resolve([]),
-    getRotatingPool(whereCategory),
+    getRotatingPool(whereCategory)
   ])
 
-  const shuffle = (array: any[]) => array.sort(() => Math.random() - 0.5)
-  const shuffledTags = shuffle(byTags)
-  const shuffledCategory = shuffle(byCategory)
-
-  const seen = new Set<string>()
-  const result: any[] = []
-
-  for (const item of [...shuffledTags, ...shuffledCategory]) {
-    if (result.length >= 6) break
-    if (!seen.has(item.id)) {
-      seen.add(item.id)
-      result.push(item)
-    }
+  const map = new Map<string, any>()
+  for (const item of [...byTags, ...byCategory]) {
+    if (!map.has(item.id)) map.set(item.id, item)
   }
 
-  return result
+  const merged = Array.from(map.values())
+  for (let i = merged.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [merged[i], merged[j]] = [merged[j], merged[i]]
+  }
+
+  return merged.slice(0, 4)
 }
 
-const getRelatedPromptsCached = unstable_cache(
-  fetchRelatedPrompts,
-  ['related-prompts'],
-  { revalidate: 600, tags: ['prompts'] }
-)
-
-export async function getRelatedPrompts(categoryId: string, excludeSlug: string, tagsFa: string[] = []) {
-  return getRelatedPromptsCached(categoryId, excludeSlug, tagsFa ?? [])
-}
+export const getRelatedPrompts = cache(fetchRelatedPrompts)
 
 const fetchArticles = cache(async (take: number) =>
   prisma.article.findMany({ take, orderBy: { createdAt: 'desc' } })
