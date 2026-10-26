@@ -86,16 +86,41 @@ export async function getPrompts(opts?: {
     take: opts?.take,
   }
 
-  if (opts?.light) {
     return prisma.prompt.findMany({
       ...base,
-      select: { ...cardSelect, createdAt: true },
+      select: {
+        id: true,
+        slug: true,
+        titleFa: true,
+        titleEn: true,
+        model: true,
+        type: true,
+        img: true,
+        likes: true,
+        saves: true,
+        createdAt: true,
+        category: { select: { nameFa: true, nameEn: true, slug: true } },
+        sub: { select: { fa: true, en: true, slug: true } },
+      },
     })
   }
 
   return prisma.prompt.findMany({
     ...base,
-    include: { category: true, sub: true },
+    select: {
+      id: true,
+      slug: true,
+      titleFa: true,
+      titleEn: true,
+      model: true,
+      type: true,
+      img: true,
+      likes: true,
+      saves: true,
+      createdAt: true,
+      category: { select: { nameFa: true, nameEn: true, slug: true } },
+      sub: { select: { fa: true, en: true, slug: true } },
+    },
   })
 }
 
