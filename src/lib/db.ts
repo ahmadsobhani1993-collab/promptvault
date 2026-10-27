@@ -15,4 +15,6 @@ export const prisma =
     },
   })
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+// Always cache on globalThis: on Vercel (Fluid) instances are reused,
+// so this prevents several clients/connections per instance.
+globalForPrisma.prisma = prisma

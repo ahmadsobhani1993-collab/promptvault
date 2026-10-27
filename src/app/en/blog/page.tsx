@@ -1,5 +1,7 @@
-﻿import OriginalPage from '../blog/page'
+import OriginalPage from '@/app/blog/page'
 
-export default function EnPage() {
-  return <OriginalPage />
+export const dynamic = 'force-dynamic'
+
+export default function EnPage(props: any) {
+  return <OriginalPage {...props} />
 }

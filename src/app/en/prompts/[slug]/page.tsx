@@ -1,5 +1,14 @@
-﻿import OriginalPage from '../../prompts/[slug]/page'
+import PromptDetailPage from '@/app/prompts/[slug]/page'
 
-export default function EnPage() {
-  return <OriginalPage />
+export const revalidate = 3600
+export const dynamicParams = true
+
+export async function generateStaticParams() {
+  return []
+}
+
+export { generateMetadata } from '@/app/prompts/[slug]/page'
+
+export default function EnPromptDetailPage({ params }: { params: Promise<{ slug: string }> }) {
+  return <PromptDetailPage params={params} forcedLocale="en" />
 }

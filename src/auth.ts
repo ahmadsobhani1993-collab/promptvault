@@ -5,6 +5,7 @@ import { PrismaAdapter } from '@auth/prisma-adapter'
 import { prisma } from '@/lib/db'
 
 const useSecureCookies = process.env.NODE_ENV === 'production' || !!process.env.VERCEL
+const TOKEN_TTL_MS = 10 * 60 * 1000
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
@@ -17,16 +18,30 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     Credentials({
       id: 'telegram',
       name: 'Telegram',
+      // Only a one-time login token is accepted. The client can never choose the user.
       credentials: {
-        id: { label: 'Telegram ID', type: 'text' },
-        userId: { label: 'User ID', type: 'text' },
-        telegramId: { label: 'Telegram ID', type: 'text' },
+        token: { label: 'Login token', type: 'text' },
       },
       async authorize(credentials) {
-        const targetId = credentials?.userId || credentials?.id || credentials?.telegramId
-        if (!targetId) return null
+        const token = typeof credentials?.token === 'string' ? credentials.token.trim() : ''
+        if (!token || token.length > 200) return null
 
-        const idStr = String(targetId)
+        const record = await prisma.loginToken.findUnique({ where: { token } })
+        if (!record || !record.status.startsWith('CONFIRMED:')) return null
+
+        // Consume the token atomically: only one concurrent request can succeed,
+        // and expired tokens are deleted as well.
+        const { count } = await prisma.loginToken.deleteMany({
+          where: { token, status: record.status },
+        })
+        if (count !== 1) return null
+
+        const expired = Date.now() - new Date(record.createdAt).getTime() > TOKEN_TTL_MS
+        if (expired) return null
+
+        const idStr = record.status.slice('CONFIRMED:'.length).trim()
+        if (!idStr) return null
+
         let user = null
 
         if (idStr.length === 25 && idStr.startsWith('c')) {

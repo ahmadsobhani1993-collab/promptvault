@@ -1,10 +1,10 @@
-'use client'
+﻿'use client'
 
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { type Locale } from '@/lib/i18n'
-import { L } from '@/lib/data'
+import { L } from '@/lib/l'   // was: from '@/lib/data'
 import LocaleSwitcher from '@/components/locale-switcher'
 import MobileMenu from '@/components/mobile-menu'
 

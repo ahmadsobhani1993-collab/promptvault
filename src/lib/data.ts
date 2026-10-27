@@ -86,6 +86,7 @@ export async function getPrompts(opts?: {
       slug: true,
       titleFa: true,
       titleEn: true,
+      categoryId: true, 
       model: true,
       type: true,
       img: true,

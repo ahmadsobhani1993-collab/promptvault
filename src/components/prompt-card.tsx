@@ -1,7 +1,8 @@
 ﻿import Link from 'next/link'
 import { getImageUrl } from '@/lib/image-utils'
 import type { Locale } from '@/lib/i18n'
-import { L, getPromptTypeLabel } from '@/lib/data'
+import { getPromptTypeLabel } from '@/lib/data'
+import { L } from '@/lib/l'
 import SafeImg from '@/components/safe-img'
 
 type PromptItem = {
@@ -11,12 +12,12 @@ type PromptItem = {
   img: string
   model: string
   type: string
-  tagsFa: string[]
-  tagsEn: string[]
+  tagsFa?: string[]
+  tagsEn?: string[]
   likes: number
   saves: number
-  views: number
-  stars: number
+  views?: number
+  stars?: number
 }
 
 function fmt(n: number) {
@@ -36,12 +37,13 @@ export default function PromptCard(props: {
 
   return (
     <article className="rounded-2xl border border-line/60 bg-[#14120e] p-3 transition-all hover:border-gold/40 hover:-translate-y-1 shadow-md">
-      <Link href={'/prompts/' + (item.slug || '')} className="block">
+      <Link href={'/prompts/' + (item.slug || '')} prefetch={false} className="block">
         <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-surface/60">
           <SafeImg
             src={getImageUrl(item.img)}
             alt={L(locale, item.titleFa || '', item.titleEn || '')}
             className="h-full w-full object-cover"
+            loading="lazy"
           />
           <span className="absolute right-2 top-2 rounded-full bg-gold/90 px-2.5 py-0.5 text-[10px] font-bold text-[#171512] shadow">
             {item.model || 'AI'}

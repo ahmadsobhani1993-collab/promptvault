@@ -1,11 +1,12 @@
-﻿import { cookies } from 'next/headers'
+﻿'use client'
+
 import Link from 'next/link'
-import { L, type Locale } from '@/lib/data'
+import { L } from '@/lib/l'
+import { useLocale } from '@/lib/use-locale'
 import PWAInstallButton from '@/components/pwa-install-button'
 
-export default async function Footer() {
-  const cookieStore = await cookies()
-  const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
+export default function Footer() {
+  const locale = useLocale()
 
   return (
     <footer className="border-t border-line/70 bg-[#0a0805] text-ink">
@@ -26,10 +27,10 @@ export default async function Footer() {
           <div>
             <h4 className="font-display text-sm font-bold text-ink">{L(locale, 'لینک‌های سریع', 'Quick Links')}</h4>
             <nav className="mt-4 flex flex-col gap-2.5 text-sm text-ink-muted">
-              <Link href="/explore" className="transition-colors hover:text-gold-bright">{L(locale, 'کاوش پرامپت‌ها', 'Explore')}</Link>
-              <Link href="/categories" className="transition-colors hover:text-gold-bright">{L(locale, 'دسته‌بندی‌ها', 'Categories')}</Link>
-              <Link href="/blog" className="transition-colors hover:text-gold-bright">{L(locale, 'وبلاگ و آموزش', 'Blog')}</Link>
-              <Link href="/subtitle" className="transition-colors hover:text-gold-bright">{L(locale, 'استودیو زیرنویس', 'Subtitle Studio')}</Link>
+              <Link href="/explore" prefetch={false} className="transition-colors hover:text-gold-bright">{L(locale, 'کاوش پرامپت‌ها', 'Explore')}</Link>
+              <Link href="/categories" prefetch={false} className="transition-colors hover:text-gold-bright">{L(locale, 'دسته‌بندی‌ها', 'Categories')}</Link>
+              <Link href="/blog" prefetch={false} className="transition-colors hover:text-gold-bright">{L(locale, 'وبلاگ و آموزش', 'Blog')}</Link>
+              <Link href="/subtitle" prefetch={false} className="transition-colors hover:text-gold-bright">{L(locale, 'استودیو زیرنویس', 'Subtitle Studio')}</Link>
             </nav>
           </div>
           <div>

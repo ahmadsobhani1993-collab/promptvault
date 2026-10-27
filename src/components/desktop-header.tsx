@@ -1,13 +1,27 @@
-﻿import Link from 'next/link'
+﻿'use client'
+
+import Link from 'next/link'
 import type { ReactElement } from 'react'
-import { auth } from '@/auth'
-import { prisma } from '@/lib/db'
 import { type Locale } from '@/lib/i18n'
-import { getCategories, L } from '@/lib/data'
+import { L } from '@/lib/l'
 import LocaleSwitcher from '@/components/locale-switcher'
 
-// کامپوننت آیکون دسته‌بندی
-function CategoryIcon({ name, className = "w-8 h-8" }: { name: string; className?: string }) {
+export type HeaderCategory = {
+  id: string
+  slug: string
+  icon: string
+  nameFa: string
+  nameEn: string
+}
+
+type NotificationItem = {
+  id: string
+  text: string
+  url: string
+  createdAt: string | Date
+}
+
+function CategoryIcon({ name, className = 'w-8 h-8' }: { name: string; className?: string }) {
   const icons: Record<string, ReactElement> = {
     file: (
       <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -47,26 +61,19 @@ function CategoryIcon({ name, className = "w-8 h-8" }: { name: string; className
   return icons[name] || icons.file
 }
 
-interface DesktopHeaderProps { locale: Locale }
+interface DesktopHeaderProps {
+  locale: Locale
+  categories: HeaderCategory[]
+  session?: any
+  notifications?: NotificationItem[]
+}
 
-export default async function DesktopHeader({ locale }: DesktopHeaderProps) {
-  const session = await auth()
-  const categories = await getCategories()
-  
-  let notifications: Array<{ id: string; text: string; url: string; createdAt: Date }> = []
-  if (session?.user?.id) {
-    try {
-      const notifs = await prisma.notification.findMany({
-        where: { userId: session.user.id },
-        orderBy: { createdAt: 'desc' },
-        take: 5,
-      })
-      notifications = notifs || []
-    } catch (e) {
-      notifications = []
-    }
-  }
-
+export default function DesktopHeader({
+  locale,
+  categories,
+  session,
+  notifications = [],
+}: DesktopHeaderProps) {
   const tools = [
     { href: '/transcribe', label: L(locale, 'تبدیل صوت به متن', 'Speech to Text'), desc: L(locale, 'تبدیل فایل صوتی به متن', 'Convert audio to text') },
     { href: '/subtitle', label: L(locale, 'استودیو زیرنویس', 'Subtitle Studio'), desc: L(locale, 'زیرنویس خودکار ویدیو و ریلز', 'Auto subtitle for videos') },
@@ -80,22 +87,21 @@ export default async function DesktopHeader({ locale }: DesktopHeaderProps) {
   return (
     <header className="sticky top-0 z-40 border-b border-line/60 bg-[#070503]/85 backdrop-blur hidden md:block">
       <div className="container-app flex h-16 items-center justify-between gap-4">
-        
-        {/* سمت راست: لوگو + ناوبری */}
+        {/* Right: logo + navigation */}
         <div className="flex items-center gap-6">
           <Link href="/" className="font-display text-lg font-extrabold tracking-tight whitespace-nowrap">
             Prompts<span className="text-gold-bright">FA</span>
           </Link>
 
           <nav className="flex items-center gap-5 text-sm text-ink-muted">
-            <Link href="/explore" className="transition-colors hover:text-gold-bright whitespace-nowrap">
+            <Link href="/explore" prefetch={false} className="transition-colors hover:text-gold-bright whitespace-nowrap">
               {L(locale, 'کاوش', 'Explore')}
             </Link>
 
-            {/* دسته‌بندی‌ها */}
+            {/* Categories */}
             <div className="group relative">
-              <button 
-                type="button" 
+              <button
+                type="button"
                 aria-label={L(locale, 'مشاهده دسته‌بندی‌ها', 'View Categories')}
                 className="flex items-center gap-1 rounded-lg px-3 py-1.5 transition-colors hover:bg-gold/10 hover:text-gold-bright whitespace-nowrap"
               >
@@ -111,6 +117,7 @@ export default async function DesktopHeader({ locale }: DesktopHeaderProps) {
                       <Link
                         key={c.id}
                         href={'/categories/' + c.slug}
+                        prefetch={false}
                         className="group/cat flex flex-col items-center rounded-2xl border border-transparent bg-surface p-4 transition-all hover:-translate-y-1 hover:border-gold/40 hover:bg-gold/5 hover:shadow-lg"
                       >
                         <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-gold/20 to-gold/5 text-3xl transition-transform duration-300 group-hover/cat:scale-110 group-hover/cat:rotate-3">
@@ -126,14 +133,14 @@ export default async function DesktopHeader({ locale }: DesktopHeaderProps) {
               </div>
             </div>
 
-            <Link href="/blog" className="transition-colors hover:text-gold-bright whitespace-nowrap">
+            <Link href="/blog" prefetch={false} className="transition-colors hover:text-gold-bright whitespace-nowrap">
               {L(locale, 'مقالات', 'Blog')}
             </Link>
 
-            {/* ابزارها */}
+            {/* Tools */}
             <div className="group relative">
-              <button 
-                type="button" 
+              <button
+                type="button"
                 aria-label={L(locale, 'مشاهده ابزارها', 'View Tools')}
                 className="flex items-center gap-1 rounded-lg px-3 py-1.5 transition-colors hover:bg-gold/10 hover:text-gold-bright whitespace-nowrap"
               >
@@ -149,6 +156,7 @@ export default async function DesktopHeader({ locale }: DesktopHeaderProps) {
                       <Link
                         key={tool.href}
                         href={tool.href}
+                        prefetch={false}
                         className="flex flex-col rounded-xl border border-transparent p-3 transition-all hover:border-gold/30 hover:bg-gold/5"
                       >
                         <div className="text-sm font-bold text-ink">{tool.label}</div>
@@ -162,10 +170,11 @@ export default async function DesktopHeader({ locale }: DesktopHeaderProps) {
           </nav>
         </div>
 
-        {/* سمت چپ: دکمه‌ها */}
+        {/* Left: actions */}
         <div className="flex items-center gap-3">
           <Link
             href="/submit"
+            prefetch={false}
             className="inline-flex rounded-full bg-gold-bright/15 border border-gold-bright/35 px-4 py-2 text-sm font-bold text-gold-bright transition-all hover:bg-gold-bright/25 hover:border-gold-bright whitespace-nowrap"
           >
             {L(locale, 'ارسال پرامپت', 'Submit')}
@@ -173,9 +182,9 @@ export default async function DesktopHeader({ locale }: DesktopHeaderProps) {
 
           <LocaleSwitcher />
 
-          {/* نوتیفیکیشن */}
+          {/* Notifications */}
           <div className="group relative">
-            <button 
+            <button
               aria-label={L(locale, 'مشاهده اعلان‌ها', 'View Notifications')}
               className="relative flex h-9 w-9 items-center justify-center rounded-full border border-line/60 bg-surface/50 text-ink-muted transition-colors hover:border-gold/40 hover:text-gold-bright"
             >
@@ -187,7 +196,7 @@ export default async function DesktopHeader({ locale }: DesktopHeaderProps) {
               <div className="card p-4 shadow-2xl border border-gold/10">
                 <div className="mb-3 flex items-center justify-between border-b border-line pb-3">
                   <h3 className="text-sm font-bold text-ink">اعلان‌ها</h3>
-                  <Link href="/notifications" className="rounded-full bg-gold/20 px-2 py-0.5 text-[10px] font-bold text-gold-bright hover:bg-gold/30">
+                  <Link href="/notifications" prefetch={false} className="rounded-full bg-gold/20 px-2 py-0.5 text-[10px] font-bold text-gold-bright hover:bg-gold/30">
                     مشاهده همه
                   </Link>
                 </div>
@@ -196,9 +205,10 @@ export default async function DesktopHeader({ locale }: DesktopHeaderProps) {
                 ) : (
                   <div className="space-y-2">
                     {notifications.map((n) => (
-                      <Link 
-                        key={n.id} 
-                        href={n.url || '/notifications'} 
+                      <Link
+                        key={n.id}
+                        href={n.url || '/notifications'}
+                        prefetch={false}
                         className="block rounded-lg border border-line/60 bg-surface/50 p-3 transition-colors hover:bg-gold/5 hover:border-gold/30"
                       >
                         <div className="text-xs font-bold text-ink">{n.text}</div>
@@ -213,10 +223,11 @@ export default async function DesktopHeader({ locale }: DesktopHeaderProps) {
             </div>
           </div>
 
-          {/* آواتار / لاگین */}
+          {/* Avatar / login */}
           {session?.user ? (
             <Link
               href="/account"
+              prefetch={false}
               aria-label={session.user.name || 'حساب کاربری'}
               className="relative h-9 w-9 overflow-hidden rounded-full border-2 border-gold-bright/50 bg-[#120f09] transition-all hover:border-gold-bright"
               title={session.user.name || 'پروفایل'}
@@ -234,8 +245,9 @@ export default async function DesktopHeader({ locale }: DesktopHeaderProps) {
               )}
             </Link>
           ) : (
-            <Link 
-              href="/login" 
+            <Link
+              href="/login"
+              prefetch={false}
               aria-label={L(locale, 'ورود به حساب کاربری', 'Login to account')}
               className="flex h-9 w-9 items-center justify-center rounded-full border border-line/60 bg-surface/50 text-ink-muted transition-colors hover:border-gold/40 hover:text-gold-bright"
             >

@@ -1,52 +1,44 @@
 ﻿'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { signIn } from 'next-auth/react'
 
-export default function TelegramVerifyPage() {
+function VerifyInner() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const token = searchParams.get('token')
   const [error, setError] = useState<string | null>(null)
+  const startedRef = useRef(false)
 
   useEffect(() => {
+    if (startedRef.current) return
+    startedRef.current = true
+
     if (!token) {
       setError('توکن ورود یافت نشد.')
       return
     }
 
-    let isMounted = true
-
-    async function handleAuth() {
+    ;(async () => {
       try {
-        const res = await fetch(`/api/auth/telegram/verify?token=${token}`)
-        const data = await res.json()
-
-        if (!data.ok || !data.userId) {
-          if (isMounted) setError(data.error || 'خطا در اعتبارسنجی توکن.')
-          return
-        }
-
-        const resSignIn = await signIn('telegram', {
-          userId: data.userId,
+        const res = await signIn('telegram', {
+          token,
           redirect: false,
           callbackUrl: '/',
         })
 
-        if (resSignIn?.error) {
-          if (isMounted) setError('ایجاد نشست ورود با خطا مواجه شد.')
-        } else {
-          router.replace('/')
-          router.refresh()
+        if (!res || res.error) {
+          setError('توکن نامعتبر یا منقضی شده است. دوباره از طریق ربات وارد شوید.')
+          return
         }
-      } catch (err) {
-        if (isMounted) setError('خطا در برقراری ارتباط با سرور.')
-      }
-    }
 
-    handleAuth()
-    return () => { isMounted = false }
+        router.replace('/')
+        router.refresh()
+      } catch {
+        setError('خطا در برقراری ارتباط با سرور.')
+      }
+    })()
   }, [token, router])
 
   return (
@@ -75,5 +67,13 @@ export default function TelegramVerifyPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function TelegramVerifyPage() {
+  return (
+    <Suspense fallback={null}>
+      <VerifyInner />
+    </Suspense>
   )
 }
