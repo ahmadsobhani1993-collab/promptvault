@@ -1,18 +1,19 @@
-﻿export const dynamic = 'force-dynamic'
+export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import crypto from 'crypto'
 
 export async function POST() {
   try {
+    // Housekeeping: drop tokens older than one hour
+    await prisma.loginToken
+      .deleteMany({ where: { createdAt: { lt: new Date(Date.now() - 60 * 60 * 1000) } } })
+      .catch(() => {})
+
     const token = crypto.randomBytes(16).toString('hex')
 
-    // دقیقاً مطابق مدل فعلی LoginToken در دیتابیس
     await prisma.loginToken.create({
-      data: {
-        token,
-        status: 'PENDING',
-      },
+      data: { token, status: 'PENDING' },
     })
 
     const botUsername =
@@ -23,16 +24,9 @@ export async function POST() {
     const cleanBot = botUsername.replace('@', '').trim()
     const targetUrl = `https://t.me/${cleanBot}?start=${token}`
 
-    return NextResponse.json({
-      ok: true,
-      token,
-      url: targetUrl,
-    })
-  } catch (error: any) {
+    return NextResponse.json({ ok: true, token, url: targetUrl })
+  } catch (error) {
     console.error('Failed to initialize Telegram login token:', error)
-    return NextResponse.json(
-      { ok: false, error: error.message || 'Database error occurred' },
-      { status: 500 }
-    )
+    return NextResponse.json({ ok: false, error: 'خطای سرور' }, { status: 500 })
   }
 }

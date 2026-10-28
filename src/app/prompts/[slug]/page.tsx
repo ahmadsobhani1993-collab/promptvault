@@ -1,16 +1,23 @@
-export const dynamic = 'force-dynamic'
-
 import Link from 'next/link'
 import { getImageUrl } from '@/lib/image-utils'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { type Locale } from '@/lib/i18n'
-import { getPromptBySlug, getRelatedPrompts, getPromptTypeLabel, L } from '@/lib/data'
+import { getPromptForPage, getRelatedPrompts, getPromptTypeLabel } from '@/lib/data'
+import { L } from '@/lib/l'
 import { prisma } from '@/lib/db'
 import PromptCard from '@/components/prompt-card'
 import SafeImg from '@/components/safe-img'
 import RealCommentBox from '@/components/real-comment-box'
 import PromptUserInteractions from '@/components/prompt-user-interactions'
+
+// ISR: rendered once, served from the CDN, regenerated at most once per day.
+export const revalidate = 86400
+export const dynamicParams = true
+
+export async function generateStaticParams() {
+  return []
+}
 
 function buildSeoTitle(raw: string): string {
   const clean = (raw || '').trim().replace(/^پرامپت\s+/i, '').trim()
@@ -21,7 +28,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   try {
     const { slug } = await params
     if (!slug || typeof slug !== 'string') return {}
-    const item = await getPromptBySlug(slug, true)
+    const item = await getPromptForPage(slug)
     if (!item) return {}
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://promptsfa.ir'
@@ -64,12 +71,37 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   }
 }
 
-export default async function PromptDetailPage({ 
-  params, 
-  forcedLocale 
-}: { 
+async function loadComments(promptId: string): Promise<any[]> {
+  try {
+    const raw = await prisma.comment.findMany({
+      where: { promptId },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      // Only public fields: never ship the full user row (email etc.) to the client
+      include: { user: { select: { id: true, name: true, image: true } } },
+    })
+    return raw.map((c: any) => {
+      const { user, ...rest } = c
+      return {
+        ...rest,
+        userId: rest.userId ?? user?.id ?? null,
+        name: rest.name ?? user?.name ?? 'کاربر',
+        image: rest.image ?? user?.image ?? null,
+        createdAt: c.createdAt ? new Date(c.createdAt).toISOString() : null,
+        updatedAt: c.updatedAt ? new Date(c.updatedAt).toISOString() : null,
+      }
+    })
+  } catch {
+    return []
+  }
+}
+
+export default async function PromptDetailPage({
+  params,
+  forcedLocale,
+}: {
   params: Promise<{ slug: string }>
-  forcedLocale?: Locale 
+  forcedLocale?: Locale
 }) {
   const { slug } = await params
   const locale: Locale = forcedLocale || 'fa'
@@ -79,34 +111,21 @@ export default async function PromptDetailPage({
       <section className="container-app py-16 text-center">
         <h1 className="text-2xl font-bold text-red-500">{L(locale, 'پرامپت یافت نشد', 'Prompt not found')}</h1>
         <p className="mt-4 text-ink-muted">{L(locale, 'آدرس وارد شده معتبر نمی‌باشد.', 'The requested URL is invalid.')}</p>
-        <Link href="/explore" className="btn-primary mt-6 inline-flex">{L(locale, 'بازگشت به کاوش', 'Back to Explore')}</Link>
+        <Link href="/explore" prefetch={false} className="btn-primary mt-6 inline-flex">{L(locale, 'بازگشت به کاوش', 'Back to Explore')}</Link>
       </section>
     )
   }
 
-  const item = await getPromptBySlug(slug, false)
+  const item = await getPromptForPage(slug)
   if (!item) notFound()
 
   const safeTagsFa = Array.isArray(item.tagsFa) ? item.tagsFa : []
-  const relatedAll = await getRelatedPrompts(item.categoryId || '', slug, safeTagsFa).catch(() => [])
-  const related = Array.isArray(relatedAll) ? relatedAll.slice(0, 4) : []
 
-  let serializedComments: any[] = []
-  try {
-    const rawComments = await prisma.comment.findMany({
-      where: { promptId: item.id },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-      include: { user: true },
-    })
-    serializedComments = rawComments.map((c: any) => ({
-      ...c,
-      createdAt: c.createdAt ? new Date(c.createdAt).toISOString() : null,
-      updatedAt: c.updatedAt ? new Date(c.updatedAt).toISOString() : null,
-    }))
-  } catch {
-    serializedComments = []
-  }
+  const [relatedAll, serializedComments] = await Promise.all([
+    getRelatedPrompts(item.categoryId || '', slug, safeTagsFa).catch(() => []),
+    loadComments(item.id),
+  ])
+  const related = Array.isArray(relatedAll) ? relatedAll.slice(0, 4) : []
 
   const desc = L(locale, item.descFa ?? '', item.descEn ?? '')
   const usage = L(locale, item.usageFa ?? '', item.usageEn ?? '')
@@ -115,48 +134,46 @@ export default async function PromptDetailPage({
   const categorySlug = item.category?.slug ?? 'all'
   const finalImgUrl = getImageUrl(item.img)
 
+  const jsonLd = JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'TechArticle',
+    headline: pageHeading,
+    // Never fall back to the prompt text: it is login-gated
+    description: item.descFa || pageHeading,
+    image: finalImgUrl,
+    datePublished: item.createdAt ? new Date(item.createdAt).toISOString() : undefined,
+    author: { '@type': 'Organization', name: 'PromptsFA', url: 'https://promptsfa.ir' },
+    publisher: {
+      '@type': 'Organization',
+      name: 'PromptsFA',
+      logo: { '@type': 'ImageObject', url: 'https://promptsfa.ir/favicon.ico' },
+    },
+    inLanguage: locale === 'fa' ? 'fa-IR' : 'en-US',
+    keywords: safeTagsFa.join(', '),
+  }).replace(/</g, '\\u003c')
+
   return (
     <section className="container-app py-16">
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            '@context': 'https://schema.org',
-            '@type': 'TechArticle',
-            headline: pageHeading,
-            description: item.descFa || item.prompt,
-            image: finalImgUrl,
-            datePublished: item.createdAt ? new Date(item.createdAt).toISOString() : undefined,
-            author: { '@type': 'Organization', name: 'PromptsFA', url: 'https://promptsfa.ir' },
-            publisher: {
-              '@type': 'Organization',
-              name: 'PromptsFA',
-              logo: { '@type': 'ImageObject', url: 'https://promptsfa.ir/favicon.ico' },
-            },
-            inLanguage: locale === 'fa' ? 'fa-IR' : 'en-US',
-            keywords: safeTagsFa.join(', '),
-          }),
-        }}
-      />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd }} />
 
       <div className="grid gap-10 lg:grid-cols-[1.2fr_1fr]">
         <div>
-          <SafeImg 
-            src={finalImgUrl} 
-            isDetail={true} 
-            alt={`تصویر ${pageHeading}`} 
-            className="glow-gold w-full rounded-2xl object-cover" 
-            loading="eager" 
+          <SafeImg
+            src={finalImgUrl}
+            isDetail={true}
+            alt={`تصویر ${pageHeading}`}
+            className="glow-gold w-full rounded-2xl object-cover"
+            loading="eager"
           />
         </div>
 
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <Link href={'/categories/' + categorySlug} className="gold-badge transition-colors hover:bg-gold/25">
+            <Link href={'/categories/' + categorySlug} prefetch={false} className="gold-badge transition-colors hover:bg-gold/25">
               {categoryName}
             </Link>
             {item.sub && (
-              <Link href={'/categories/' + categorySlug + '?sub=' + item.sub.slug} className="badge transition-colors hover:border-gold/60 hover:text-gold-bright">
+              <Link href={'/categories/' + categorySlug + '?sub=' + item.sub.slug} prefetch={false} className="badge transition-colors hover:border-gold/60 hover:text-gold-bright">
                 {L(locale, item.sub.fa, item.sub.en)}
               </Link>
             )}

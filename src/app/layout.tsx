@@ -1,4 +1,4 @@
-﻿import { Vazirmatn } from 'next/font/google'
+import { Vazirmatn } from 'next/font/google'
 import type { Metadata } from 'next'
 import './globals.css'
 import { getCategories } from '@/lib/data'
@@ -10,7 +10,7 @@ import MouseTrail from '@/components/mouse-trail'
 
 // The lowest revalidate among layout + page wins, so keep this at the highest
 // value you want as a default; pages that need fresher data set their own lower value.
-export const revalidate = 3600
+export const revalidate = 86400
 
 const vazir = Vazirmatn({
   subsets: ['arabic', 'latin'],

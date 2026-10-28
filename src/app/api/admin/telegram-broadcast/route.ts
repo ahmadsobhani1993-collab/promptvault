@@ -20,7 +20,7 @@ async function requireAdmin() {
 }
 
 async function sendOne(chatId: string, text: string, preview: boolean, retried = false): Promise<SendResult> {
-  const token = process.env.TELEGRAM_BOT_TOKEN
+  const token = (process.env.LOGIN_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN)
   if (!token) return { status: 'failed', error: 'no bot token' }
 
   try {
@@ -63,7 +63,7 @@ export async function GET() {
   `
   return NextResponse.json({
     recipients: rows?.[0]?.c ?? 0,
-    hasToken: !!process.env.TELEGRAM_BOT_TOKEN,
+    hasToken: !!(process.env.LOGIN_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN),
   })
 }
 
@@ -71,7 +71,7 @@ export async function POST(req: Request) {
   const admin = await requireAdmin()
   if (!admin) return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
 
-  if (!process.env.TELEGRAM_BOT_TOKEN) {
+  if (!(process.env.LOGIN_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN)) {
     return NextResponse.json({ ok: false, error: 'متغیر TELEGRAM_BOT_TOKEN تنظیم نشده است.' }, { status: 500 })
   }
 

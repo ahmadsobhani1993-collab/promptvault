@@ -1,12 +1,11 @@
-﻿import { cache } from 'react'
+import { cache } from 'react'
 import { unstable_cache } from 'next/cache'
 import { prisma } from '@/lib/db'
-import { type Locale } from '@/lib/i18n'
+import { L } from '@/lib/l'
+import type { Locale } from '@/lib/i18n'
 
-export function L(locale: Locale, fa: string, en?: string) {
-  if (locale === 'en' && en) return en
-  return fa
-}
+export { L }
+export type { Locale }
 
 export function getPromptTypeLabel(type: string, locale: Locale) {
   const map: Record<string, { fa: string; en: string }> = {
@@ -34,6 +33,23 @@ export const cardSelect = {
   likes: true,
   saves: true,
   prompt: true,
+  category: { select: { nameFa: true, nameEn: true, slug: true } },
+  sub: { select: { fa: true, en: true, slug: true } },
+}
+
+// Light select for related cards: no prompt body, no long descriptions.
+const relatedSelect = {
+  id: true,
+  slug: true,
+  titleFa: true,
+  titleEn: true,
+  model: true,
+  type: true,
+  img: true,
+  likes: true,
+  saves: true,
+  tagsFa: true,
+  createdAt: true,
   category: { select: { nameFa: true, nameEn: true, slug: true } },
   sub: { select: { fa: true, en: true, slug: true } },
 }
@@ -84,9 +100,9 @@ export async function getPrompts(opts?: {
     select: {
       id: true,
       slug: true,
+      categoryId: true,
       titleFa: true,
       titleEn: true,
-      categoryId: true, 
       model: true,
       type: true,
       img: true,
@@ -99,74 +115,105 @@ export async function getPrompts(opts?: {
   })
 }
 
+// Used by admin pages and APIs that may need every column.
 export const getPromptBySlug = cache(async (slug: string, includeUnpublished = false) => {
   return prisma.prompt.findFirst({
     where: includeUnpublished ? { slug } : { slug, status: 'PUBLISHED' },
-    include: { category: true, sub: true, user: true },
+    include: {
+      category: true,
+      sub: true,
+      user: { select: { name: true, image: true } },
+    },
   })
 })
 
-async function fetchRelatedPrompts(categoryId: string, excludeSlug: string, tagsFa: string[]) {
-  const currentDay = new Date().getDate()
-  const primeMultiplier = 17
-  const poolSize = 60
+// Used only by the public prompt page: no prompt text, no imgData/imgType.
+export const getPromptForPage = cache(async (slug: string) => {
+  return prisma.prompt.findFirst({
+    where: { slug, status: 'PUBLISHED' },
+    select: {
+      id: true,
+      slug: true,
+      titleFa: true,
+      titleEn: true,
+      descFa: true,
+      descEn: true,
+      usageFa: true,
+      usageEn: true,
+      img: true,
+      model: true,
+      type: true,
+      categoryId: true,
+      tagsFa: true,
+      likes: true,
+      saves: true,
+      createdAt: true,
+      category: { select: { nameFa: true, nameEn: true, slug: true } },
+      sub: { select: { fa: true, en: true, slug: true } },
+      user: { select: { name: true, image: true } },
+    },
+  })
+})
 
-  const getRotatingPool = async (whereCondition: any) => {
-    const total = await prisma.prompt.count({ where: whereCondition })
-    if (total <= poolSize) {
-      return prisma.prompt.findMany({ 
-        where: whereCondition, 
-        take: poolSize, 
-        select: cardSelect 
-      })
-    }
-    
-    const maxOffset = total - poolSize
-    const dailySkip = (currentDay * primeMultiplier) % maxOffset
+// One shared pool per category, cached for 24h and reused by every slug of that category.
+const getCategoryPoolCached = unstable_cache(
+  async (categoryId: string) =>
+    prisma.prompt.findMany({
+      where: { status: 'PUBLISHED', categoryId },
+      orderBy: { createdAt: 'desc' },
+      take: 60,
+      select: relatedSelect,
+    }),
+  ['related-pool'],
+  { revalidate: 86400, tags: ['prompts'] }
+)
 
-    return prisma.prompt.findMany({
-      where: whereCondition,
-      skip: dailySkip,
-      take: poolSize,
-      select: cardSelect,
-    })
-  }
+export async function getRelatedPrompts(categoryId: string, excludeSlug: string, tagsFa: string[]) {
+  if (!categoryId) return []
 
-  const whereTags = tagsFa.length > 0 ? {
-    status: 'PUBLISHED',
-    tagsFa: { hasSome: tagsFa },
-    NOT: { slug: excludeSlug },
-  } : null
+  const pool = (await getCategoryPoolCached(categoryId)).filter((p) => p.slug !== excludeSlug)
+  const tagSet = new Set(tagsFa || [])
 
-  const whereCategory = {
-    status: 'PUBLISHED',
-    categoryId,
-    NOT: { slug: excludeSlug },
-  }
+  // Stable per-slug number so each page gets a different (but fixed) mix
+  let h = 0
+  for (const ch of excludeSlug) h = (h * 31 + ch.charCodeAt(0)) >>> 0
 
-  const [byTags, byCategory] = await Promise.all([
-    whereTags ? getRotatingPool(whereTags) : Promise.resolve([]),
-    getRotatingPool(whereCategory)
-  ])
+  const scored = pool.map((p, i) => ({
+    p,
+    score:
+      (Array.isArray(p.tagsFa) ? p.tagsFa.filter((t) => tagSet.has(t)).length : 0) * 100 +
+      ((h + i * 7919) % 100),
+  }))
+  scored.sort((a, b) => b.score - a.score)
 
-  const map = new Map<string, any>()
-  for (const item of [...byTags, ...byCategory]) {
-    if (!map.has(item.id)) map.set(item.id, item)
-  }
-
-  const merged = Array.from(map.values())
-  for (let i = merged.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [merged[i], merged[j]] = [merged[j], merged[i]]
-  }
-
-  return merged.slice(0, 4)
+  return scored.slice(0, 4).map((s) => s.p)
 }
 
-export const getRelatedPrompts = cache(fetchRelatedPrompts)
+// List view: skip the full article body (contentFa/contentEn)
+const articleListSelect = {
+  id: true,
+  slug: true,
+  status: true,
+  titleFa: true,
+  titleEn: true,
+  descFa: true,
+  descEn: true,
+  img: true,
+  tagFa: true,
+  tagEn: true,
+  dateFa: true,
+  dateEn: true,
+  readFa: true,
+  readEn: true,
+  createdAt: true,
+}
 
 const fetchArticles = cache(async (take: number) =>
-  prisma.article.findMany({ take, orderBy: { createdAt: 'desc' } })
+  prisma.article.findMany({
+    take,
+    orderBy: { createdAt: 'desc' },
+    select: articleListSelect,
+  })
 )
 
 export function getArticles(opts?: number | { take?: number }) {
