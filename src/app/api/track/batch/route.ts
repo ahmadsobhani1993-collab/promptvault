@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db'
 const MAX_ITEMS = 20
 const MAX_BYTES = 20_000
 const BOT_RE = /bot|crawl|spider|slurp|headless|lighthouse|preview|fetch|curl|wget|python|node/i
+const PROMPT_PATH = /^\/(?:en\/)?prompts\/([^/?#]+)\/?$/
 
 export async function POST(req: Request) {
   try {
@@ -23,7 +24,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, inserted: 0 })
     }
 
-    const data = batch.slice(0, MAX_ITEMS).map((item: any) => ({
+    const items = batch.slice(0, MAX_ITEMS)
+
+    const data = items.map((item: any) => ({
       path: String(item?.path ?? '/').slice(0, 300),
       referrer: String(item?.referrer ?? '').slice(0, 500) || null,
       ua: ua.slice(0, 200),
@@ -31,6 +34,30 @@ export async function POST(req: Request) {
     }))
 
     await prisma.pageView.createMany({ data })
+
+    // Prompt view counters: one grouped update per slug
+    const counts = new Map<string, number>()
+    for (const item of items) {
+      const m = PROMPT_PATH.exec(String(item?.path ?? ''))
+      if (!m) continue
+      let slug = m[1]
+      try {
+        slug = decodeURIComponent(slug)
+      } catch {}
+      if (!slug || slug.length > 200) continue
+      counts.set(slug, (counts.get(slug) || 0) + 1)
+    }
+
+    if (counts.size > 0) {
+      await prisma
+        .$transaction(
+          Array.from(counts, ([slug, n]) =>
+            prisma.prompt.updateMany({ where: { slug }, data: { views: { increment: n } } })
+          )
+        )
+        .catch((e) => console.error('views increment failed:', e))
+    }
+
     return NextResponse.json({ ok: true, inserted: data.length })
   } catch (err) {
     console.error('Batch track error:', err)

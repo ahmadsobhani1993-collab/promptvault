@@ -1,4 +1,4 @@
-﻿export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { analyzeWithGemini, normalizePrompt } from '@/lib/gemini'
@@ -189,7 +189,7 @@ export async function GET(req: Request) {
           tagsFa: ai.tagsFa,
           tagsEn: ai.tagsEn,
           prompt: cleanPrompt, // ← پرامپت تمیزشده ذخیره می‌شود
-          views: 1 + Math.floor(Math.random() * 10),
+          views: 0,
         },
       })
 

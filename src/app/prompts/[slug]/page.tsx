@@ -154,6 +154,8 @@ export default async function PromptDetailPage({
 
   return (
     <section className="container-app py-16">
+      {/* <--- تغییر ۲: اضافه شدن کامپوننت ردیاب ویو */}
+      
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd }} />
 
       <div className="grid gap-10 lg:grid-cols-[1.2fr_1fr]">
@@ -234,7 +236,7 @@ export default async function PromptDetailPage({
           <h2 className="text-xl font-bold mb-6 text-ink">پرامپت‌های مرتبط</h2>
           <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4">
             {related.map((rel: any) => (
-              <PromptCard key={rel.id} prompt={rel} />
+              <PromptCard key={rel.id} prompt={rel} hideStats />
             ))}
           </div>
         </div>

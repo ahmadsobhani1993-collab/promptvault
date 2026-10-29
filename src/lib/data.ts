@@ -32,6 +32,7 @@ export const cardSelect = {
   img: true,
   likes: true,
   saves: true,
+  views: true,
   prompt: true,
   category: { select: { nameFa: true, nameEn: true, slug: true } },
   sub: { select: { fa: true, en: true, slug: true } },
@@ -46,8 +47,6 @@ const relatedSelect = {
   model: true,
   type: true,
   img: true,
-  likes: true,
-  saves: true,
   tagsFa: true,
   createdAt: true,
   category: { select: { nameFa: true, nameEn: true, slug: true } },
@@ -108,6 +107,7 @@ export async function getPrompts(opts?: {
       img: true,
       likes: true,
       saves: true,
+      views: true,
       createdAt: true,
       category: { select: { nameFa: true, nameEn: true, slug: true } },
       sub: { select: { fa: true, en: true, slug: true } },
@@ -147,6 +147,7 @@ export const getPromptForPage = cache(async (slug: string) => {
       tagsFa: true,
       likes: true,
       saves: true,
+      views: true,
       createdAt: true,
       category: { select: { nameFa: true, nameEn: true, slug: true } },
       sub: { select: { fa: true, en: true, slug: true } },
@@ -164,7 +165,7 @@ const getCategoryPoolCached = unstable_cache(
       take: 60,
       select: relatedSelect,
     }),
-  ['related-pool'],
+  ['related-pool-v2'],
   { revalidate: 86400, tags: ['prompts'] }
 )
 

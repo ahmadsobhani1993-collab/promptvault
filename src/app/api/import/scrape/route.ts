@@ -1,4 +1,4 @@
-﻿export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { isCronAuthorized } from '@/lib/cron-auth'
@@ -139,7 +139,7 @@ export async function GET(req: Request) {
           tagsFa: ai.tagsFa,
           tagsEn: ai.tagsEn,
           prompt: post.text,
-          views: Math.floor(Math.random() * 50),
+          views: 0,
         },
       })
 

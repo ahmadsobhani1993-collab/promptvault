@@ -14,8 +14,8 @@ type PromptItem = {
   type: string
   tagsFa?: string[]
   tagsEn?: string[]
-  likes: number
-  saves: number
+  likes?: number
+  saves?: number
   views?: number
   stars?: number
 }
@@ -31,6 +31,7 @@ export default function PromptCard(props: {
   locale?: Locale
   cornerTags?: string[]
   isNew?: boolean
+  hideStats?: boolean
 }) {
   const item = props?.item || props?.prompt || ({} as PromptItem)
   const locale: Locale = props?.locale || 'fa'
@@ -68,10 +69,12 @@ export default function PromptCard(props: {
 
         <div className="mt-3 flex items-center justify-between border-t border-line/40 pt-2 text-[11px] text-zinc-400 font-mono">
           <span className="font-sans text-zinc-400">{getPromptTypeLabel(item.type, locale)}</span>
-          <div className="flex items-center gap-2">
-            <span>👁 {fmt(Number(item.views) || 0)}</span>
-            <span>❤ {fmt(Number(item.likes) || 0)}</span>
-          </div>
+          {!props.hideStats && (
+            <div className="flex items-center gap-2">
+              <span>👁 {fmt(Number(item.views) || 0)}</span>
+              <span>❤ {fmt(Number(item.likes) || 0)}</span>
+            </div>
+          )}
         </div>
       </Link>
     </article>
