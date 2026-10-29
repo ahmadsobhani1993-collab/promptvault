@@ -1,5 +1,6 @@
-﻿'use client'
+'use client'
 
+import { getImageUrl } from '@/lib/image-utils'
 import { useState, useRef } from 'react'
 import Link from 'next/link'
 import { signOut } from 'next-auth/react'
@@ -379,7 +380,7 @@ export default function ProfessionalDashboard({
                     className="group card overflow-hidden transition-all hover:border-gold/40"
                   >
                     <div className="aspect-square overflow-hidden bg-black/80">
-                      <PromptMediaPreview prompt={b.prompt} />
+                      <PromptMediaPreview prompt={{ ...b.prompt, img: getImageUrl(b.prompt.img) }} />
                     </div>
                     <div className="p-3">
                       <p className="line-clamp-1 text-xs font-bold">{b.prompt.titleFa}</p>
@@ -405,7 +406,7 @@ export default function ProfessionalDashboard({
                     className="group card overflow-hidden transition-all hover:border-gold/40"
                   >
                     <div className="aspect-square overflow-hidden bg-black/80">
-                      <PromptMediaPreview prompt={l.prompt} />
+                      <PromptMediaPreview prompt={{ ...l.prompt, img: getImageUrl(l.prompt.img) }} />
                     </div>
                     <div className="p-3">
                       <p className="line-clamp-1 text-xs font-bold">{l.prompt.titleFa}</p>

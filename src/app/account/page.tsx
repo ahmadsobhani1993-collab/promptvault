@@ -1,4 +1,4 @@
-﻿import { redirect } from 'next/navigation'
+import { redirect } from 'next/navigation'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import ProfessionalDashboard from '@/components/account/ProfessionalDashboard'
@@ -30,13 +30,13 @@ export default async function AccountPage() {
     }),
     prisma.like.findMany({
       where: { userId },
-      include: { prompt: { include: { category: true } } },
+      select: { id: true, prompt: { select: { id: true, slug: true, titleFa: true, img: true, type: true, category: { select: { nameFa: true } } } } },
       orderBy: { id: 'desc' },
       take: 30,
     }),
     prisma.save.findMany({
       where: { userId },
-      include: { prompt: { include: { category: true } } },
+      select: { id: true, prompt: { select: { id: true, slug: true, titleFa: true, img: true, type: true, category: { select: { nameFa: true } } } } },
       orderBy: { id: 'desc' },
       take: 30,
     }),

@@ -1,10 +1,13 @@
-﻿const ARVAN_WEBSITE_HOST = 'https://promptfa.s3-website.eu-west1.arvanstorage.ir'
+const ARVAN_WEBSITE_HOST = 'https://promptfa.s3-website.eu-west1.arvanstorage.ir'
 const ARVAN_RAW_S3 = 'promptfa.s3.eu-west1.arvanstorage.ir'
 
 export const getImageUrl = (url: string | null | undefined): string => {
   if (!url) return '/placeholder.jpg'
 
   // اگر قبلاً لینک خام S3 بوده، به هاست استاتیک پرسرعت وب تغییر می‌کند
+    // Videos stay on the raw S3 host (the static-website endpoint may not serve them correctly)
+  if (/\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(url) && url.includes(ARVAN_RAW_S3)) return url
+
   if (url.includes(ARVAN_RAW_S3)) {
     return url.replace(`https://${ARVAN_RAW_S3}`, ARVAN_WEBSITE_HOST)
   }
