@@ -1,4 +1,4 @@
-import 'vazirmatn/misc/Farsi-Digits/Vazirmatn-FD-font-face.css'; // یا import 'vazirmatn/index.css';
+import 'vazirmatn/misc/Farsi-Digits/Vazirmatn-FD-font-face.css';
 import type { Metadata } from 'next'
 import './globals.css'
 import { getCategories } from '@/lib/data'
@@ -8,8 +8,6 @@ import Analytics from '@/components/analytics'
 import ClientProviders from '@/components/client-providers'
 import MouseTrail from '@/components/mouse-trail'
 
-// The lowest revalidate among layout + page wins, so keep this at the highest
-// value you want as a default; pages that need fresher data set their own lower value.
 export const revalidate = 86400
 
 export const metadata: Metadata = {
@@ -22,7 +20,6 @@ export const metadata: Metadata = {
   },
 }
 
-// Runs before first paint: switches lang/dir/font for /en URLs (layout itself stays static).
 const localeScript = `(function(){try{var p=location.pathname;if(p==='/en'||p.indexOf('/en/')===0){var h=document.documentElement;h.lang='en';h.dir='ltr';document.body.classList.remove('font-sans')}}catch(e){}})();`
 
 async function loadHeaderCategories() {
@@ -44,7 +41,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const categories = await loadHeaderCategories()
 
   return (
-    <html lang="fa" dir="rtl" suppressHydrationWarning className={vazir.variable}>
+    <html lang="fa" dir="rtl" suppressHydrationWarning>
       <body suppressHydrationWarning className="bg-[#070503] text-ink antialiased font-sans">
         <script dangerouslySetInnerHTML={{ __html: localeScript }} />
         <HeaderShell categories={categories} />
