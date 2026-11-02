@@ -1,7 +1,5 @@
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
 }
 
 generator client {
@@ -46,8 +44,8 @@ model User {
   telegram          String?            @unique
   telegramHandle    String?            @unique
   instagram         String?
-  deleteCode        String?            // کد تایید حذف حساب
-  deleteCodeExpires DateTime?          // زمان انقضای کد حذف
+  deleteCode        String?
+  deleteCodeExpires DateTime?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @default(now()) @updatedAt
   
@@ -305,13 +303,13 @@ model AnalyticsBuffer {
 }
 
 model LoginToken {
-  token      String    @id
+  token      String   @id
   userId     String?
   telegramId String?
-  status     String    @default("PENDING")
-  createdAt  DateTime  @default(now())
+  status     String   @default("PENDING")
+  createdAt  DateTime @default(now())
   
-  user       User?     @relation(fields: [userId], references: [id])
+  user       User?    @relation(fields: [userId], references: [id])
 }
 
 model Product {

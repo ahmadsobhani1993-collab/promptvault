@@ -1,4 +1,4 @@
-import { Vazirmatn } from 'next/font/google'
+import 'vazirmatn/misc/Farsi-Digits/Vazirmatn-FD-font-face.css'; // یا import 'vazirmatn/index.css';
 import type { Metadata } from 'next'
 import './globals.css'
 import { getCategories } from '@/lib/data'
