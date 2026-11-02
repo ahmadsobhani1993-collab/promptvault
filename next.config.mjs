@@ -7,10 +7,10 @@ const securityHeaders = [
 ]
 
 const nextConfig = {
+  output: 'standalone',
   reactStrictMode: true,
   poweredByHeader: false,
   images: {
-    // ۱. صفر کردن کامل مصرف CPU ورسل
     unoptimized: true,
     remotePatterns: [
       {
@@ -65,7 +65,6 @@ const nextConfig = {
           { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
         ],
       },
-      // ۲. قطع درخواست‌های تکراری به آروان با کش محلی ۱ ساله در مرورگر کاربر
       {
         source: '/(.*)\\.(jpg|jpeg|png|webp|avif|ico|svg|mp4)',
         headers: [
