@@ -12,12 +12,6 @@ import MouseTrail from '@/components/mouse-trail'
 // value you want as a default; pages that need fresher data set their own lower value.
 export const revalidate = 86400
 
-const vazir = Vazirmatn({
-  subsets: ['arabic', 'latin'],
-  display: 'swap',
-  variable: '--font-vazir',
-})
-
 export const metadata: Metadata = {
   icons: { icon: '/favicon.svg', apple: '/icon.svg' },
   title: 'PromptsFA | هزاران پرامپت حرفه‌ای هوش مصنوعی',
