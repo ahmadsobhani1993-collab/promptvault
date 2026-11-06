@@ -1,12 +1,14 @@
-import { cookies } from 'next/headers'
+import { getRequestLocale } from '@/lib/request-locale'
 import { signIn } from '@/auth'
 import TelegramLoginButton from '@/components/TelegramLoginButton'
 
-export const metadata = { title: 'ورود | PromptsFA' }
+export async function generateMetadata() {
+  const isEn = (await getRequestLocale()) === 'en'
+  return { title: isEn ? 'Sign in | PromptsFA' : 'ورود | PromptsFA' }
+}
 
 export default async function LoginPage() {
-  const cookieStore = await cookies()
-  const fa = cookieStore.get('locale')?.value !== 'en'
+  const fa = (await getRequestLocale()) === 'fa'
 
   return (
     <section className="relative z-30 container-app grid min-h-[70vh] place-items-center py-16" dir={fa ? 'rtl' : 'ltr'}>
@@ -30,7 +32,7 @@ export default async function LoginPage() {
         <form
           action={async () => {
             'use server'
-            await signIn('google', { redirectTo: '/' })
+            await signIn('google', { redirectTo: fa ? '/' : '/en' })
           }}
         >
           <button type="submit" className="btn-primary w-full justify-center cursor-pointer active:scale-95 transition-transform">

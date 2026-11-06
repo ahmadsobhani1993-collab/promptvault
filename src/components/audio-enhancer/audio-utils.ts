@@ -16,6 +16,12 @@ export type ProcessingOptions = {
 export const SAMPLE_RATE = 48000
 let corePromise: Promise<any> | null = null
 
+function copyBytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new ArrayBuffer(bytes.byteLength)
+  new Uint8Array(copy).set(bytes)
+  return copy
+}
+
 function mixToMono(audioBuffer: AudioBuffer, targetLength: number): Float32Array {
   const numChannels = audioBuffer.numberOfChannels
   const mono = new Float32Array(targetLength)
@@ -201,20 +207,21 @@ export async function bufferToStandardAudio(
   if (format === 'mp3') {
     const mp3enc = new (lamejs as any).Mp3Encoder(1, SAMPLE_RATE, 192)
     const int16 = floatToInt16(samples)
-    const chunks: Uint8Array[] = []
+    const chunks: ArrayBuffer[] = []
     const blockSize = 1152
 
     for (let i = 0; i < int16.length; i += blockSize) {
       const buf = mp3enc.encodeBuffer(int16.subarray(i, i + blockSize))
-      if (buf.length > 0) chunks.push(buf)
+      if (buf.length > 0) chunks.push(copyBytesToArrayBuffer(buf))
     }
     const end = mp3enc.flush()
-    if (end.length > 0) chunks.push(end)
+    if (end.length > 0) chunks.push(copyBytesToArrayBuffer(end))
 
     return {
       blob: new Blob(chunks, { type: 'audio/mpeg' }),
       fileName: `${baseName}_enhanced.mp3`,
     }
+
   }
 
   // خروجی WAV

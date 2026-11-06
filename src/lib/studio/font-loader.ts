@@ -7,6 +7,13 @@ const GOOGLE_FONT_FAMILIES = new Set([
   'Lalezar',
   'Amiri',
   'Noto Nastaliq Urdu',
+  'Markazi Text',
+  'Cairo',
+  'Tajawal',
+  'Reem Kufi',
+  'Aref Ruqaa',
+  'Gulzar',
+  'Jomhuria',
 ])
 
 const pendingFonts = new Map<string, Promise<void>>()
@@ -52,7 +59,7 @@ export async function saveUploadedFont(file: File): Promise<UploadedSubtitleFont
     request.onsuccess = () => resolve()
     request.onerror = () => reject(request.error)
   })
-  await ensureFontLoaded(family)
+  await ensureFontLoaded(family, true)
   return { id: family, name: record.name, family, createdAt: record.createdAt }
 }
 
@@ -60,12 +67,15 @@ function googleFontFamilyUrl(family: string): string {
   return `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family).replace(/%20/g, '+')}&display=swap`
 }
 
-export async function ensureFontLoaded(fontFamily: string): Promise<void> {
+export async function ensureFontLoaded(fontFamily: string, required = false): Promise<void> {
   if (typeof window === 'undefined' || !('fonts' in document)) return
 
   const requested = fontFamily.replace(/^['"]|['"]$/g, '').trim()
   const family = requested
-  if (!GOOGLE_FONT_FAMILIES.has(family) && !family.startsWith('CustomFont_')) return
+  if (!GOOGLE_FONT_FAMILIES.has(family) && !family.startsWith('CustomFont_')) {
+    if (required) throw new Error(`Unsupported subtitle font: ${family}`)
+    return
+  }
 
   const existing = pendingFonts.get(family)
   if (existing) return existing
@@ -81,28 +91,30 @@ export async function ensureFontLoaded(fontFamily: string): Promise<void> {
       if (!record?.blob) throw new Error(`Uploaded font not found: ${family}`)
       const url = URL.createObjectURL(record.blob)
       try {
-        const face = new FontFace(family, `url(${url})`)
+        const face = new FontFace(family, `url(${url})`, { weight: '100 900' })
         await face.load()
         document.fonts.add(face)
       } finally {
         URL.revokeObjectURL(url)
       }
-      return
     }
-
-    const id = `google-font-${family.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
-    if (!document.getElementById(id)) {
-      await new Promise<void>((resolve, reject) => {
-        const link = document.createElement('link')
-        link.id = id
-        link.rel = 'stylesheet'
-        link.href = googleFontFamilyUrl(family)
-        link.onload = () => resolve()
-        link.onerror = () => reject(new Error(`Font stylesheet failed: ${family}`))
-        document.head.appendChild(link)
-      })
+    else {
+      const id = `google-font-${family.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+      if (!document.getElementById(id)) {
+        await new Promise<void>((resolve, reject) => {
+          const link = document.createElement('link')
+          link.id = id
+          link.rel = 'stylesheet'
+          link.href = googleFontFamilyUrl(family)
+          link.onload = () => resolve()
+          link.onerror = () => reject(new Error(`Font stylesheet failed: ${family}`))
+          document.head.appendChild(link)
+        })
+      }
     }
-    await document.fonts.load(`700 24px "${family}"`, 'نمونه فونت فارسی')
+    const loadedFaces = await document.fonts.load(`800 24px "${family}"`, 'نمونه فونت فارسی')
+    if (!loadedFaces.length) throw new Error(`Font face did not load: ${family}`)
+    await document.fonts.ready
   })()
 
   pendingFonts.set(family, loading)
@@ -111,5 +123,6 @@ export async function ensureFontLoaded(fontFamily: string): Promise<void> {
   } catch (error) {
     pendingFonts.delete(family)
     console.warn(`Font load failed for ${family}:`, error)
+    if (required) throw error
   }
 }

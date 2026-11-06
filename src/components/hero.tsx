@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import type { Locale } from '@/lib/i18n'
+import { localizedPath } from '@/lib/locale-path'
 
 export default function Hero({
   locale,
@@ -30,7 +31,7 @@ export default function Hero({
         </h1>
         
 
-        <form action="/explore" className="anim-fade-up mx-auto mt-10 max-w-2xl" style={{ animationDelay: '360ms' }}>
+        <form action={localizedPath(locale, '/explore')} className="anim-fade-up mx-auto mt-10 max-w-2xl" style={{ animationDelay: '360ms' }}>
           <div className="glow-gold flex items-center gap-3 rounded-2xl border border-gold/40 bg-elevated px-5 py-4">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5 shrink-0 text-gold-bright">
               <circle cx="11" cy="11" r="8" />
@@ -39,6 +40,7 @@ export default function Hero({
             <input
               name="q"
               className="w-full bg-transparent text-base text-[#cfc8b8] outline-none placeholder:text-[#8f887a]"
+              placeholder={placeholder}
             />
             <button type="submit" className="btn-primary shrink-0">
               {locale === 'fa' ? 'جستجو' : 'Search'}
@@ -50,7 +52,7 @@ export default function Hero({
           {chips.map((c) => (
             <Link
               key={c.href}
-              href={c.href}
+              href={localizedPath(locale, c.href)}
               className="rounded-full border border-line bg-elevated px-4 py-1.5 text-xs text-ink-muted transition-colors hover:border-gold/50 hover:text-gold-bright"
             >
               {locale === 'fa' ? c.fa : c.en}

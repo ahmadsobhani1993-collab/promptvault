@@ -11,6 +11,13 @@ export async function POST(req: Request) {
     }
 
     const subscription = await req.json();
+    if (
+      typeof subscription?.endpoint !== 'string' ||
+      typeof subscription?.keys?.p256dh !== 'string' ||
+      typeof subscription?.keys?.auth !== 'string'
+    ) {
+      return NextResponse.json({ error: 'Invalid push subscription' }, { status: 400 });
+    }
 
     await prisma.pushSubscription.upsert({
       where: { endpoint: subscription.endpoint },

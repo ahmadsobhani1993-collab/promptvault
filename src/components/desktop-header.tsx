@@ -4,7 +4,9 @@ import Link from 'next/link'
 import type { ReactElement } from 'react'
 import { type Locale } from '@/lib/i18n'
 import { L } from '@/lib/l'
+import { localizedPath } from '@/lib/locale-path'
 import LocaleSwitcher from '@/components/locale-switcher'
+import NotificationBell from '@/components/NotificationBell'
 
 export type HeaderCategory = {
   id: string
@@ -89,12 +91,12 @@ export default function DesktopHeader({
       <div className="container-app flex h-16 items-center justify-between gap-4">
         {/* Right: logo + navigation */}
         <div className="flex items-center gap-6">
-          <Link href="/" className="font-display text-lg font-extrabold tracking-tight whitespace-nowrap">
+          <Link href={localizedPath(locale, '/')} className="font-display text-lg font-extrabold tracking-tight whitespace-nowrap">
             Prompts<span className="text-gold-bright">FA</span>
           </Link>
 
           <nav className="flex items-center gap-5 text-sm text-ink-muted">
-            <Link href="/explore" prefetch={false} className="transition-colors hover:text-gold-bright whitespace-nowrap">
+            <Link href={localizedPath(locale, '/explore')} prefetch={false} className="transition-colors hover:text-gold-bright whitespace-nowrap">
               {L(locale, 'کاوش', 'Explore')}
             </Link>
 
@@ -116,7 +118,7 @@ export default function DesktopHeader({
                     {categories.map((c) => (
                       <Link
                         key={c.id}
-                        href={'/categories/' + c.slug}
+                        href={localizedPath(locale, '/categories/' + c.slug)}
                         prefetch={false}
                         className="group/cat flex flex-col items-center rounded-2xl border border-transparent bg-surface p-4 transition-all hover:-translate-y-1 hover:border-gold/40 hover:bg-gold/5 hover:shadow-lg"
                       >
@@ -133,8 +135,11 @@ export default function DesktopHeader({
               </div>
             </div>
 
-            <Link href="/blog" prefetch={false} className="transition-colors hover:text-gold-bright whitespace-nowrap">
+            <Link href={localizedPath(locale, '/blog')} prefetch={false} className="transition-colors hover:text-gold-bright whitespace-nowrap">
               {L(locale, 'مقالات', 'Blog')}
+            </Link>
+            <Link href={localizedPath(locale, '/news')} prefetch={false} className="transition-colors hover:text-gold-bright whitespace-nowrap">
+              {L(locale, 'اخبار', 'News')}
             </Link>
 
             {/* Tools */}
@@ -155,7 +160,7 @@ export default function DesktopHeader({
                     {tools.map((tool) => (
                       <Link
                         key={tool.href}
-                        href={tool.href}
+                        href={localizedPath(locale, tool.href)}
                         prefetch={false}
                         className="flex flex-col rounded-xl border border-transparent p-3 transition-all hover:border-gold/30 hover:bg-gold/5"
                       >
@@ -173,7 +178,7 @@ export default function DesktopHeader({
         {/* Left: actions */}
         <div className="flex items-center gap-3">
           <Link
-            href="/submit"
+            href={localizedPath(locale, '/submit')}
             prefetch={false}
             className="inline-flex rounded-full bg-gold-bright/15 border border-gold-bright/35 px-4 py-2 text-sm font-bold text-gold-bright transition-all hover:bg-gold-bright/25 hover:border-gold-bright whitespace-nowrap"
           >
@@ -195,13 +200,13 @@ export default function DesktopHeader({
             <div className="invisible absolute left-0 top-full z-50 w-80 pt-4 opacity-0 transition-all group-hover:visible group-hover:opacity-100">
               <div className="card p-4 shadow-2xl border border-gold/10">
                 <div className="mb-3 flex items-center justify-between border-b border-line pb-3">
-                  <h3 className="text-sm font-bold text-ink">اعلان‌ها</h3>
+                  <h3 className="text-sm font-bold text-ink">{L(locale, 'اعلان‌ها', 'Notifications')}</h3>
                   <Link href="/notifications" prefetch={false} className="rounded-full bg-gold/20 px-2 py-0.5 text-[10px] font-bold text-gold-bright hover:bg-gold/30">
-                    مشاهده همه
+                    {L(locale, 'مشاهده همه', 'View all')}
                   </Link>
                 </div>
                 {notifications.length === 0 ? (
-                  <p className="text-center text-ink-muted py-6 text-xs">هنوز نوتیفی نداری</p>
+                  <p className="text-center text-ink-muted py-6 text-xs">{L(locale, 'هنوز اعلانی نداری', 'No notifications yet')}</p>
                 ) : (
                   <div className="space-y-2">
                     {notifications.map((n) => (
@@ -213,12 +218,13 @@ export default function DesktopHeader({
                       >
                         <div className="text-xs font-bold text-ink">{n.text}</div>
                         <div className="mt-1 text-[10px] text-ink-muted">
-                          {new Date(n.createdAt).toLocaleDateString('fa-IR')}
+                          {new Date(n.createdAt).toLocaleDateString(locale === 'fa' ? 'fa-IR' : 'en-US')}
                         </div>
                       </Link>
                     ))}
                   </div>
                 )}
+                {session?.user && <NotificationBell />}
               </div>
             </div>
           </div>
@@ -226,7 +232,7 @@ export default function DesktopHeader({
           {/* Avatar / login */}
           {session?.user ? (
             <Link
-              href="/account"
+              href={localizedPath(locale, '/account')}
               prefetch={false}
               aria-label={session.user.name || 'حساب کاربری'}
               className="relative h-9 w-9 overflow-hidden rounded-full border-2 border-gold-bright/50 bg-[#120f09] transition-all hover:border-gold-bright"
@@ -246,7 +252,7 @@ export default function DesktopHeader({
             </Link>
           ) : (
             <Link
-              href="/login"
+              href={localizedPath(locale, '/login')}
               prefetch={false}
               aria-label={L(locale, 'ورود به حساب کاربری', 'Login to account')}
               className="flex h-9 w-9 items-center justify-center rounded-full border border-line/60 bg-surface/50 text-ink-muted transition-colors hover:border-gold/40 hover:text-gold-bright"

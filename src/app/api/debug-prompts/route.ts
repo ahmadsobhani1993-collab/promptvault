@@ -21,7 +21,7 @@ export async function GET(req: Request) {
     total: await prisma.prompt.count({ where: { slug: { startsWith: 'tg-' } } }),
     published: await prisma.prompt.count({ where: { slug: { startsWith: 'tg-' }, status: 'PUBLISHED' } }),
     pending: await prisma.prompt.count({ where: { slug: { startsWith: 'tg-' }, status: 'PENDING' } }),
-    noCategory: await prisma.prompt.count({ where: { slug: { startsWith: 'tg-' }, categoryId: null } }),
+    noCategory: await prisma.prompt.count({ where: { slug: { startsWith: 'tg-' }, categoryId: '' } }),
     noImg: await prisma.prompt.count({ where: { slug: { startsWith: 'tg-' }, img: '' } }),
   }
 
@@ -39,4 +39,3 @@ export async function GET(req: Request) {
     }))
   })
 }
-

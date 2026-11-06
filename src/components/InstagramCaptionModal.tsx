@@ -31,15 +31,17 @@ export default function InstagramCaptionModal({ sourceText, locale = 'fa' }: Pro
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: sourceText, tone, locale }),
+        signal: AbortSignal.timeout(115000),
       })
       const data = await res.json()
-      if (data.caption) {
+      if (res.ok && data.caption) {
         setCaption(data.caption)
       } else {
         alert(data.error || 'خطا در تولید کپشن')
       }
-    } catch {
-      alert('خطا در ارتباط با سرور')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'خطا در ارتباط با سرور'
+      alert(message)
     } finally {
       setLoading(false)
     }

@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
+import { localizedPath } from '@/lib/locale-path'
 
 type Props = {
   locale?: 'fa' | 'en'
@@ -53,7 +54,7 @@ export default function ToolsMenu({ locale = 'fa' }: Props) {
           onMouseLeave={scheduleClose}
         >
           <Link
-            href="/transcribe"
+            href={localizedPath(locale, '/transcribe')}
             onClick={() => setOpen(false)}
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-white/80 transition hover:bg-amber-500/10 hover:text-amber-300"
           >
@@ -69,7 +70,7 @@ export default function ToolsMenu({ locale = 'fa' }: Props) {
           </Link>
 
           <Link
-            href="/subtitle"
+            href={localizedPath(locale, '/subtitle')}
             onClick={() => setOpen(false)}
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-white/80 transition hover:bg-amber-500/10 hover:text-amber-300"
           >
@@ -85,7 +86,7 @@ export default function ToolsMenu({ locale = 'fa' }: Props) {
           </Link>
 
           <Link
-            href="/audio-enhancer"
+            href={localizedPath(locale, '/audio-enhancer')}
             onClick={() => setOpen(false)}
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-white/80 transition hover:bg-amber-500/10 hover:text-amber-300"
           >
@@ -101,7 +102,7 @@ export default function ToolsMenu({ locale = 'fa' }: Props) {
           </Link>
 
           <Link
-            href="/tools/bg-remover"
+            href={localizedPath(locale, '/tools/bg-remover')}
             onClick={() => setOpen(false)}
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-white/80 transition hover:bg-amber-500/10 hover:text-amber-300"
           >
@@ -117,7 +118,7 @@ export default function ToolsMenu({ locale = 'fa' }: Props) {
           </Link>
 
           <Link
-            href="/pdf-to-word"
+            href={localizedPath(locale, '/pdf-to-word')}
             onClick={() => setOpen(false)}
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-white/80 transition hover:bg-amber-500/10 hover:text-amber-300"
           >
@@ -136,4 +137,3 @@ export default function ToolsMenu({ locale = 'fa' }: Props) {
     </div>
   )
 }
-

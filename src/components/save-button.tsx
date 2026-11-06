@@ -1,6 +1,8 @@
 ﻿'use client'
 
 import { useState } from 'react'
+import { useLocale } from '@/lib/use-locale'
+import { localizedPath } from '@/lib/locale-path'
 
 export default function SaveButton({
   promptId,
@@ -13,6 +15,7 @@ export default function SaveButton({
   label?: string
   requireLogin?: string
 }) {
+  const locale = useLocale()
   const [saved, setSaved] = useState(initialSaved)
 
   const toggle = async (e: React.MouseEvent) => {
@@ -28,7 +31,7 @@ export default function SaveButton({
     if (res.status === 401) {
       alert(requireLogin)
       setSaved(!next)
-      window.location.href = '/login'
+      window.location.href = localizedPath(locale, '/login')
     }
   }
 

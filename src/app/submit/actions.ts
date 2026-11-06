@@ -8,12 +8,18 @@ export async function submitPromptAction(fd: FormData) {
   const s = await auth()
   if (!s?.user?.id) return redirect('/login')
   const img = String(fd.get('img') ?? '')
+  const mediaType = String(fd.get('mediaType') ?? '') === 'VIDEO' ? 'VIDEO' : 'IMAGE'
   const title = String(fd.get('title') ?? '').trim()
   const prompt = String(fd.get('prompt') ?? '').trim()
   if (!img || !title || !prompt) return
   
   const catId = String(fd.get('category') ?? '')
   let finalCategoryId = catId
+
+  if (mediaType === 'VIDEO') {
+    const videoCategory = await prisma.category.findUnique({ where: { slug: 'video' } })
+    if (videoCategory) finalCategoryId = videoCategory.id
+  }
 
   if (!finalCategoryId) {
     const firstCat = await prisma.category.findFirst()
@@ -46,7 +52,7 @@ export async function submitPromptAction(fd: FormData) {
       slug: 'u-' + Date.now(),
       img,
       model: 'AI',
-      type: 'IMAGE',
+      type: mediaType,
       status: 'PENDING',
       categoryId: finalCategoryId,
       tagsFa: [],

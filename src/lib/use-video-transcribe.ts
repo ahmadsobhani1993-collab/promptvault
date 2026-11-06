@@ -1,7 +1,8 @@
 import { useState, useRef } from 'react'
 import type { Seg } from './subtitle-studio'
 import { encodePcm16kWav, extractAudioWav16k, readPcm16kMonoWav } from './audio'
-import { VideoLiveTranscriber, TRANSCRIBE_MODEL } from './video-live-transcribe'
+import { useLocale } from '@/lib/use-locale'
+import { L } from '@/lib/l'
 
 let segmentIdCounter = 0
 const generateSegmentId = (): string => {
@@ -50,15 +51,6 @@ function requestAlignment(
     form.append('transcript', transcript)
     request.send(form)
   })
-}
-
-function pcmChunkToBase64(samples: Int16Array, start: number, end: number): string {
-  const bytes = new Uint8Array(samples.buffer, samples.byteOffset + start * 2, (end - start) * 2)
-  let binary = ''
-  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(bytes.length, offset + 0x8000)))
-  }
-  return btoa(binary)
 }
 
 const normalizeTokens = (text: string) => 
@@ -119,46 +111,75 @@ function groupTimedWords(words: WordTimestamp[]): Seg[] {
 }
 
 export function useVideoTranscribe() {
+  const locale = useLocale()
+  const isEn = locale === 'en'
+  const t = (fa: string, en: string) => L(locale, fa, en)
   const [status, setStatus] = useState<string>('')
   const [progress, setProgress] = useState<number>(0)
   const [busy, setBusy] = useState<boolean>(false)
   const [segments, setSegments] = useState<Seg[]>([])
   
   const stopRef = useRef<boolean>(false)
+  const operationIdRef = useRef(0)
+  const runQueueRef = useRef<Promise<void>>(Promise.resolve())
   const activeRequestRef = useRef<XMLHttpRequest | null>(null)
-  const activeLiveTranscriberRef = useRef<VideoLiveTranscriber | null>(null)
+  const activeTranscriptionRef = useRef<AbortController | null>(null)
 
   const stop = () => {
     stopRef.current = true
+    operationIdRef.current++
     activeRequestRef.current?.abort()
-    activeLiveTranscriberRef.current?.close()
+    activeTranscriptionRef.current?.abort()
+    activeRequestRef.current = null
+    activeTranscriptionRef.current = null
     setBusy(false)
-    setStatus('عملیات متوقف شد')
+    setStatus(t('عملیات متوقف شد', 'Operation stopped'))
   }
 
   const run = async (file: File | Blob, language = 'auto') => {
     if (!file) return
+    const operationId = ++operationIdRef.current
+    const pipelineId = crypto.randomUUID()
+    const isCurrentOperation = () => operationId === operationIdRef.current
+    const previousRun = runQueueRef.current
+    let releaseRun!: () => void
+    runQueueRef.current = new Promise<void>((resolve) => { releaseRun = resolve })
     stopRef.current = false
     setBusy(true)
     setSegments([])
-    setStatus('در حال استخراج WAV صوت از ویدیو...')
+    setStatus(t('در حال استخراج WAV صوت از ویدیو...', 'Extracting audio from video…'))
     setProgress(5)
-    
+
+    await previousRun
+    if (!isCurrentOperation()) {
+      releaseRun()
+      return
+    }
+
     try {
+      console.info('[Subtitle Transcription]', JSON.stringify({
+        requestId: pipelineId,
+        event: 'audio_extraction_start',
+        fileBytes: file.size,
+        language,
+      }))
+      const extractionStartedAt = Date.now()
       const fullAudioWav = await extractAudioWav16k(file)
-      if (stopRef.current) return
+      if (!isCurrentOperation() || stopRef.current) return
       
       const samples = await readPcm16kMonoWav(fullAudioWav)
       if (samples.length < 8000) throw new Error('از ویدیو صدای قابل پردازش استخراج نشد یا طول صدا کمتر از نیم ثانیه است.')
       setProgress(12)
+      console.info('[Subtitle Transcription]', JSON.stringify({
+        requestId: pipelineId,
+        event: 'audio_extraction_complete',
+        audioSeconds: Math.round(samples.length / 16) / 1000,
+        wavBytes: fullAudioWav.size,
+        elapsedMs: Date.now() - extractionStartedAt,
+      }))
 
-      const ticketResponse = await fetch('/api/alignment-ticket', { method: 'POST' })
-      const ticket = await ticketResponse.json()
-      if (!ticketResponse.ok) throw new Error(ticket.error || 'مجوز هم‌ترازی محلی صادر نشد.')
-      if (stopRef.current) return
-
-      const chunkSeconds = 60
-      const overlapSeconds = 0
+      const chunkSeconds = 30
+      const overlapSeconds = 1
       const strideSamples = Math.round((chunkSeconds - overlapSeconds) * 16000)
       const chunkSamples = Math.round(chunkSeconds * 16000)
       const totalChunks = Math.max(1, Math.ceil(Math.max(0, samples.length - chunkSamples) / strideSamples) + 1)
@@ -166,98 +187,185 @@ export function useVideoTranscribe() {
       let transcript = ''
       let alignmentLanguage: 'fa' | 'en' = language === 'en' ? 'en' : 'fa'
       const transcriptChunks: { text: string; startSample: number; endSample: number }[] = []
-      
-      setStatus('در حال اتصال امن به Cloudflare Gemini Live...')
 
       for (let index = 0, start = 0; start < samples.length; index++, start += strideSamples) {
-        if (stopRef.current) return
+        if (!isCurrentOperation() || stopRef.current) return
         const end = Math.min(samples.length, start + chunkSamples)
-        
-        // ✅ اصلاح حیاتی ۱: حذف undefined و ارسال صریح نام مدل
-        const transcriber = new VideoLiveTranscriber(TRANSCRIBE_MODEL, start / 16000, language)
-        activeLiveTranscriberRef.current = transcriber
-        
-        let receivedTranscript = false
-        transcriber.onSegment = segment => {
-          if (segment.text.trim()) {
-            receivedTranscript = true
-            setStatus(`دریافت متن از Gemini؛ بخش ${index + 1} از ${totalChunks}`)
+        const chunkProgressStart = 12 + (index / totalChunks) * 38
+        const chunkProgressSpan = 38 / totalChunks
+        setStatus(t(
+          `در حال رونویسی صوت با مدل تخصصی Gemini، بخش ${index + 1} از ${totalChunks}...`,
+          `Transcribing with Gemini's speech model, chunk ${index + 1} of ${totalChunks}…`
+        ))
+        setProgress(Math.floor(chunkProgressStart))
+        const audioChunk = encodePcm16kWav(samples, start, end)
+        const formData = new FormData()
+        formData.append('audio', audioChunk, `audio-${index + 1}.wav`)
+        formData.append('language', language)
+
+        const controller = new AbortController()
+        activeTranscriptionRef.current = controller
+        const requestId = crypto.randomUUID()
+        const requestStartedAt = Date.now()
+        console.info('[Subtitle Transcription]', JSON.stringify({
+          requestId,
+          event: 'chunk_request_start',
+          chunk: index + 1,
+          chunkCount: totalChunks,
+          audioSeconds: Math.round((end - start) / 16) / 1000,
+        }))
+        const expectedDurationMs = ((end - start) / 16000) * 1000 + 20000
+        const progressTimer = window.setInterval(() => {
+          if (!isCurrentOperation() || stopRef.current) return
+          const elapsed = Math.min(1, (Date.now() - requestStartedAt) / expectedDurationMs)
+          setProgress(Math.floor(chunkProgressStart + chunkProgressSpan * Math.min(0.85, elapsed * 0.85)))
+        }, 1000)
+        let response: Response
+        let result: any
+        try {
+          response = await fetch('/api/transcribe-audio', {
+            method: 'POST',
+            body: formData,
+            headers: { 'x-transcription-request-id': requestId },
+            signal: AbortSignal.any([controller.signal, AbortSignal.timeout(100000)]),
+          })
+          result = await response.json()
+          console.info('[Subtitle Transcription]', JSON.stringify({
+            requestId,
+            event: 'chunk_response',
+            status: response.status,
+            ok: response.ok,
+            elapsedMs: Date.now() - requestStartedAt,
+            transcriptChars: typeof result.text === 'string' ? result.text.length : 0,
+            error: typeof result.error === 'string' ? result.error : undefined,
+          }))
+        } catch (error) {
+          console.error('[Subtitle Transcription]', JSON.stringify({
+            requestId,
+            event: 'chunk_request_error',
+            elapsedMs: Date.now() - requestStartedAt,
+            error: error instanceof Error ? error.message : String(error),
+          }))
+          if (controller.signal.aborted) throw error
+          if (error instanceof DOMException && error.name === 'TimeoutError') {
+            throw new Error(t('مهلت پاسخ مدل رونویسی تمام شد؛ دوباره تلاش کنید.', 'The transcription model timed out. Please retry.'))
           }
+          throw error
+        } finally {
+          window.clearInterval(progressTimer)
         }
-        
-        await transcriber.connect()
-        
-        // ✅ اصلاح حیاتی ۲: ارسال ۰.۲ ثانیه صدا در هر بار (به جای ۱ ثانیه)
-        // این کار از پر شدن بافر WebSocket جلوگیری می‌کند و سینک را حفظ می‌کند
-        const chunkDurationSec = 0.2 
-        const pcmSamples = Math.round(chunkDurationSec * 16000) // 3200 samples
-        
-        setStatus(`ارسال صوت به Gemini Live؛ بخش ${index + 1} از ${totalChunks}`)
-        
-        for (let cursor = start; cursor < end; cursor += pcmSamples) {
-          if (stopRef.current) { transcriber.close(); return }
-          
-          const pcmEnd = Math.min(end, cursor + pcmSamples)
-          const duration = (pcmEnd - cursor) / 16000
-          
-          const sent = transcriber.sendChunk(pcmChunkToBase64(samples, cursor, pcmEnd), duration)
-          if (!sent) throw new Error('ارسال قطعهٔ صوت به Cloudflare Gemini Live ناموفق بود.')
-          
-          const sessionRatio = (index + (pcmEnd - start) / (end - start)) / totalChunks
-          setProgress(12 + Math.round(sessionRatio * 34))
-          
-          // ✅ تاخیر متناسب با حجم داده ارسال شده (نزدیک به Real-time)
-          await new Promise(resolve => window.setTimeout(resolve, 200))
+        if (isCurrentOperation()) activeTranscriptionRef.current = null
+        if (!response.ok) {
+          throw new Error(result.error || `Gemini transcription failed (${response.status})`)
         }
-        
-        setStatus(`Gemini Live در حال نهایی‌کردن متن بخش ${index + 1}...`)
-        await transcriber.finish()
-        activeLiveTranscriberRef.current = null
-        
-        const chunkTranscript = transcriber.getTranscript().trim()
-        if (!receivedTranscript && !chunkTranscript) {
-          setStatus(`Gemini Live برای بخش ${index + 1} هنوز متنی نفرستاده؛ دریافت پاسخ نهایی را بررسی می‌کنم...`)
-        }
+        if (!isCurrentOperation() || stopRef.current) return
+
+        const chunkTranscript = String(result.text || '').trim()
+        setProgress(Math.floor(chunkProgressStart + chunkProgressSpan))
         
         if (language === 'auto' && /[\u0600-\u06FF]/.test(chunkTranscript)) alignmentLanguage = 'fa'
         else if (language === 'auto' && /[a-z]/i.test(chunkTranscript)) alignmentLanguage = 'en'
         
         transcript = mergeTranscriptChunk(transcript, chunkTranscript)
         transcriptChunks.push({ text: chunkTranscript, startSample: start, endSample: end })
-        setProgress(12 + Math.round(((index + 1) / totalChunks) * 38))
-        setStatus(`Gemini: رونویسی صوت، قطعهٔ ${index + 1} از ${totalChunks}`)
       }
 
-      if (stopRef.current) return
-      if (!transcript.trim()) throw new Error('Cloudflare Gemini Live متنی برای این صوت برنگرداند. صدای ویدیو را بررسی کنید و دوباره امتحان کنید.')
+      if (!isCurrentOperation() || stopRef.current) return
+      if (!transcript.trim()) throw new Error('Gemini متنی برای این صوت برنگرداند. صدای ویدیو را بررسی کنید و دوباره امتحان کنید.')
 
       setProgress(52)
-      setStatus('متن Gemini آماده شد؛ قطعه‌های WAV برای هم‌ترازی محلی پردازش می‌شوند...')
+      setStatus(t('متن Gemini آماده شد؛ قطعه‌های WAV برای هم‌ترازی محلی پردازش می‌شوند...', 'Gemini transcript ready; processing WAV chunks for local alignment…'))
+
+      const ticketController = new AbortController()
+      const ticketTimeout = window.setTimeout(() => ticketController.abort(), 15000)
+      let ticketResponse: Response
+      let ticket: any
+      const ticketStartedAt = Date.now()
+      console.info('[Subtitle Transcription]', JSON.stringify({ requestId: pipelineId, event: 'alignment_ticket_start' }))
+      try {
+        ticketResponse = await fetch('/api/alignment-ticket', {
+          method: 'POST',
+          signal: ticketController.signal,
+        })
+        ticket = await ticketResponse.json()
+        console.info('[Subtitle Transcription]', JSON.stringify({
+          requestId: pipelineId,
+          event: 'alignment_ticket_response',
+          status: ticketResponse.status,
+          ok: ticketResponse.ok,
+          elapsedMs: Date.now() - ticketStartedAt,
+          error: typeof ticket.error === 'string' ? ticket.error : undefined,
+        }))
+      } catch (error) {
+        console.error('[Subtitle Transcription]', JSON.stringify({
+          requestId: pipelineId,
+          event: 'alignment_ticket_error',
+          elapsedMs: Date.now() - ticketStartedAt,
+          error: error instanceof Error ? error.message : String(error),
+        }))
+        if (ticketController.signal.aborted) {
+          throw new Error(t('دریافت مجوز سرویس هم‌ترازی بیش از ۱۵ ثانیه طول کشید.', 'Getting an alignment service ticket took over 15 seconds.'))
+        }
+        throw error
+      } finally {
+        window.clearTimeout(ticketTimeout)
+      }
+      if (!ticketResponse.ok) throw new Error(ticket.error || 'مجوز هم‌ترازی محلی صادر نشد.')
+      if (!isCurrentOperation() || stopRef.current) return
       
       const alignedWords: WordTimestamp[] = []
       const normalizeWord = (word: string) => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '').toLowerCase()
       
       for (let index = 0; index < transcriptChunks.length; index++) {
-        if (stopRef.current) return
+        if (!isCurrentOperation() || stopRef.current) return
         const chunk = transcriptChunks[index]
         if (!chunk.text) continue
         
         const chunkWav = encodePcm16kWav(samples, chunk.startSample, chunk.endSample)
-        const alignment = await requestAlignment(
-          chunkWav, 
-          chunk.text, 
-          ticket, 
-          alignmentLanguage, 
-          ratio => {
-            if (!stopRef.current) setProgress(52 + Math.round(((index + ratio) / totalChunks) * 43))
-          }, 
-          () => {
-            if (!stopRef.current) setStatus(`هم‌ترازی محلی قطعهٔ ${index + 1} از ${totalChunks}...`)
-          }, 
-          request => { activeRequestRef.current = request }
-        )
+        const alignmentStartedAt = Date.now()
+        console.info('[Subtitle Transcription]', JSON.stringify({
+          requestId: pipelineId,
+          event: 'alignment_chunk_start',
+          chunk: index + 1,
+          chunkCount: totalChunks,
+          wavBytes: chunkWav.size,
+          transcriptChars: chunk.text.length,
+          language: alignmentLanguage,
+        }))
+        let alignment: AlignmentResult
+        try {
+          alignment = await requestAlignment(
+            chunkWav,
+            chunk.text,
+            ticket,
+            alignmentLanguage,
+            ratio => {
+              if (isCurrentOperation() && !stopRef.current) setProgress(52 + Math.round(((index + ratio) / totalChunks) * 43))
+            },
+            () => {
+              if (isCurrentOperation() && !stopRef.current) setStatus(t(`هم‌ترازی محلی قطعهٔ ${index + 1} از ${totalChunks}...`, `Locally aligning chunk ${index + 1} of ${totalChunks}…`))
+            },
+            request => { if (isCurrentOperation()) activeRequestRef.current = request }
+          )
+          console.info('[Subtitle Transcription]', JSON.stringify({
+            requestId: pipelineId,
+            event: 'alignment_chunk_complete',
+            chunk: index + 1,
+            words: alignment.words?.length ?? 0,
+            elapsedMs: Date.now() - alignmentStartedAt,
+          }))
+        } catch (error) {
+          console.error('[Subtitle Transcription]', JSON.stringify({
+            requestId: pipelineId,
+            event: 'alignment_chunk_error',
+            chunk: index + 1,
+            elapsedMs: Date.now() - alignmentStartedAt,
+            error: error instanceof Error ? error.message : String(error),
+          }))
+          throw error
+        }
         
-        if (stopRef.current) return
+        if (!isCurrentOperation() || stopRef.current) return
 
         const timeOffset = chunk.startSample / 16000
         for (const localWord of alignment.words || []) {
@@ -279,15 +387,22 @@ export function useVideoTranscribe() {
 
       setSegments(finalSegments)
       setProgress(100)
-      setStatus(`تکمیل شد (${finalSegments.length} بخش؛ متن Gemini و زمان‌بندی محلی با ${alignmentLanguage === 'fa' ? 'مدل فارسی' : 'مدل انگلیسی'})`)
+      setStatus(t(`تکمیل شد (${finalSegments.length} بخش؛ متن Gemini و زمان‌بندی محلی با ${alignmentLanguage === 'fa' ? 'مدل فارسی' : 'مدل انگلیسی'})`, `Complete (${finalSegments.length} captions; Gemini transcript with local ${alignmentLanguage === 'fa' ? 'Persian' : 'English'} alignment)`))
       
     } catch (err: any) {
-      console.error('[TRANSCRIBE PIPELINE ERROR]:', err)
-      if (!stopRef.current) setStatus('خطا در پردازش ویدیو: ' + (err.message || err))
+      console.error('[Subtitle Transcription]', JSON.stringify({
+        requestId: pipelineId,
+        event: 'pipeline_error',
+        error: err instanceof Error ? err.message : String(err),
+      }), err)
+      if (isCurrentOperation() && !stopRef.current) setStatus(isEn ? 'Video processing failed: please try again or choose another video.' : 'خطا در پردازش ویدیو: ' + (err.message || err))
     } finally {
-      activeRequestRef.current = null
-      activeLiveTranscriberRef.current = null
-      setBusy(false)
+      releaseRun()
+      if (isCurrentOperation()) {
+        activeRequestRef.current = null
+        activeTranscriptionRef.current = null
+        setBusy(false)
+      }
     }
   }
 

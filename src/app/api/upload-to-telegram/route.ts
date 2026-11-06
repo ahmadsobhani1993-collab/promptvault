@@ -1,7 +1,7 @@
 ﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
-import { uploadToCloudinary } from '@/lib/cloudinary'
+import { uploadImageToStorage } from '@/lib/arvan-storage'
 
 export const maxDuration = 60
 
@@ -22,18 +22,16 @@ export async function POST(req: Request) {
     const bytes = await file.arrayBuffer()
     const buffer = Buffer.from(bytes)
 
-    // آپلود به Cloudinary — پوشه مخصوص مقالات
-    const up = await uploadToCloudinary(buffer, 'promptsfa/articles')
+    const up = await uploadImageToStorage(buffer, 'promptsfa/articles')
 
     return NextResponse.json({
       ok: true,
-      fileUrl: up.url,           // ✅ URL پایدار کلودینری (بدون توکن)
+      fileUrl: up.url,
       publicId: up.publicId,
-      message: 'عکس با موفقیت در کلودینری ذخیره شد.',
+      message: 'عکس با موفقیت در فضای ذخیره‌سازی آروان ذخیره شد.',
     })
   } catch (err: any) {
     console.error('Upload error:', err)
     return NextResponse.json({ error: err.message || 'upload failed' }, { status: 500 })
   }
 }
-

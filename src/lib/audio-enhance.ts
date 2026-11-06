@@ -36,7 +36,7 @@ async function ensure16k(f32: Float32Array, sr: number): Promise<Float32Array> {
   const outLen = Math.ceil((f32.length * 16000) / sr)
   const ctx = new OfflineAudioContext(1, outLen, 16000)
   const buf = ctx.createBuffer(1, f32.length, sr)
-  buf.copyToChannel(f32, 0)
+  buf.copyToChannel(new Float32Array(f32), 0)
   const src = ctx.createBufferSource()
   src.buffer = buf
   src.connect(ctx.destination)

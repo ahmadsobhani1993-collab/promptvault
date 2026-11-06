@@ -4,7 +4,7 @@ export const maxDuration = 60;
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { generateText, TAG_VOCAB } from '@/lib/gemini'
-import { uploadToCloudinary } from '@/lib/cloudinary'
+import { uploadImageToStorage } from '@/lib/arvan-storage'
 
 const DEFAULT_START_ID = 8143
 const TARGET_CHANNEL = 'promptsfa1'
@@ -205,7 +205,7 @@ export async function POST(req: Request) {
         }
 
         const imgBuf = Buffer.from(await (await fetch(`https://api.telegram.org/file/bot${token}/${gf.result.file_path}`)).arrayBuffer())
-        const up = await uploadToCloudinary(imgBuf, 'promptsfa/prompts')
+        const up = await uploadImageToStorage(imgBuf, 'promptsfa/prompts')
 
         // ۵. ساخت اسلاگ انگلیسی، متادیسکریپشن و ذخیره در دیتابیس
         const slug = generateCleanSlug(ai.titleEn, msgId)

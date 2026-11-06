@@ -1,8 +1,10 @@
 'use client'
 
 import { useState } from 'react'
+import { useLocale } from '@/lib/use-locale'
 
 export default function TelegramLoginButton() {
+  const isEn = useLocale() === 'en'
   const [loading, setLoading] = useState(false)
   const [directUrl, setDirectUrl] = useState<string | null>(null)
 
@@ -20,11 +22,11 @@ export default function TelegramLoginButton() {
         setDirectUrl(data.url)
         window.location.href = data.url
       } else {
-        alert(data.error || 'خطا در ساخت لینک ورود')
+        alert(data.error || (isEn ? 'Could not create the sign-in link.' : 'خطا در ساخت لینک ورود'))
         setLoading(false)
       }
     } catch {
-      alert('خطا در برقراری ارتباط با سرور. لطفاً مجدداً امتحان کنید.')
+      alert(isEn ? 'Could not connect to the server. Please try again.' : 'خطا در برقراری ارتباط با سرور. لطفاً مجدداً امتحان کنید.')
       setLoading(false)
     }
   }
@@ -43,10 +45,10 @@ export default function TelegramLoginButton() {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
             </svg>
-            در حال انتقال به تلگرام…
+            {isEn ? 'Redirecting to Telegram…' : 'در حال انتقال به تلگرام…'}
           </span>
         ) : (
-          'ورود با تلگرام'
+          (isEn ? 'Continue with Telegram' : 'ورود با تلگرام')
         )}
       </button>
 
@@ -57,7 +59,7 @@ export default function TelegramLoginButton() {
           rel="noopener noreferrer"
           className="block w-full text-center text-xs text-gold-bright underline mt-2 py-1"
         >
-          اگر تلگرام خودکار باز نشد، اینجا کلیک کنید
+          {isEn ? 'If Telegram did not open, click here.' : 'اگر تلگرام خودکار باز نشد، اینجا کلیک کنید'}
         </a>
       )}
     </div>

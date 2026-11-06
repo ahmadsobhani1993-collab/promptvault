@@ -1,8 +1,16 @@
 const GEMINI_WS =
   "https://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
 
-const DEFAULT_FIX_MODEL = "gemini-3.1-flash-lite";
-const FALLBACK_FIX_MODEL = "gemini-2.5-flash";
+const TEXT_MODEL_CHAIN = [
+  "gemini-3.1-flash-lite",
+  "gemini-3.5-flash-lite",
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-3-flash-preview",
+  "gemini-3.6-flash",
+  "gemini-3.8-flash",
+];
+const DEFAULT_FIX_MODEL = TEXT_MODEL_CHAIN[0];
 const DEFAULT_FA_PROMPT = "این یک گفتار فارسی روان است که با املای درست و نیم‌فاصله نوشته می‌شود.";
 
 const CORS = {
@@ -13,6 +21,18 @@ const CORS = {
 
 const JSON_HEADERS = { ...CORS, "Content-Type": "application/json" };
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
+
+function getGeminiApiKeys(env) {
+  const numberedKeys = Object.entries(env)
+    .filter(([name, value]) => /^GEMINI_API_KEY_\d+$/.test(name) && typeof value === "string")
+    .sort(([a], [b]) => Number(a.match(/\d+$/)?.[0]) - Number(b.match(/\d+$/)?.[0]))
+    .map(([, value]) => value);
+  return [...new Set([
+    ...(env.GEMINI_API_KEYS || "").split(","),
+    env.GEMINI_API_KEY || "",
+    ...numberedKeys,
+  ].filter((key) => typeof key === "string").map((key) => key.trim()).filter(Boolean))];
+}
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: JSON_HEADERS });
@@ -33,6 +53,59 @@ function normalizeFa(s) {
     .replace(/[\u064B-\u065F\u0670]/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+async function handleGeminiGenerate(req, env) {
+  const expectedSecret = env.GEMINI_PROXY_SECRET;
+  if (!expectedSecret) return json({ error: "Gateway authorization is not configured" }, 503);
+  if (req.headers.get("authorization") !== `Bearer ${expectedSecret}`) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  let request;
+  try {
+    const body = await req.text();
+    if (body.length > 32_000_000) return json({ error: "Request too large" }, 413);
+    request = JSON.parse(body);
+  } catch {
+    return json({ error: "Invalid JSON request" }, 400);
+  }
+
+  const { model, apiKey, payload } = request || {};
+  if (
+    typeof model !== "string" ||
+    !/^gemini-[a-zA-Z0-9._-]+$/.test(model) ||
+    typeof apiKey !== "string" ||
+    apiKey.length < 10 ||
+    !payload ||
+    typeof payload !== "object" ||
+    Array.isArray(payload) ||
+    !Array.isArray(payload.contents)
+  ) {
+    return json({ error: "Invalid Gemini request" }, 400);
+  }
+
+  try {
+    const upstream = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.any([req.signal, AbortSignal.timeout(90000)]),
+      }
+    );
+    return new Response(await upstream.text(), {
+      status: upstream.status,
+      headers: JSON_HEADERS,
+    });
+  } catch (error) {
+    console.error("[Gemini Generate Proxy] upstream request failed:", error?.message || String(error));
+    return json({ error: "Gemini upstream request failed" }, 502);
+  }
 }
 
 // ───────────────────────── اصلاح املا با Gemini ─────────────────────────
@@ -77,6 +150,7 @@ ${JSON.stringify(items)}`;
           },
         },
       }),
+      signal: AbortSignal.timeout(20000),
     }
   );
 
@@ -102,32 +176,40 @@ ${JSON.stringify(items)}`;
 }
 
 async function correctSegments(env, segments, audio) {
-  const apiKey = env.GEMINI_API_KEY;
-  if (!apiKey || !segments.length) return { texts: segments.map((s) => s.text), refined: false };
+  const apiKeys = getGeminiApiKeys(env);
+  if (!apiKeys.length || !segments.length) return { texts: segments.map((s) => s.text), refined: false };
 
-  const models = [env.GEMINI_FIX_MODEL || DEFAULT_FIX_MODEL, FALLBACK_FIX_MODEL];
+  const models = [...new Set([env.GEMINI_FIX_MODEL || DEFAULT_FIX_MODEL, ...TEXT_MODEL_CHAIN])];
 
   for (const model of models) {
     let modelMissing = false;
+    for (const apiKey of apiKeys) {
+      if (audio) {
+        try {
+          const texts = await callGeminiFix(apiKey, model, segments, audio);
+          return { texts, refined: true, usedAudio: true, model };
+        } catch (err) {
+          console.error("[FIX audio]", model, err.message || String(err));
+          if (err.status === 404) {
+            modelMissing = true;
+            break;
+          }
+        }
+      }
+      if (modelMissing) break;
 
-    if (audio) {
       try {
-        const texts = await callGeminiFix(apiKey, model, segments, audio);
-        return { texts, refined: true, usedAudio: true, model };
+        const texts = await callGeminiFix(apiKey, model, segments, null);
+        return { texts, refined: true, usedAudio: false, model };
       } catch (err) {
-        console.error("[FIX audio]", err.message || String(err));
-        if (err.status === 404) modelMissing = true;
+        console.error("[FIX text]", model, err.message || String(err));
+        if (err.status === 404) {
+          modelMissing = true;
+          break;
+        }
       }
     }
-
-    if (modelMissing) continue; // مدل وجود ندارد؛ برو سراغ مدل بعدی
-
-    try {
-      const texts = await callGeminiFix(apiKey, model, segments, null);
-      return { texts, refined: true, usedAudio: false, model };
-    } catch (err) {
-      console.error("[FIX text]", err.message || String(err));
-    }
+    if (modelMissing) continue;
   }
 
   return { texts: segments.map((s) => s.text), refined: false };
@@ -258,8 +340,8 @@ async function handleGeminiLive(req, env, ctx) {
     return new Response("Expected WebSocket", { status: 426, headers: CORS });
   }
 
-  const apiKey = env.GEMINI_API_KEY;
-  if (!apiKey) return new Response("Missing API key", { status: 500, headers: CORS });
+  const apiKeys = getGeminiApiKeys(env);
+  if (!apiKeys.length) return new Response("Missing API key", { status: 500, headers: CORS });
 
   const pair = new WebSocketPair();
   const [client, server] = Object.values(pair);
@@ -298,17 +380,25 @@ async function handleGeminiLive(req, env, ctx) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 10000);
     try {
-      const res = await fetch(`${GEMINI_WS}?key=${apiKey}`, {
-        headers: { Upgrade: "websocket" },
-        signal: ctrl.signal,
-      });
-      clearTimeout(timer);
-
-      const ws = res.webSocket;
-      if (!ws) {
+      let ws = null;
+      let lastFailure = "No Gemini API key succeeded.";
+      for (let index = 0; index < apiKeys.length; index++) {
+        const res = await fetch(`${GEMINI_WS}?key=${encodeURIComponent(apiKeys[index])}`, {
+          headers: { Upgrade: "websocket" },
+          signal: ctrl.signal,
+        });
+        ws = res.webSocket;
+        if (ws) {
+          console.log("[WS] Gemini key accepted:", index + 1, "of", apiKeys.length);
+          break;
+        }
         const body = await res.text().catch(() => "");
-        console.error("[WS] Handshake rejected:", res.status, body.slice(0, 300));
-        safeClose(server, 1011, `Upstream rejected: ${res.status}`);
+        lastFailure = `HTTP ${res.status}: ${body.slice(0, 200)}`;
+        console.error("[WS] Handshake rejected for key:", index + 1, "of", apiKeys.length, lastFailure);
+      }
+      clearTimeout(timer);
+      if (!ws) {
+        safeClose(server, 1011, `Gemini upstream rejected all keys: ${lastFailure}`.slice(0, 100));
         return;
       }
 
@@ -370,6 +460,11 @@ export default {
     if (url.pathname === "/align" || url.pathname === "/whisper-align") {
       if (req.method !== "POST") return json({ error: "Use POST" }, 405);
       return handleAlign(req, env, url);
+    }
+
+    if (url.pathname === "/gemini-generate") {
+      if (req.method !== "POST") return json({ error: "Use POST" }, 405);
+      return handleGeminiGenerate(req, env);
     }
 
     if (url.pathname === "/gemini-live") {

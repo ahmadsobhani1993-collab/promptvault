@@ -1,4 +1,4 @@
-﻿import { getAnimationState, resolveAlign, resolveDirection, type Seg, type Style } from '@/lib/subtitle-studio'
+import { getAdjustedWordTimings, getAnimationState, resolveAlign, resolveDirection, type Seg, type Style } from '@/lib/subtitle-studio'
 import { drawWatermarks } from '@/lib/studio/watermark-renderer'
 
 export const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
@@ -202,7 +202,7 @@ export function drawSubtitleOnCanvas(ctx: CanvasRenderingContext2D, video: HTMLV
   ctx.textBaseline = 'middle'
   ctx.textAlign = align
 
-  if (!s.karaoke || !seg.words || !seg.words.length) {
+  if (!s.karaoke) {
     lines.forEach((line, index) => {
       const y = anchorY + (index - (lines.length - 1) / 2) * lineHeight
       ctx.shadowColor = s.textShadowColor || 'rgba(0, 0, 0, 0.85)'
@@ -218,7 +218,13 @@ export function drawSubtitleOnCanvas(ctx: CanvasRenderingContext2D, video: HTMLV
       ctx.fillText(line, anchorX, y)
     })
   } else {
-    const activeWordIndex = seg.words.findIndex((w) => t >= w.start && t <= w.end)
+    const wordTimings = getAdjustedWordTimings(
+      seg.text,
+      seg.start,
+      seg.end,
+      seg.words as Array<{ text?: string; w?: string; start: number; end: number }> | undefined
+    )
+    const activeWordIndex = wordTimings.findIndex((w) => t >= w.start && t < w.end)
     let currentWordIndex = 0
     lines.forEach((line, index) => {
       const y = anchorY + (index - (lines.length - 1) / 2) * lineHeight

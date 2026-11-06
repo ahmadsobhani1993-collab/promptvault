@@ -15,7 +15,8 @@ export async function GET() {
       select: { id: true, text: true, url: true, createdAt: true },
     })
     return NextResponse.json({ items }, { headers: { 'Cache-Control': 'private, no-store' } })
-  } catch {
-    return NextResponse.json({ items: [] })
+  } catch (error) {
+    console.error('[Notifications] Failed to load recent notifications:', error)
+    return NextResponse.json({ error: 'اعلان‌ها بارگذاری نشدند.' }, { status: 500 })
   }
 }

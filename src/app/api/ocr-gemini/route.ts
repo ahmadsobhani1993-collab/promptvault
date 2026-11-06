@@ -1,102 +1,91 @@
-﻿import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
+import { NextRequest, NextResponse } from "next/server";
+import { generateText, PDF_OCR_MODEL_CHAIN } from "@/lib/gemini";
 
+export const runtime = "nodejs";
 export const maxDuration = 60;
 
-// مدل‌های معتبر فعال بر اساس جدول سهمیه شما (آبشاری از بالا به پایین)
-const CASCADE_MODELS = [
-  "gemini-3.5-flash-lite",
-  "gemini-3.1-flash-lite",
-  "gemini-3.6-flash",
-  "gemini-3.7-flash",
-  "gemini-3.8-flash",
-  "gemini-3-flash",
-];
+const MAX_ITEMS = 20;
+const MAX_TEXT_CHARS = 100_000;
+const MAX_IMAGE_CHARS = 8_000_000;
 
-async function callGeminiCascade(ai: any, contents: any[]) {
-  let lastError = null;
+type PdfTextItem = { page: number; text: string };
+type PdfImageItem = { page: number; imageBase64: string; mimeType?: string };
 
-  for (const model of CASCADE_MODELS) {
-    try {
-      const res = await ai.models.generateContent({ model, contents });
-      if (res?.text) {
-        return res.text;
-      }
-    } catch (err: any) {
-      console.warn(`Model ${model} failed, switching to next. Error:`, err?.message);
-      lastError = err;
-    }
+function isPageNumber(page: unknown): page is number {
+  return Number.isInteger(page) && Number(page) > 0;
+}
+
+function normalizeImage(item: PdfImageItem): { base64: string; mimeType: string } {
+  const dataUrlMatch = item.imageBase64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/s);
+  const mimeType = item.mimeType || dataUrlMatch?.[1] || "image/jpeg";
+  const base64 = (dataUrlMatch?.[2] || item.imageBase64).trim();
+  if (!/^image\/(jpeg|png|webp)$/.test(mimeType) || !base64 || base64.length > MAX_IMAGE_CHARS) {
+    throw new Error("تصویر صفحه نامعتبر یا بیش از حد بزرگ است.");
   }
-
-  throw lastError || new Error("هیچ‌کدام از مدل‌های فعال جمینای پاسخ ندادند.");
+  return { base64, mimeType };
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { ok: false, error: "کلید GEMINI_API_KEY در تنظیمات سرور یافت نشد." },
-        { status: 500 }
-      );
-    }
-
     const body = await req.json();
-    const { mode, items } = body;
+    const mode = body?.mode;
+    const items: unknown = body?.items;
 
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return NextResponse.json({ ok: false, error: "داده‌ای ارسال نشده است." }, { status: 400 });
+    if ((mode !== "cleanup" && mode !== "ocr") || !Array.isArray(items) || items.length === 0 || items.length > MAX_ITEMS) {
+      return NextResponse.json({ ok: false, error: "درخواست صفحات PDF معتبر نیست." }, { status: 400 });
     }
-
-    const ai = new GoogleGenAI({ apiKey });
 
     if (mode === "cleanup") {
-      const combinedText = items
-        .map((it: any) => `=== صفحه ${it.page} ===\n${it.text}`)
-        .join("\n\n");
-
-      const text = await callGeminiCascade(ai, [
-        {
-          role: "user",
-          parts: [
-            {
-              text: `متن زیر شامل چندین صفحه از یک سند است.
-تمام متون را از نظر املایی، پیوستگی و پاراگراف‌بندی تصحیح کن. حتماً عنوان "=== صفحه X ===" را قبل از متن هر صفحه دست‌نخورده نگه دار. فقط متن تصحیح‌شده را خروجی بده:\n\n${combinedText}`,
-            },
-          ],
-        },
-      ]);
-
-      return NextResponse.json({ ok: true, text });
-    }
-
-    if (mode === "ocr") {
-      const parts: any[] = [];
-      for (const it of items) {
-        const cleanBase64 = it.imageBase64.replace(/^data:image\/\w+;base64,/, "");
-        parts.push({ text: `=== صفحه ${it.page} ===` });
-        parts.push({
-          inlineData: {
-            mimeType: "image/jpeg",
-            data: cleanBase64,
-          },
-        });
+      const textItems = items as Partial<PdfTextItem>[];
+      if (textItems.some((item) => !isPageNumber(item.page) || typeof item.text !== "string")) {
+        return NextResponse.json({ ok: false, error: "متن صفحات PDF معتبر نیست." }, { status: 400 });
       }
 
-      parts.push({
-        text: "تمام متون موجود در این تصاویر اسکن‌شده را با دقت کامل استخراج کن. بالای متن هر صفحه همان شناسه '=== صفحه X ===' را درج کن.",
-      });
+      const combinedText = textItems
+        .map((item) => `=== صفحه ${item.page} ===\n${item.text}`)
+        .join("\n\n");
+      if (combinedText.length > MAX_TEXT_CHARS) {
+        return NextResponse.json({ ok: false, error: "متن PDF از حد مجاز بزرگ‌تر است." }, { status: 413 });
+      }
 
-      const text = await callGeminiCascade(ai, [{ role: "user", parts }]);
+      const { text } = await generateText({
+        instruction: `متن زیر شامل چندین صفحه از یک سند است.
+متن را از نظر املایی، پیوستگی و پاراگراف‌بندی تصحیح کن. شناسهٔ "=== صفحه X ===" را قبل از متن هر صفحه بدون تغییر نگه دار. فقط متن تصحیح‌شده را خروجی بده:
+
+${combinedText}`,
+        modelChain: PDF_OCR_MODEL_CHAIN,
+        timeoutMs: 18000,
+        totalTimeoutMs: 55000,
+      });
       return NextResponse.json({ ok: true, text });
     }
 
-    return NextResponse.json({ ok: false, error: "حالت نامعتبر است." }, { status: 400 });
-  } catch (err: any) {
-    console.error("Gemini Cascade OCR Error:", err);
-    return NextResponse.json(
-      { ok: false, error: err?.message || "خطای ارتباط با سرور جمینای" },
-      { status: 500 }
-    );
+    const imageItems = items as Partial<PdfImageItem>[];
+    if (imageItems.some((item) => !isPageNumber(item.page) || typeof item.imageBase64 !== "string")) {
+      return NextResponse.json({ ok: false, error: "تصاویر صفحات PDF معتبر نیستند." }, { status: 400 });
+    }
+
+    let images: { base64: string; mimeType: string }[];
+    try {
+      images = imageItems.map((item) => normalizeImage(item as PdfImageItem));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "تصویر صفحه نامعتبر است.";
+      return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    }
+    const markers = imageItems.map((item) => `=== صفحه ${item.page} ===`).join("\n");
+    const { text } = await generateText({
+      instruction: `تصاویر صفحه‌های یک PDF به همین ترتیب ارسال شده‌اند. متن هر تصویر را با دقت استخراج کن و شناسهٔ صفحهٔ متناظر را دقیقاً قبل از متن آن قرار بده.
+${markers}
+فقط متن استخراج‌شده را برگردان؛ چیزی را حدس نزن و توضیح اضافه نکن.`,
+      imageParts: images,
+      modelChain: PDF_OCR_MODEL_CHAIN,
+      timeoutMs: 18000,
+      totalTimeoutMs: 55000,
+    });
+    return NextResponse.json({ ok: true, text });
+  } catch (error) {
+    console.error("[PDF Gemini Gateway]", error);
+    const message = error instanceof Error ? error.message : "خطای ارتباط با سرویس OCR";
+    return NextResponse.json({ ok: false, error: message }, { status: 502 });
   }
 }

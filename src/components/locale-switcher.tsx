@@ -1,22 +1,23 @@
 'use client'
 
 import { usePathname, useRouter } from 'next/navigation'
+import { hasLocalizedRoute, localizedPath } from '@/lib/locale-path'
 
 export default function LocaleSwitcher() {
   const router = useRouter()
-  const pathname = usePathname()
-  
-  // تشخیص ایمن زبان فعلی
-  const currentLocale = pathname.startsWith('/en') ? 'en' : 'fa'
+  const pathname = usePathname() || '/'
+  const currentLocale = pathname === '/en' || pathname.startsWith('/en/') ? 'en' : 'fa'
 
   const switchLocale = (locale: 'fa' | 'en') => {
-    let newPath = pathname
-    if (locale === 'en') {
-      if (!pathname.startsWith('/en')) newPath = '/en' + pathname
-    } else {
-      if (pathname.startsWith('/en')) newPath = pathname.replace(/^\/en/, '')
-    }
-    router.push(newPath)
+    if (locale === currentLocale) return
+
+    const unprefixedPath = currentLocale === 'en' ? pathname.slice(3) || '/' : pathname
+    const targetPath = hasLocalizedRoute(unprefixedPath)
+      ? localizedPath(locale, unprefixedPath)
+      : locale === 'en' ? '/en' : '/'
+
+    document.cookie = `locale=${locale}; path=/; max-age=31536000; SameSite=Lax`
+    router.push(`${targetPath}${window.location.search}${window.location.hash}`)
   }
 
   return (

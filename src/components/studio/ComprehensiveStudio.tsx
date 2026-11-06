@@ -366,8 +366,27 @@ export default function ComprehensiveStudio({
             </div>
             <SubtitleVideoExport
               videoUrl={videoUrl}
-              segments={segments}
-              styleConfig={styleConfig}
+              segments={segments.map((segment) => ({
+                ...segment,
+                words: (segment.words ?? []).map((word) => ({
+                  w: word.text,
+                  start: word.start,
+                  end: word.end,
+                })),
+              }))}
+              style={{
+                fontId: styleConfig.fontId || styleConfig.fontFamily,
+                size: styleConfig.fontSizePercent,
+                color: styleConfig.textColor,
+                bgOpacity: styleConfig.hasBg ? styleConfig.bgOpacity : 0,
+                outline: styleConfig.hasTextStroke,
+                x: styleConfig.positionXPercent,
+                y: styleConfig.positionYPercent,
+                karaoke: styleConfig.hasActiveWordBg,
+                hlColor: styleConfig.activeWordColor,
+                direction: 'auto',
+                align: styleConfig.alignment,
+              }}
             />
           </div>
         </div>

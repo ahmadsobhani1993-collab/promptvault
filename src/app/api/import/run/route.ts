@@ -155,8 +155,12 @@ export async function GET(req: Request) {
       const arvanKey = `prompts/${slug}-${Date.now()}.webp`
       const uploadedImgUrl = await uploadToArvan(imgBuf, arvanKey)
 
-      const normalized = normalizePrompt(raw)
-      const aiData = await analyzeWithGemini(raw, categories).catch(() => null)
+      const normalized = await normalizePrompt(raw)
+      const aiData = await analyzeWithGemini({
+        text: normalized,
+        categories,
+        mode: 'auto-import',
+      }).catch(() => null)
 
       let categoryId = categories[0]?.id || ''
       let subId = null
@@ -181,8 +185,8 @@ export async function GET(req: Request) {
           descEn: aiData?.descEn || '',
           usageFa: aiData?.usageFa || '',
           usageEn: aiData?.usageEn || '',
-          model: aiData?.model || 'Midjourney',
-          type: (aiData?.type as any) || 'IMAGE',
+          model: /--v\s?\d|--ar|midjourney/i.test(normalized) ? 'Midjourney' : 'AI',
+          type: 'IMAGE',
           img: uploadedImgUrl,
           tagsFa: aiData?.tagsFa || [],
           tagsEn: aiData?.tagsEn || [],

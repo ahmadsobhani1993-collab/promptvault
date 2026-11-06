@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { L } from '@/lib/l'
 import { useLocale } from '@/lib/use-locale'
 import PWAInstallButton from '@/components/pwa-install-button'
+import { localizedPath } from '@/lib/locale-path'
 
 export default function Footer() {
   const locale = useLocale()
@@ -27,10 +28,11 @@ export default function Footer() {
           <div>
             <h4 className="font-display text-sm font-bold text-ink">{L(locale, 'لینک‌های سریع', 'Quick Links')}</h4>
             <nav className="mt-4 flex flex-col gap-2.5 text-sm text-ink-muted">
-              <Link href="/explore" prefetch={false} className="transition-colors hover:text-gold-bright">{L(locale, 'کاوش پرامپت‌ها', 'Explore')}</Link>
-              <Link href="/categories" prefetch={false} className="transition-colors hover:text-gold-bright">{L(locale, 'دسته‌بندی‌ها', 'Categories')}</Link>
-              <Link href="/blog" prefetch={false} className="transition-colors hover:text-gold-bright">{L(locale, 'وبلاگ و آموزش', 'Blog')}</Link>
-              <Link href="/subtitle" prefetch={false} className="transition-colors hover:text-gold-bright">{L(locale, 'استودیو زیرنویس', 'Subtitle Studio')}</Link>
+              <Link href={localizedPath(locale, '/explore')} prefetch={false} className="transition-colors hover:text-gold-bright">{L(locale, 'کاوش پرامپت‌ها', 'Explore')}</Link>
+              <Link href={localizedPath(locale, '/categories')} prefetch={false} className="transition-colors hover:text-gold-bright">{L(locale, 'دسته‌بندی‌ها', 'Categories')}</Link>
+              <Link href={localizedPath(locale, '/blog')} prefetch={false} className="transition-colors hover:text-gold-bright">{L(locale, 'وبلاگ و آموزش', 'Blog')}</Link>
+              <Link href={localizedPath(locale, '/news')} prefetch={false} className="transition-colors hover:text-gold-bright">{L(locale, 'اخبار هوش مصنوعی', 'AI news')}</Link>
+              <Link href={localizedPath(locale, '/subtitle')} prefetch={false} className="transition-colors hover:text-gold-bright">{L(locale, 'استودیو زیرنویس', 'Subtitle Studio')}</Link>
             </nav>
           </div>
           <div>

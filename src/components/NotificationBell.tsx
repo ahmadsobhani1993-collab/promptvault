@@ -1,114 +1,98 @@
-﻿'use client'
+'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 function urlBase64ToUint8Array(base64String: string) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const rawData = window.atob(base64)
+  return Uint8Array.from(rawData, (character) => character.charCodeAt(0))
 }
 
 export default function NotificationBell() {
-  const [isOpen, setIsOpen] = useState(false)
   const [isSubscribed, setIsSubscribed] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState('')
 
   useEffect(() => {
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
-      navigator.serviceWorker.ready.then((reg) => {
-        reg.pushManager.getSubscription().then((sub) => {
-          if (sub) setIsSubscribed(true)
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
+
+    navigator.serviceWorker.register('/sw.js')
+      .then(async (registration) => {
+        const subscription = await registration.pushManager.getSubscription()
+        if (!subscription) return
+
+        const response = await fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(subscription),
         })
+        if (!response.ok) throw new Error(`Subscription sync failed (${response.status})`)
+        setIsSubscribed(true)
       })
-    }
+      .catch((error) => console.error('[Push] Failed to check or sync browser subscription:', error))
   }, [])
 
   const subscribeUser = async () => {
     setLoading(true)
+    setMessage('')
     try {
-      const reg = await navigator.serviceWorker.register('/sw.js')
-      await navigator.serviceWorker.ready
+      if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+        throw new Error('این مرورگر از اعلان فوری پشتیبانی نمی‌کند.')
+      }
 
       const permission = await Notification.requestPermission()
-      if (permission !== 'granted') {
-        alert('لطفاً دسترسی اعلان را در مرورگر تأیید کنید.')
-        return
+      if (permission !== 'granted') throw new Error('اجازهٔ نمایش اعلان در مرورگر داده نشد.')
+
+      const [registration, keyResponse] = await Promise.all([
+        navigator.serviceWorker.register('/sw.js'),
+        fetch('/api/push/vapid-key', { cache: 'no-store' }),
+      ])
+      const keyData = await keyResponse.json()
+      if (!keyResponse.ok || typeof keyData.publicKey !== 'string') {
+        throw new Error(keyData.error || 'کلید ثبت اعلان دریافت نشد.')
       }
 
-      const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-      if (!vapidKey) {
-        alert('کلید VAPID تعریف نشده است.')
-        return
-      }
+      const subscription = await registration.pushManager.getSubscription()
+        || await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(keyData.publicKey),
+        })
 
-      const convertedKey = urlBase64ToUint8Array(vapidKey)
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: convertedKey,
-      })
-
-      const res = await fetch('/api/push/subscribe', {
+      const response = await fetch('/api/push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(sub),
+        body: JSON.stringify(subscription),
       })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'ثبت دستگاه برای دریافت اعلان انجام نشد.')
 
-      if (res.ok) {
-        setIsSubscribed(true)
-        alert('اعلان‌های سیستم با موفقیت فعال شدند!')
-      }
-    } catch (err) {
-      console.error(err)
-      alert('خطا در همگام‌سازی نوتیفیکیشن.')
+      setIsSubscribed(true)
+      setMessage('اعلان‌های فوری این دستگاه فعال شد.')
+    } catch (error) {
+      const text = error instanceof Error ? error.message : 'فعال‌سازی اعلان انجام نشد.'
+      console.error('[Push] Subscription failed:', error)
+      setMessage(text)
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="relative">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        aria-label="اعلان‌های مرورگر"
-        className="relative grid h-9 w-9 place-items-center rounded-full border border-line bg-surface text-ink-muted hover:border-gold/50 hover:text-gold-bright transition-all"
-      >
-        <span className="text-base">🔔</span>
-        {isSubscribed && (
-          <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-        )}
-      </button>
-
-      {isOpen && (
-        <div className="absolute left-0 mt-2 w-72 rounded-2xl border border-gold/40 bg-[#12100d] p-4 shadow-2xl z-50 text-right">
-          <div className="flex items-center justify-between border-b border-line pb-2 mb-3">
-            <span className="text-xs font-bold text-gold-bright">اعلان‌های سیستم</span>
-            <span className="text-[10px] text-ink-muted">
-              {isSubscribed ? 'وضعیت: متصل' : 'وضعیت: غیرفعال'}
-            </span>
-          </div>
-
-          {!isSubscribed ? (
-            <button
-              onClick={subscribeUser}
-              disabled={loading}
-              className="btn-primary w-full py-2.5 rounded-xl text-xs font-bold"
-            >
-              {loading ? 'در حال اتصال...' : '🔔 فعال‌سازی نوتیفیکیشن فوری'}
-            </button>
-          ) : (
-            <div className="text-center py-4">
-              <span className="text-2xl">✨</span>
-              <p className="mt-2 text-xs text-emerald-400 font-bold">دستگاه شما متصل است</p>
-              <p className="mt-1 text-[11px] text-ink-muted">اعلان‌های جدید بلافاصله حتی در زمان بسته بودن سایت روی صفحه ظاهر می‌شوند.</p>
-            </div>
-          )}
-        </div>
+    <div className="mt-3 border-t border-line pt-3">
+      {isSubscribed ? (
+        <p className="text-center text-[11px] text-emerald-400">اعلان فوری این دستگاه فعال است.</p>
+      ) : (
+        <button
+          type="button"
+          onClick={subscribeUser}
+          disabled={loading}
+          className="btn-primary w-full rounded-xl py-2 text-xs font-bold disabled:opacity-60"
+        >
+          {loading ? 'در حال فعال‌سازی...' : 'فعال‌سازی اعلان فوری مرورگر'}
+        </button>
       )}
+      {message && <p role="status" className="mt-2 text-center text-[11px] text-ink-muted">{message}</p>}
     </div>
   )
 }

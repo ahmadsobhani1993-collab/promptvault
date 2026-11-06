@@ -50,7 +50,6 @@ export async function POST(req: Request) {
         tagsEn: ai.tagsEn,
         img: defaultImg,
         status: 'PENDING',
-        source: 'user_submit',
         type: 'IMAGE',
         model: 'AI'
       }
@@ -67,4 +66,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 })
   }
 }
-

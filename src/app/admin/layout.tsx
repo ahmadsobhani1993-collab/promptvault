@@ -1,8 +1,8 @@
 ﻿import Link from 'next/link'
 import { auth } from '@/auth'
 import { redirect } from 'next/navigation'
-import { cookies } from 'next/headers'
 import { type Locale } from '@/lib/i18n'
+import { getRequestLocale } from '@/lib/request-locale'
 
 const items = [
   { href: '/admin', fa: 'داشبورد', en: 'Dashboard', icon: '⚡' },
@@ -18,8 +18,7 @@ const items = [
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
   if (!session?.user || session.user.role !== 'ADMIN') redirect('/')
-  const cookieStore = await cookies()
-  const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
+  const locale: Locale = await getRequestLocale()
 
   return (
     <div className="container-app py-8">

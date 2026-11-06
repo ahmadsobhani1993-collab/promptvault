@@ -2,6 +2,7 @@
 import { prisma } from '@/lib/db'
 import { L } from '@/lib/data'
 import { type Locale } from '@/lib/i18n'
+import SafeImg from '@/components/safe-img'
 
 // این خط به ورسل می‌گوید این کامپوننت را کش کند و مثلاً هر ۱ ساعت (یا ۱ روز) بازبینی کند.
 // چون منطق ما ماهی یک‌بار تغییر می‌کند، این کش کاملاً ایمن و بهینه است.
@@ -103,23 +104,18 @@ export default async function RelatedPrompts({
             >
               <div className="aspect-square w-full overflow-hidden bg-[#0a0806] relative">
                 {hasValidImage ? (
-                  <img
-                    src={item.img}
+                  <SafeImg
+                    src={item.img.trim()}
                     alt={title}
                     className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                     loading="lazy"
-                    onError={(e) => {
-                      // اگر لینک تصویر شکسته بود، fallback را نشان بده
-                      e.currentTarget.style.display = 'none'
-                      e.currentTarget.parentElement!.querySelector('.fallback-icon')!.classList.remove('hidden')
-                    }}
                   />
                 ) : null}
                 
                 {/* Fallback Icon */}
-                <div className={`fallback-icon ${hasValidImage ? 'hidden' : ''} grid h-full w-full place-items-center`}>
+                {!hasValidImage && <div className="grid h-full w-full place-items-center">
                   <span className="text-3xl text-zinc-700">🎨</span>
-                </div>
+                </div>}
 
                 {categoryName && (
                   <span className="absolute top-2 right-2 rounded-md bg-black/60 backdrop-blur-md border border-white/10 px-2 py-0.5 text-[10px] font-medium text-amber-300">

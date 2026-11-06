@@ -48,6 +48,7 @@ const relatedSelect = {
   type: true,
   img: true,
   tagsFa: true,
+  tagsEn: true,
   createdAt: true,
   category: { select: { nameFa: true, nameEn: true, slug: true } },
   sub: { select: { fa: true, en: true, slug: true } },
@@ -209,19 +210,26 @@ const articleListSelect = {
   createdAt: true,
 }
 
-const fetchArticles = cache(async (take: number) =>
+const fetchArticles = cache(async (take: number, tagFa?: string, excludeTagFa?: string) =>
   prisma.article.findMany({
+    where: {
+      status: 'PUBLISHED',
+      ...(tagFa ? { tagFa } : {}),
+      ...(excludeTagFa ? { NOT: { tagFa: excludeTagFa } } : {}),
+    },
     take,
     orderBy: { createdAt: 'desc' },
     select: articleListSelect,
   })
 )
 
-export function getArticles(opts?: number | { take?: number }) {
+export function getArticles(opts?: number | { take?: number; tagFa?: string; excludeTagFa?: string }) {
   const take = typeof opts === 'number' ? opts : opts?.take ?? 50
-  return fetchArticles(take)
+  const tagFa = typeof opts === 'number' ? undefined : opts?.tagFa
+  const excludeTagFa = typeof opts === 'number' ? undefined : opts?.excludeTagFa
+  return fetchArticles(take, tagFa, excludeTagFa)
 }
 
 export const getArticleBySlug = cache(async (slug: string) =>
-  prisma.article.findUnique({ where: { slug } })
+  prisma.article.findFirst({ where: { slug, status: 'PUBLISHED' } })
 )

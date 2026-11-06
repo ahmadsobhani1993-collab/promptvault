@@ -4,6 +4,7 @@ import FilterSidebar from './FilterSidebar'
 import ExploreCard from '../explore-card'
 import SaveButton from '../save-button'
 import type { Locale } from '@/lib/i18n'
+import { L } from '@/lib/l'
 
 type P = any
 type Active = { type?: string; sub?: string; model?: string; tags: string[]; sort: string; q: string }
@@ -15,13 +16,15 @@ export default function ExploreClient({
   locale,
   basePath,
   initialActive,
+  categorySlug,
 }: {
   initial: P[]
   initialTotal: number
-  filters: { subs: any[]; models: string[]; tags: { tag: string; count: number }[] }
+  filters: { subs: any[]; models: string[]; tags: { tag: string; value?: string; count: number }[] }
   locale: Locale
   basePath: string
   initialActive: Active
+  categorySlug?: string
 }) {
   const [rows, setRows] = useState<P[]>(initial)
   const [active, setActive] = useState<Active>(initialActive)
@@ -38,6 +41,7 @@ export default function ExploreClient({
     if (a.type) sp.set('type', a.type)
     if (a.sub) sp.set('sub', a.sub)
     if (a.model) sp.set('model', a.model)
+    if (categorySlug) sp.set('category', categorySlug)
     if (a.tags.length) sp.set('tags', a.tags.join(','))
     if (a.sort && a.sort !== 'newest') sp.set('sort', a.sort)
     sp.set('page', String(pg))
@@ -59,7 +63,7 @@ export default function ExploreClient({
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [active])
+  }, [active, categorySlug])
 
   // load more روی اسکرول
   useEffect(() => {
@@ -131,15 +135,15 @@ export default function ExploreClient({
             <input
               value={q}
               onChange={(e) => onQ(e.target.value)}
-              placeholder="جستجو در پرامپت‌ها..."
+              placeholder={L(locale, 'جستجو در پرامپت‌ها...', 'Search prompts...')}
               className="input flex-1 text-base"
             />
-            <button type="submit" className="btn-primary whitespace-nowrap">جستجو</button>
+            <button type="submit" className="btn-primary whitespace-nowrap">{L(locale, 'جستجو', 'Search')}</button>
           </form>
 
           {rows.length === 0 && !loading && (
             <div className="rounded-xl border border-line bg-elevated p-12 text-center text-sm text-ink-muted">
-              هیچ پرامپتی با این فیلترها یافت نشد.
+              {L(locale, 'هیچ پرامپتی با این فیلترها یافت نشد.', 'No prompts match these filters.')}
             </div>
           )}
 
@@ -156,7 +160,7 @@ export default function ExploreClient({
 
           <div ref={sentinel} className="flex h-20 items-center justify-center">
             {loading && <div className="h-6 w-6 animate-spin rounded-full border-2 border-gold border-t-transparent" />}
-            {done && rows.length > 0 && <p className="text-xs text-ink-faint">— پایان —</p>}
+            {done && rows.length > 0 && <p className="text-xs text-ink-faint">{L(locale, '— پایان —', '— End —')}</p>}
           </div>
         </main>
       </div>

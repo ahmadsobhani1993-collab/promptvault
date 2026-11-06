@@ -1,5 +1,5 @@
 ﻿import { StudioSegment, StudioStyleConfig, WordTiming } from './unified-style'
-import { getAnimationState } from '@/lib/subtitle-studio'
+import { getAdjustedWordTimings, getAnimationState } from '@/lib/subtitle-studio'
 import { drawWatermarks } from './watermark-renderer'
 
 interface RenderParams {
@@ -88,26 +88,12 @@ function getWordTimings(segment: StudioSegment): WordTiming[] {
     return cached.value
   }
 
-  const tokens = segment.text.trim().split(/\s+/).filter(Boolean)
-  let value: WordTiming[]
-
-  if (segment.words && segment.words.length > 0 && segment.words.length === tokens.length) {
-    // فقط وقتی تعداد کلمات با متن یکی است، زمان‌های واقعی قابل اتکا هستند
-    value = segment.words
-  } else if (!tokens.length) {
-    value = []
-  } else {
-    const totalChars = tokens.reduce((acc, w) => acc + Math.max(1, w.length), 0)
-    const duration = Math.max(0.1, segment.end - segment.start)
-    let cursor = segment.start
-    value = tokens.map((w) => {
-      const wordDur = (Math.max(1, w.length) / totalChars) * duration
-      const start = cursor
-      const end = cursor + wordDur
-      cursor = end
-      return { text: w, start, end }
-    })
-  }
+  const value = getAdjustedWordTimings(
+    segment.text,
+    segment.start,
+    segment.end,
+    segment.words
+  ) as WordTiming[]
 
   timingCache.set(segment, {
     text: segment.text,

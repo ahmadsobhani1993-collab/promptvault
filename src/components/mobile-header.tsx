@@ -5,8 +5,10 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { type Locale } from '@/lib/i18n'
 import { L } from '@/lib/l'   // was: from '@/lib/data'
+import { localizedPath } from '@/lib/locale-path'
 import LocaleSwitcher from '@/components/locale-switcher'
 import MobileMenu from '@/components/mobile-menu'
+import NotificationBell from '@/components/NotificationBell'
 
 interface NotificationItem {
   id: string
@@ -28,7 +30,7 @@ export default function MobileHeader({ locale, session, notifications = [] }: Mo
 
   const handleLoginClick = (e: React.MouseEvent) => {
     e.preventDefault()
-    router.push('/login')
+    router.push(localizedPath(locale, '/login'))
   }
 
   return (
@@ -39,17 +41,19 @@ export default function MobileHeader({ locale, session, notifications = [] }: Mo
         <div className="flex items-center gap-2">
           <MobileMenu
             links={[
-              { href: '/explore', label: L(locale, 'کاوش', 'Explore') },
-              { href: '/categories', label: L(locale, 'دسته‌بندی‌ها', 'Categories') },
-              { href: '/blog', label: L(locale, 'مقالات', 'Blog') },
-              { href: '/tools', label: L(locale, 'ابزارها', 'Tools') },
-              { href: '/submit', label: L(locale, 'ارسال پرامپت', 'Submit') },
+              { href: localizedPath(locale, '/explore'), label: L(locale, 'کاوش', 'Explore') },
+              { href: localizedPath(locale, '/categories'), label: L(locale, 'دسته‌بندی‌ها', 'Categories') },
+              { href: localizedPath(locale, '/blog'), label: L(locale, 'مقالات', 'Blog') },
+              { href: localizedPath(locale, '/news'), label: L(locale, 'اخبار', 'News') },
+              { href: localizedPath(locale, '/tools'), label: L(locale, 'ابزارها', 'Tools') },
+              { href: localizedPath(locale, '/submit'), label: L(locale, 'ارسال پرامپت', 'Submit') },
             ]}
+            locale={locale}
             admin={session?.user?.role === 'ADMIN'}
             isLoggedIn={!!session?.user}
           />
 
-          <Link href="/" className="font-display text-base font-extrabold tracking-tight whitespace-nowrap">
+          <Link href={localizedPath(locale, '/')} className="font-display text-base font-extrabold tracking-tight whitespace-nowrap">
             Prompts<span className="text-gold-bright">FA</span>
           </Link>
         </div>
@@ -81,18 +85,18 @@ export default function MobileHeader({ locale, session, notifications = [] }: Mo
                 <div className="absolute left-0 top-full z-50 mt-2 w-72">
                   <div className="card p-4 shadow-2xl max-h-[400px] overflow-y-auto border border-gold/20 bg-[#0f0c08]">
                     <div className="mb-3 flex items-center justify-between border-b border-line pb-3">
-                      <h3 className="text-sm font-bold text-ink">اعلان‌ها</h3>
+                      <h3 className="text-sm font-bold text-ink">{L(locale, 'اعلان‌ها', 'Notifications')}</h3>
                       <Link 
                         href="/notifications" 
                         onClick={() => setIsNotifOpen(false)}
                         className="rounded-full bg-gold/20 px-2 py-0.5 text-[10px] font-bold text-gold-bright hover:bg-gold/30"
                       >
-                        مشاهده همه
+                        {L(locale, 'مشاهده همه', 'View all')}
                       </Link>
                     </div>
 
                     {notifications.length === 0 ? (
-                      <p className="text-center text-ink-muted py-6 text-xs">هنوز نوتیفی نداری</p>
+                      <p className="text-center text-ink-muted py-6 text-xs">{L(locale, 'هنوز اعلانی نداری', 'No notifications yet')}</p>
                     ) : (
                       <div className="space-y-2">
                         {notifications.map((n) => (
@@ -104,12 +108,13 @@ export default function MobileHeader({ locale, session, notifications = [] }: Mo
                           >
                             <div className="text-xs font-bold text-ink">{n.text}</div>
                             <div className="mt-1 text-[10px] text-ink-muted">
-                              {new Date(n.createdAt).toLocaleDateString('fa-IR')}
+                              {new Date(n.createdAt).toLocaleDateString(locale === 'fa' ? 'fa-IR' : 'en-US')}
                             </div>
                           </Link>
                         ))}
                       </div>
                     )}
+                    {session?.user && <NotificationBell />}
                   </div>
                 </div>
               </>
@@ -119,10 +124,10 @@ export default function MobileHeader({ locale, session, notifications = [] }: Mo
           {/* لاگین / اکانت */}
           {session?.user ? (
             <Link
-              href="/account"
-              aria-label={session.user.name || 'حساب کاربری'}
+              href={localizedPath(locale, '/account')}
+              aria-label={session.user.name || L(locale, 'حساب کاربری', 'Account')}
               className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border-2 border-gold-bright/60 bg-[#120f09] active:scale-95 transition-transform"
-              title="پروفایل"
+              title={L(locale, 'پروفایل', 'Profile')}
             >
               {session.user.image ? (
                 <img
@@ -142,7 +147,7 @@ export default function MobileHeader({ locale, session, notifications = [] }: Mo
               onClick={handleLoginClick}
               aria-label={L(locale, 'ورود به حساب کاربری', 'Login to account')}
               className="flex h-10 w-10 items-center justify-center rounded-full border border-gold/40 bg-gold/10 text-gold-bright active:scale-95 hover:bg-gold/20 transition-all cursor-pointer"
-              title="ورود"
+              title={L(locale, 'ورود', 'Sign in')}
             >
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />

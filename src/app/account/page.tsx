@@ -2,13 +2,21 @@ import { redirect } from 'next/navigation'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import ProfessionalDashboard from '@/components/account/ProfessionalDashboard'
+import { getRequestLocale } from '@/lib/request-locale'
+import { localizedPath } from '@/lib/locale-path'
+import { L } from '@/lib/l'
 
 export const dynamic = 'force-dynamic'
-export const metadata = { title: 'حساب کاربری | PromptsFA' }
+
+export async function generateMetadata() {
+  const locale = await getRequestLocale()
+  return { title: L(locale, 'حساب کاربری | PromptsFA', 'Account | PromptsFA') }
+}
 
 export default async function AccountPage() {
+  const locale = await getRequestLocale()
   const session = await auth()
-  if (!session?.user?.id) redirect('/login')
+  if (!session?.user?.id) redirect(localizedPath(locale, '/login'))
 
   const userId = session.user.id
 
@@ -30,13 +38,13 @@ export default async function AccountPage() {
     }),
     prisma.like.findMany({
       where: { userId },
-      select: { id: true, prompt: { select: { id: true, slug: true, titleFa: true, img: true, type: true, category: { select: { nameFa: true } } } } },
+      select: { id: true, prompt: { select: { id: true, slug: true, titleFa: true, titleEn: true, img: true, type: true, category: { select: { nameFa: true, nameEn: true } } } } },
       orderBy: { id: 'desc' },
       take: 30,
     }),
     prisma.save.findMany({
       where: { userId },
-      select: { id: true, prompt: { select: { id: true, slug: true, titleFa: true, img: true, type: true, category: { select: { nameFa: true } } } } },
+      select: { id: true, prompt: { select: { id: true, slug: true, titleFa: true, titleEn: true, img: true, type: true, category: { select: { nameFa: true, nameEn: true } } } } },
       orderBy: { id: 'desc' },
       take: 30,
     }),

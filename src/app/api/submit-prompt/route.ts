@@ -12,9 +12,12 @@ export async function POST(req: Request) {
     }
 
     // پیدا کردن دسته‌بندی (اگر وجود نداشت، از اولین دسته‌بندی استفاده می‌کند)
-    const categoryRecord = await prisma.category.findFirst({
-      where: { slug: category || 'portrait' },
-    })
+    const categoryRecord =
+      (await prisma.category.findFirst({ where: { slug: category || 'portrait' } })) ??
+      (await prisma.category.findFirst())
+    if (!categoryRecord) {
+      return NextResponse.json({ error: 'هیچ دسته‌بندی برای ثبت پرامپت وجود ندارد' }, { status: 500 })
+    }
 
     // ساخت یک slug یکتا بر اساس زمان
     const slug = `user-${Date.now()}`
@@ -33,9 +36,10 @@ export async function POST(req: Request) {
         prompt,
         descFa: description || '',
         descEn: description || '',
+        img: 'https://placehold.co/600x400/1a1a1a/FFF/png?text=Prompt',
         tagsFa: tagsArray,
         tagsEn: tagsArray,
-        categoryId: categoryRecord?.id || null,
+        categoryId: categoryRecord.id,
         status: 'PENDING', // این خط کلیدی است: پرامپت فوراً منتشر نمی‌شود
         type: 'IMAGE',
         model: 'User Submitted',
@@ -76,4 +80,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'خطا در ذخیره پرامپت' }, { status: 500 })
   }
 }
-

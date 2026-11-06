@@ -9,7 +9,7 @@ export async function GET(req: Request) {
   }
 
   const totalPrompts = await prisma.prompt.count()
-  const withDesc = await prisma.prompt.count({ where: { descFa: { not: null, not: '' } } })
+  const withDesc = await prisma.prompt.count({ where: { descFa: { not: '' } } })
   const withTags = await prisma.prompt.count({ where: { tagsFa: { isEmpty: false } } })
 
   return NextResponse.json({
@@ -20,4 +20,3 @@ export async function GET(req: Request) {
     message: 'SEO audit completed',
   })
 }
-

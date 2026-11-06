@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import { useLocale } from '@/lib/use-locale'
+import { localizedPath } from '@/lib/locale-path'
 
 export default function CardBookmark({
   promptId,
@@ -11,6 +13,7 @@ export default function CardBookmark({
   initialSaved: boolean
   requireLogin: string
 }) {
+  const locale = useLocale()
   const [saved, setSaved] = useState(initialSaved)
 
   const toggle = async () => {
@@ -24,7 +27,7 @@ export default function CardBookmark({
     if (res.status === 401) {
       setSaved(!next)
       alert(requireLogin)
-      window.location.href = '/login'
+      window.location.href = localizedPath(locale, '/login')
     } else if (!res.ok) {
       setSaved(!next)
     }

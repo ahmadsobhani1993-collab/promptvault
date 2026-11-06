@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import ArticleForm from '@/components/article-form'
+import { articleContentToEditorHtml } from '@/lib/article-content'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,7 +25,11 @@ export default async function EditArticle({ params }: { params: Promise<{ id: st
         <Link href="/admin/articles" className="btn-secondary text-xs">← لیست مقالات</Link>
       </div>
       <div className="max-w-3xl">
-        <ArticleForm initialData={article} />
+        <ArticleForm initialData={{
+          ...article,
+          contentFa: articleContentToEditorHtml(article.contentFa),
+          contentEn: articleContentToEditorHtml(article.contentEn),
+        }} />
       </div>
     </section>
   )

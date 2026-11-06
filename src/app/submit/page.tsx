@@ -1,15 +1,14 @@
-import { cookies } from 'next/headers'
 import { auth } from '@/auth'
 import { getCategories, L } from '@/lib/data'
 import { type Locale } from '@/lib/i18n'
 import SubmitForm from '@/components/submit-form'
+import { getRequestLocale } from '@/lib/request-locale'
 
 export const metadata = { title: 'ارسال پرامپت | PromptsFA' }
 export const dynamic = 'force-dynamic'
 
 export default async function SubmitPage() {
-  const cookieStore = await cookies()
-  const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
+  const locale: Locale = await getRequestLocale()
   const session = await auth()
   const categories = await getCategories()
 

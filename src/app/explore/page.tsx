@@ -1,8 +1,9 @@
-import { cookies } from 'next/headers'
 import { type Locale } from '@/lib/i18n'
+import type { Prisma } from '@prisma/client'
 import { getCategories } from '@/lib/data'
+import { getRequestLocale } from '@/lib/request-locale'
 import { prisma } from '@/lib/db'
-import { TAG_VOCAB } from '@/lib/gemini'
+import { TAG_VOCAB } from '@/lib/tag-vocabulary'
 import ExploreClient from '@/components/explore/ExploreClient'
 
 export const dynamic = 'force-dynamic'
@@ -33,7 +34,7 @@ export default async function ExplorePage({
   searchParams: Promise<Record<string, string | undefined>>
 }) {
   const params = await searchParams
-  const locale: Locale = (await cookies()).get('locale')?.value === 'en' ? 'en' : 'fa'
+  const locale: Locale = await getRequestLocale()
 
   const categories = await getCategories()
   const allSubs = categories.flatMap((c) => c.subs)
@@ -47,11 +48,15 @@ export default async function ExplorePage({
   }
   if (params.sub) where.sub = { slug: params.sub }
   if (params.model) where.model = params.model
+  if (['IMAGE', 'VIDEO', 'TEXT', 'CODE', 'AUDIO'].includes(params.type ?? '')) {
+    where.type = params.type
+  }
   const tags = (params.tags ?? '').split(',').filter(Boolean)
   if (tags.length) where.tagsFa = { hasSome: tags }
 
   const sort = params.sort === 'likes' ? 'likes' : params.sort === 'views' ? 'views' : 'newest'
-  const orderBy = sort === 'likes' ? { likes: 'desc' } : sort === 'views' ? { views: 'desc' } : { createdAt: 'desc' }
+  const orderBy: Prisma.PromptOrderByWithRelationInput =
+    sort === 'likes' ? { likes: 'desc' } : sort === 'views' ? { views: 'desc' } : { createdAt: 'desc' }
 
   const [rows, total, models] = await Promise.all([
     prisma.prompt.findMany({ where, orderBy, take: PAGE_SIZE, select: CARD_SELECT }),
@@ -60,7 +65,11 @@ export default async function ExplorePage({
   ])
 
   // 🔑 تگ‌ها از vocab ثابت — بدون query سنگین روی همه پست‌ها
-  const tagList = TAG_VOCAB.map((t) => ({ tag: t.fa, count: 0 }))
+  const tagList = TAG_VOCAB.map((t) => ({
+    tag: locale === 'en' ? t.en : t.fa,
+    value: t.fa,
+    count: 0,
+  }))
 
   return (
     <ExploreClient

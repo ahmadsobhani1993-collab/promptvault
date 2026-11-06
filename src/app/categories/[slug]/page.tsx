@@ -1,10 +1,12 @@
-import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { type Locale } from '@/lib/i18n'
+import type { Prisma } from '@prisma/client'
 import { getCategories, L } from '@/lib/data'
+import { getRequestLocale } from '@/lib/request-locale'
 import { prisma } from '@/lib/db'
 import ExploreClient from '@/components/explore/ExploreClient'
 import CategoryIcon from '@/components/category-icon'
+import { TAG_VOCAB } from '@/lib/tag-vocabulary'
 
 export const dynamic = 'force-dynamic'
 const PAGE_SIZE = 20
@@ -18,13 +20,16 @@ export default async function CategoryDetailPage({
 }) {
   const { slug } = await params
   const sp = await searchParams
-  const locale: Locale = (await cookies()).get('locale')?.value === 'en' ? 'en' : 'fa'
+  const locale: Locale = await getRequestLocale()
 
   const categories = await getCategories()
   const cat = categories.find((c) => c.slug === slug)
   if (!cat) notFound()
 
   const where: any = { status: 'PUBLISHED', category: { slug } }
+  if (['IMAGE', 'VIDEO', 'TEXT', 'CODE', 'AUDIO'].includes(sp.type ?? '')) {
+    where.type = sp.type
+  }
   if (sp.sub) where.sub = { slug: sp.sub }
   if (sp.model) where.model = sp.model
   const tags = (sp.tags ?? '').split(',').filter(Boolean)
@@ -37,7 +42,8 @@ export default async function CategoryDetailPage({
   }
 
   const sort = sp.sort === 'likes' ? 'likes' : sp.sort === 'views' ? 'views' : 'newest'
-  const orderBy = sort === 'likes' ? { likes: 'desc' } : sort === 'views' ? { views: 'desc' } : { createdAt: 'desc' }
+  const orderBy: Prisma.PromptOrderByWithRelationInput =
+    sort === 'likes' ? { likes: 'desc' } : sort === 'views' ? { views: 'desc' } : { createdAt: 'desc' }
 
   const [rows, total, models, tagRows] = await Promise.all([
     prisma.prompt.findMany({ where, orderBy, take: PAGE_SIZE, include: { sub: true } }),
@@ -48,7 +54,11 @@ export default async function CategoryDetailPage({
 
   const freq: Record<string, number> = {}
   for (const r of tagRows) for (const t of r.tagsFa) freq[t] = (freq[t] ?? 0) + 1
-  const tagList = Object.entries(freq).sort((a, b) => b[1] - a[1]).map(([tag, count]) => ({ tag, count }))
+  const tagList = Object.entries(freq).sort((a, b) => b[1] - a[1]).map(([tag, count]) => ({
+    tag: locale === 'en' ? TAG_VOCAB.find((item) => item.fa === tag)?.en ?? tag : tag,
+    value: tag,
+    count,
+  }))
 
   return (
     <>
@@ -68,7 +78,8 @@ export default async function CategoryDetailPage({
         initialTotal={total}
         locale={locale}
         basePath={process.env.NEXT_PUBLIC_APP_URL ?? ''}
-        initialActive={{ q: sp.q ?? '', sub: sp.sub ?? '', model: sp.model ?? '', tags, sort }}
+        initialActive={{ q: sp.q ?? '', type: sp.type ?? '', sub: sp.sub ?? '', model: sp.model ?? '', tags, sort }}
+        categorySlug={slug}
         filters={{ subs: cat.subs, models: models.map((m) => m.model), tags: tagList }}
       />
     </>

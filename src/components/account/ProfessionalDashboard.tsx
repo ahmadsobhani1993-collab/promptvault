@@ -5,6 +5,8 @@ import { useState, useRef } from 'react'
 import Link from 'next/link'
 import { signOut } from 'next-auth/react'
 import EditPromptModal from './EditPromptModal'
+import { useLocale } from '@/lib/use-locale'
+import { localizedPath } from '@/lib/locale-path'
 
 const ANIME_AVATARS = [
   'https://api.dicebear.com/7.x/bottts/svg?seed=Felix',
@@ -17,15 +19,14 @@ const ANIME_AVATARS = [
   'https://api.dicebear.com/7.x/bottts/svg?seed=Coco',
 ]
 
-function isVideoMedia(url?: string | null, type?: string | null) {
+function isVideoMedia(url?: string | null) {
   if (!url) return false
-  if (type === 'VIDEO' || type === 'video') return true
-  return /\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(url)
+  return /\.(mp4|webm|ogg|ogv|mov)(?:[?#].*)?$/i.test(url) || url.includes('/video/upload/')
 }
 
 function PromptMediaPreview({ prompt }: { prompt: any }) {
   const mediaUrl = prompt.img || prompt.videoUrl || prompt.mediaUrl || ''
-  const isVideo = isVideoMedia(mediaUrl, prompt.type)
+  const isVideo = isVideoMedia(mediaUrl)
 
   if (isVideo) {
     return (
@@ -35,6 +36,13 @@ function PromptMediaPreview({ prompt }: { prompt: any }) {
           muted
           loop
           playsInline
+          preload="metadata"
+          onLoadedMetadata={(e) => {
+            const video = e.currentTarget
+            if (Number.isFinite(video.duration) && video.duration > 0) {
+              video.currentTime = Math.min(0.1, video.duration / 2)
+            }
+          }}
           onMouseEnter={(e) => (e.target as HTMLVideoElement).play().catch(() => {})}
           onMouseLeave={(e) => {
             const v = e.target as HTMLVideoElement
@@ -72,6 +80,7 @@ export default function ProfessionalDashboard({
   myComments,
   cartItems = [],
 }: any) {
+  const isEn = useLocale() === 'en'
   const [activeTab, setActiveTab] = useState<'prompts' | 'saved' | 'likes' | 'comments' | 'cart'>('prompts')
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false)
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
@@ -132,13 +141,13 @@ export default function ProfessionalDashboard({
       })
       const data = await res.json()
       if (res.ok) {
-        setSuccessMessage(data.message || 'تغییرات با موفقیت ذخیره شد.')
+        setSuccessMessage(isEn ? 'Changes saved successfully.' : data.message || 'تغییرات با موفقیت ذخیره شد.')
         setTimeout(() => {
           setIsEditProfileOpen(false)
           window.location.reload()
         }, 1500)
       } else {
-        setErrorMessage(data.error || 'خطا در ثبت اطلاعات')
+        setErrorMessage(isEn ? 'Could not save your profile. Please try again.' : data.error || 'خطا در ثبت اطلاعات')
       }
     } finally {
       setSavingProfile(false)
@@ -158,10 +167,10 @@ export default function ProfessionalDashboard({
       if (res.ok) {
         setDeleteStep('code_sent')
       } else {
-        setDeleteError(data.error)
+        setDeleteError(isEn ? 'Could not send the deletion code. Please try again.' : data.error || 'ارسال کد حذف حساب انجام نشد')
       }
     } catch {
-      setDeleteError('خطا در ارتباط با سرور')
+      setDeleteError(isEn ? 'Could not connect to the server.' : 'خطا در ارتباط با سرور')
     } finally {
       setIsDeleting(false)
     }
@@ -169,7 +178,7 @@ export default function ProfessionalDashboard({
 
   const handleDeleteConfirm = async () => {
     if (deleteCode.length !== 6) {
-      setDeleteError('کد باید ۶ رقم باشد')
+      setDeleteError(isEn ? 'The code must contain 6 digits.' : 'کد باید ۶ رقم باشد')
       return
     }
     setIsDeleting(true)
@@ -184,10 +193,10 @@ export default function ProfessionalDashboard({
       if (res.ok) {
         await signOut({ callbackUrl: '/' })
       } else {
-        setDeleteError(data.error)
+        setDeleteError(isEn ? 'Could not verify the code. Please try again.' : data.error || 'تأیید کد حذف حساب انجام نشد')
       }
     } catch {
-      setDeleteError('خطا در ارتباط با سرور')
+      setDeleteError(isEn ? 'Could not connect to the server.' : 'خطا در ارتباط با سرور')
     } finally {
       setIsDeleting(false)
     }
@@ -198,11 +207,10 @@ export default function ProfessionalDashboard({
     0
   )
 
-  const publicUrl = user?.username ? `/u/${user.username}` : null
+  const publicUrl = user?.username ? localizedPath(isEn ? 'en' : 'fa', `/u/${user.username}`) : null
 
   return (
     <div className="space-y-8">
-      {/* هدر اطلاعات کاربر */}
       <div className="relative overflow-hidden rounded-2xl border border-line bg-gradient-to-r from-elevated via-surface to-elevated p-6 md:p-8">
         <div className="flex flex-col md:flex-row items-center gap-6 justify-between">
           <div className="flex flex-col md:flex-row items-center gap-5 text-center md:text-right">
@@ -232,14 +240,14 @@ export default function ProfessionalDashboard({
               <div className="flex items-center gap-3 justify-center md:justify-start">
                 {publicUrl ? (
                   <Link href={publicUrl} className="font-display text-2xl font-black text-ink hover:text-gold-bright transition-colors">
-                    {user.name || 'کاربر PromptsFA'}
+                    {user.name || (isEn ? 'PromptsFA member' : 'کاربر PromptsFA')}
                   </Link>
                 ) : (
-                  <h1 className="font-display text-2xl font-black text-ink">{user.name || 'کاربر PromptsFA'}</h1>
+                  <h1 className="font-display text-2xl font-black text-ink">{user.name || (isEn ? 'PromptsFA member' : 'کاربر PromptsFA')}</h1>
                 )}
                 
                 <span className="rounded-full border border-gold/40 bg-gold/10 px-2.5 py-0.5 text-[10px] text-gold-bright">
-                  {user.role === 'ADMIN' ? 'مدیر سیستم' : 'عضو طلایی'}
+                  {user.role === 'ADMIN' ? (isEn ? 'Administrator' : 'مدیر سیستم') : (isEn ? 'Gold member' : 'عضو طلایی')}
                 </span>
               </div>
               
@@ -256,7 +264,7 @@ export default function ProfessionalDashboard({
               </div>
 
               <p className="mt-2 max-w-lg text-xs leading-relaxed text-ink/80">
-                {user.bio || 'هنوز بیوگرافی اضافه نشده است.'}
+                {user.bio || (isEn ? 'No bio added yet.' : 'هنوز بیوگرافی اضافه نشده است.')}
               </p>
 
               <div className="mt-3 flex flex-wrap items-center justify-center md:justify-start gap-3">
@@ -289,7 +297,7 @@ export default function ProfessionalDashboard({
           <div className="flex flex-wrap items-center gap-3 justify-center">
             {user.role === 'ADMIN' && (
               <Link href="/admin" className="btn-primary rounded-xl px-4 py-2 text-xs font-bold">
-                پنل مدیریت
+                {isEn ? 'Admin dashboard' : 'پنل مدیریت'}
               </Link>
             )}
             {publicUrl && (
@@ -298,20 +306,20 @@ export default function ProfessionalDashboard({
                 target="_blank"
                 className="btn-secondary rounded-xl border border-line px-3.5 py-2 text-xs font-bold text-gold-bright hover:border-gold/50 transition-all"
               >
-                🌐 مشاهده صفحه عمومی
+                {isEn ? '🌐 View public profile' : '🌐 مشاهده صفحه عمومی'}
               </Link>
             )}
             <button
               onClick={() => setIsEditProfileOpen(true)}
               className="btn-secondary rounded-xl border border-line px-4 py-2 text-xs font-bold text-ink-muted hover:border-gold/50 hover:text-gold-bright transition-all"
             >
-              ⚙️ ویرایش مشخصات
+              {isEn ? '⚙️ Edit profile' : '⚙️ ویرایش مشخصات'}
             </button>
             <button
               onClick={() => signOut({ callbackUrl: '/' })}
               className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-bold text-red-400 hover:bg-red-500/20 transition-all"
             >
-              🚪 خروج
+              {isEn ? '🚪 Sign out' : '🚪 خروج'}
             </button>
           </div>
         </div>
@@ -320,11 +328,11 @@ export default function ProfessionalDashboard({
       {/* تب‌ها */}
       <div className="flex flex-wrap items-center gap-2 border-b border-line pb-3">
         {[
-          { key: 'prompts', label: 'پرامپت‌های من', count: myPrompts?.length || 0, icon: '⚡' },
-          { key: 'saved', label: 'ذخیره‌شده‌ها', count: savedPrompts?.length || 0, icon: '🔖' },
-          { key: 'likes', label: 'لایک‌ها', count: likedPrompts?.length || 0, icon: '❤️' },
-          { key: 'comments', label: 'نظرات', count: myComments?.length || 0, icon: '💬' },
-          { key: 'cart', label: 'سبد خرید', count: cartItems?.length || 0, icon: '🛒' },
+          { key: 'prompts', label: isEn ? 'My prompts' : 'پرامپت‌های من', count: myPrompts?.length || 0, icon: '⚡' },
+          { key: 'saved', label: isEn ? 'Saved' : 'ذخیره‌شده‌ها', count: savedPrompts?.length || 0, icon: '🔖' },
+          { key: 'likes', label: isEn ? 'Likes' : 'لایک‌ها', count: likedPrompts?.length || 0, icon: '❤️' },
+          { key: 'comments', label: isEn ? 'Comments' : 'نظرات', count: myComments?.length || 0, icon: '💬' },
+          { key: 'cart', label: isEn ? 'Cart' : 'سبد خرید', count: cartItems?.length || 0, icon: '🛒' },
         ].map((tab) => (
           <button
             key={tab.key}
@@ -350,10 +358,10 @@ export default function ProfessionalDashboard({
               myPrompts.map((p: any) => (
                 <div key={p.id} className="flex items-center justify-between p-4 hover:bg-surface/50 transition-colors">
                   <div>
-                    <Link href={`/prompts/${p.slug}`} className="text-sm font-bold text-ink hover:text-gold-bright">
-                      {p.titleFa}
+                    <Link href={localizedPath(isEn ? 'en' : 'fa', `/prompts/${p.slug}`)} className="text-sm font-bold text-ink hover:text-gold-bright">
+                      {isEn ? (p.titleEn || p.titleFa) : p.titleFa}
                     </Link>
-                    <p className="mt-1 text-[10px] text-ink-faint">مدل: {p.model || 'نامشخص'}</p>
+                    <p className="mt-1 text-[10px] text-ink-faint">{isEn ? 'Model:' : 'مدل:'} {p.model || (isEn ? 'Unknown' : 'نامشخص')}</p>
                   </div>
                   <div className="flex items-center gap-3">
                     <EditPromptModal prompt={p} />
@@ -364,7 +372,7 @@ export default function ProfessionalDashboard({
                 </div>
               ))
             ) : (
-              <p className="p-8 text-center text-sm text-ink-muted">هنوز پرامپتی ارسال نکرده‌اید.</p>
+              <p className="p-8 text-center text-sm text-ink-muted">{isEn ? 'You have not submitted any prompts yet.' : 'هنوز پرامپتی ارسال نکرده‌اید.'}</p>
             )}
           </div>
         )}
@@ -376,21 +384,21 @@ export default function ProfessionalDashboard({
                 b.prompt && (
                   <Link
                     key={b.id || b.prompt.id}
-                    href={`/prompts/${b.prompt.slug}`}
+                    href={localizedPath(isEn ? 'en' : 'fa', `/prompts/${b.prompt.slug}`)}
                     className="group card overflow-hidden transition-all hover:border-gold/40"
                   >
                     <div className="aspect-square overflow-hidden bg-black/80">
                       <PromptMediaPreview prompt={{ ...b.prompt, img: getImageUrl(b.prompt.img) }} />
                     </div>
                     <div className="p-3">
-                      <p className="line-clamp-1 text-xs font-bold">{b.prompt.titleFa}</p>
-                      <p className="mt-1 text-[10px] text-ink-muted">{b.prompt.category?.nameFa}</p>
+                      <p className="line-clamp-1 text-xs font-bold">{isEn ? (b.prompt.titleEn || b.prompt.titleFa) : b.prompt.titleFa}</p>
+                      <p className="mt-1 text-[10px] text-ink-muted">{isEn ? b.prompt.category?.nameEn : b.prompt.category?.nameFa}</p>
                     </div>
                   </Link>
                 )
               ))
             ) : (
-              <p className="col-span-full p-8 text-center text-sm text-ink-muted">پرامپتی ذخیره نشده است.</p>
+              <p className="col-span-full p-8 text-center text-sm text-ink-muted">{isEn ? 'No saved prompts.' : 'پرامپتی ذخیره نشده است.'}</p>
             )}
           </div>
         )}
@@ -402,21 +410,21 @@ export default function ProfessionalDashboard({
                 l.prompt && (
                   <Link
                     key={l.id || l.prompt.id}
-                    href={`/prompts/${l.prompt.slug}`}
+                    href={localizedPath(isEn ? 'en' : 'fa', `/prompts/${l.prompt.slug}`)}
                     className="group card overflow-hidden transition-all hover:border-gold/40"
                   >
                     <div className="aspect-square overflow-hidden bg-black/80">
                       <PromptMediaPreview prompt={{ ...l.prompt, img: getImageUrl(l.prompt.img) }} />
                     </div>
                     <div className="p-3">
-                      <p className="line-clamp-1 text-xs font-bold">{l.prompt.titleFa}</p>
-                      <p className="mt-1 text-[10px] text-ink-muted">{l.prompt.category?.nameFa}</p>
+                      <p className="line-clamp-1 text-xs font-bold">{isEn ? (l.prompt.titleEn || l.prompt.titleFa) : l.prompt.titleFa}</p>
+                      <p className="mt-1 text-[10px] text-ink-muted">{isEn ? l.prompt.category?.nameEn : l.prompt.category?.nameFa}</p>
                     </div>
                   </Link>
                 )
               ))
             ) : (
-              <p className="col-span-full p-8 text-center text-sm text-ink-muted">پرامپتی لایک نشده است.</p>
+              <p className="col-span-full p-8 text-center text-sm text-ink-muted">{isEn ? 'No liked prompts.' : 'پرامپتی لایک نشده است.'}</p>
             )}
           </div>
         )}
@@ -429,47 +437,47 @@ export default function ProfessionalDashboard({
                   <p className="text-xs text-ink leading-relaxed">{c.text}</p>
                   <div className="mt-2 flex items-center justify-between text-[10px]">
                     {c.prompt && (
-                      <Link href={`/prompts/${c.prompt.slug}`} className="text-gold-bright hover:underline">
-                        {c.prompt.titleFa}
+                      <Link href={localizedPath(isEn ? 'en' : 'fa', `/prompts/${c.prompt.slug}`)} className="text-gold-bright hover:underline">
+                        {isEn ? (c.prompt.titleEn || c.prompt.titleFa) : c.prompt.titleFa}
                       </Link>
                     )}
                   </div>
                 </div>
               ))
             ) : (
-              <p className="p-8 text-center text-sm text-ink-muted">هنوز نظری ثبت نکرده‌اید.</p>
+              <p className="p-8 text-center text-sm text-ink-muted">{isEn ? 'You have not commented yet.' : 'هنوز نظری ثبت نکرده‌اید.'}</p>
             )}
           </div>
         )}
 
         {activeTab === 'cart' && (
           <div className="card p-6">
-            <h3 className="font-display text-lg font-bold text-gold-bright mb-4">سبد خرید شما</h3>
+            <h3 className="font-display text-lg font-bold text-gold-bright mb-4">{isEn ? 'Your cart' : 'سبد خرید شما'}</h3>
             {cartItems && cartItems.length > 0 ? (
               <div className="space-y-4">
                 {cartItems.map((item: any) => (
                   <div key={item.id} className="flex items-center justify-between border-b border-line pb-3">
                     <div>
                       <p className="text-sm font-bold">{item.product?.titleFa}</p>
-                      <p className="text-xs text-ink-muted">{item.product?.price?.toLocaleString('fa-IR')} تومان</p>
+                      <p className="text-xs text-ink-muted">{item.product?.price?.toLocaleString(isEn ? 'en-US' : 'fa-IR')} {isEn ? 'Toman' : 'تومان'}</p>
                     </div>
-                    <span className="text-xs">تعداد: {item.quantity}</span>
+                    <span className="text-xs">{isEn ? 'Quantity:' : 'تعداد:'} {item.quantity}</span>
                   </div>
                 ))}
                 <div className="flex justify-between items-center pt-4">
-                  <span className="font-bold text-sm">مجموع پرداختی:</span>
+                  <span className="font-bold text-sm">{isEn ? 'Total:' : 'مجموع پرداختی:'}</span>
                   <span className="font-bold text-base text-gold-bright">
-                    {cartTotal.toLocaleString('fa-IR')} تومان
+                    {cartTotal.toLocaleString(isEn ? 'en-US' : 'fa-IR')} {isEn ? 'Toman' : 'تومان'}
                   </span>
                 </div>
                 <button className="btn-primary w-full py-3 mt-4 rounded-xl font-bold text-sm">
-                  💳 تسویه حساب
+                  {isEn ? '💳 Checkout' : '💳 تسویه حساب'}
                 </button>
               </div>
             ) : (
               <div className="text-center py-12">
                 <div className="text-4xl mb-2">🛒</div>
-                <p className="text-sm text-ink-muted">سبد خرید شما در حال حاضر خالی است.</p>
+                <p className="text-sm text-ink-muted">{isEn ? 'Your cart is empty.' : 'سبد خرید شما در حال حاضر خالی است.'}</p>
               </div>
             )}
           </div>
@@ -488,7 +496,7 @@ export default function ProfessionalDashboard({
           >
             <div className="flex items-center justify-between border-b border-line pb-3 mb-4">
               <h3 className="font-display text-base font-bold text-gold-bright">
-                ویرایش اطلاعات حساب کاربری
+                {isEn ? 'Edit account information' : 'ویرایش اطلاعات حساب کاربری'}
               </h3>
               <button type="button" onClick={() => setIsEditProfileOpen(false)} className="text-ink-muted hover:text-ink text-sm p-1">
                 ✕
@@ -509,7 +517,7 @@ export default function ProfessionalDashboard({
             <form onSubmit={handleProfileSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-ink-muted mb-1 font-bold">نام نمایشی</label>
+                  <label className="block text-xs text-ink-muted mb-1 font-bold">{isEn ? 'Display name' : 'نام نمایشی'}</label>
                   <input
                     type="text"
                     value={profileData.name}
@@ -518,11 +526,11 @@ export default function ProfessionalDashboard({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-ink-muted mb-1 font-bold">نام کاربری یکتا (URL)</label>
+                  <label className="block text-xs text-ink-muted mb-1 font-bold">{isEn ? 'Unique username (URL)' : 'نام کاربری یکتا (URL)'}</label>
                   {profileData.username ? (
                     <div className="w-full rounded-lg border border-line/30 bg-surface/50 p-2.5 text-xs text-ink-muted cursor-not-allowed" dir="ltr">
                       {profileData.username}
-                      <span className="block text-[10px] mt-1">غیرقابل تغییر</span>
+                      <span className="block text-[10px] mt-1">{isEn ? 'Cannot be changed' : 'غیرقابل تغییر'}</span>
                     </div>
                   ) : (
                     <input
@@ -537,13 +545,13 @@ export default function ProfessionalDashboard({
               </div>
 
               <div>
-                <label className="block text-xs text-ink-muted mb-2 font-bold">تصویر آواتار</label>
+                <label className="block text-xs text-ink-muted mb-2 font-bold">{isEn ? 'Avatar image' : 'تصویر آواتار'}</label>
                 <div className="flex items-center gap-4">
                   <div className="relative h-16 w-16 overflow-hidden rounded-full border-2 border-gold/50 bg-black/60 shrink-0">
                     {profileData.image ? (
                       <img src={profileData.image} alt="Preview" className="h-full w-full object-cover" />
                     ) : (
-                      <div className="flex h-full w-full items-center justify-center text-xs text-ink-muted">بدون عکس</div>
+                      <div className="flex h-full w-full items-center justify-center text-xs text-ink-muted">{isEn ? 'No image' : 'بدون عکس'}</div>
                     )}
                   </div>
                   <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
@@ -553,13 +561,13 @@ export default function ProfessionalDashboard({
                     className="flex items-center gap-2 rounded-xl border border-gold/40 bg-gold/10 px-4 py-2.5 text-xs font-bold text-gold-bright hover:bg-gold/20 transition-all"
                   >
                     <span>📁</span>
-                    <span>انتخاب عکس</span>
+                    <span>{isEn ? 'Choose image' : 'انتخاب عکس'}</span>
                   </button>
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs text-ink-muted mb-2 font-bold">یا انتخاب آواتار انیمیشنی</label>
+                <label className="block text-xs text-ink-muted mb-2 font-bold">{isEn ? 'Or choose an animated avatar' : 'یا انتخاب آواتار انیمیشنی'}</label>
                 <div className="flex items-center gap-2.5 overflow-x-auto pb-2">
                   {ANIME_AVATARS.map((avatar, idx) => (
                     <button
@@ -580,40 +588,40 @@ export default function ProfessionalDashboard({
 
               <div className="space-y-3">
                 <div>
-                  <label className="block text-xs text-ink-muted mb-1 font-bold">آیدی عددی تلگرام (برای اتصال و ادغام حساب‌ها)</label>
+                  <label className="block text-xs text-ink-muted mb-1 font-bold">{isEn ? 'Telegram numeric ID (for linking accounts)' : 'آیدی عددی تلگرام (برای اتصال و ادغام حساب‌ها)'}</label>
                   {profileData.telegram ? (
                     <div className="w-full rounded-lg border border-green-500/30 bg-green-500/10 p-2.5 text-xs text-green-400 cursor-not-allowed" dir="ltr">
-                      ✅ متصل شده: {profileData.telegram}
-                      <span className="block text-[10px] mt-1 text-ink-muted">برای تغییر یا حذف حساب، این اتصال ضروری است.</span>
+                      ✅ {isEn ? 'Connected:' : 'متصل شده:'} {profileData.telegram}
+                      <span className="block text-[10px] mt-1 text-ink-muted">{isEn ? 'This connection is required to change or delete your account.' : 'برای تغییر یا حذف حساب، این اتصال ضروری است.'}</span>
                     </div>
                   ) : (
                     <>
                       <input
                         type="text"
-                        placeholder="مثال: 123456789"
+                        placeholder={isEn ? 'Example: 123456789' : 'مثال: 123456789'}
                         value={profileData.telegram}
                         onChange={(e) => setProfileData({ ...profileData, telegram: e.target.value })}
                         className="w-full rounded-lg border border-line bg-surface p-2.5 text-xs text-ink focus:border-gold/60 focus:outline-none dir-ltr text-left"
                       />
-                      <p className="mt-1 text-[10px] text-ink-faint">اگر قبلاً با تلگرام وارد شده‌اید، آیدی عددی خود را اینجا وارد کنید تا حساب‌ها ادغام شوند.</p>
+                      <p className="mt-1 text-[10px] text-ink-faint">{isEn ? 'If you previously signed in with Telegram, enter your numeric ID here to link the accounts.' : 'اگر قبلاً با تلگرام وارد شده‌اید، آیدی عددی خود را اینجا وارد کنید تا حساب‌ها ادغام شوند.'}</p>
                     </>
                   )}
                 </div>
                 
                 <div>
-                  <label className="block text-xs text-ink-muted mb-1 font-bold">آیدی تلگرام (برای نمایش عمومی)</label>
+                  <label className="block text-xs text-ink-muted mb-1 font-bold">{isEn ? 'Telegram username (public)' : 'آیدی تلگرام (برای نمایش عمومی)'}</label>
                   <input
                     type="text"
-                    placeholder="username (بدون @)"
+                    placeholder={isEn ? 'username (without @)' : 'username (بدون @)'}
                     value={profileData.telegramHandle}
                     onChange={(e) => setProfileData({ ...profileData, telegramHandle: e.target.value })}
                     className="w-full rounded-lg border border-line bg-surface p-2.5 text-xs text-ink focus:border-gold/60 focus:outline-none dir-ltr text-left"
                   />
-                  <p className="mt-1 text-[10px] text-ink-faint">این آیدی در پروفایل عمومی شما نمایش داده می‌شود (می‌تواند کانال باشد)</p>
+                  <p className="mt-1 text-[10px] text-ink-faint">{isEn ? 'This username appears on your public profile (channels are supported).' : 'این آیدی در پروفایل عمومی شما نمایش داده می‌شود (می‌تواند کانال باشد)'}</p>
                 </div>
 
                 <div>
-                  <label className="block text-xs text-ink-muted mb-1 font-bold">آیدی اینستاگرام</label>
+                  <label className="block text-xs text-ink-muted mb-1 font-bold">{isEn ? 'Instagram username' : 'آیدی اینستاگرام'}</label>
                   <input
                     type="text"
                     placeholder="username"
@@ -625,7 +633,7 @@ export default function ProfessionalDashboard({
               </div>
 
               <div>
-                <label className="block text-xs text-ink-muted mb-1 font-bold">بیوگرافی کوتاه</label>
+                <label className="block text-xs text-ink-muted mb-1 font-bold">{isEn ? 'Short bio' : 'بیوگرافی کوتاه'}</label>
                 <textarea
                   rows={3}
                   value={profileData.bio}
@@ -636,14 +644,14 @@ export default function ProfessionalDashboard({
 
               <div className="flex justify-between items-center pt-3 border-t border-line">
                 <button type="button" onClick={() => setIsDeleteOpen(true)} className="text-xs text-red-400 hover:text-red-300 hover:underline">
-                  حذف دائمی حساب کاربری
+                  {isEn ? 'Permanently delete account' : 'حذف دائمی حساب کاربری'}
                 </button>
                 <div className="flex gap-3">
                   <button type="button" onClick={() => setIsEditProfileOpen(false)} className="rounded-lg border border-line px-4 py-2 text-xs text-ink-muted hover:bg-surface">
-                    انصراف
+                    {isEn ? 'Cancel' : 'انصراف'}
                   </button>
                   <button type="submit" disabled={savingProfile} className="btn-primary px-5 py-2 text-xs font-bold">
-                    {savingProfile ? 'در حال ثبت...' : 'ذخیره تغییرات'}
+                    {savingProfile ? (isEn ? 'Saving...' : 'در حال ثبت...') : (isEn ? 'Save changes' : 'ذخیره تغییرات')}
                   </button>
                 </div>
               </div>
@@ -663,7 +671,7 @@ export default function ProfessionalDashboard({
             className="card w-full max-w-md border-red-500/40 bg-[#1a0f0f] p-6 shadow-2xl"
           >
             <div className="flex items-center justify-between border-b border-red-500/20 pb-3 mb-4">
-              <h3 className="font-display text-base font-bold text-red-400">⚠️ حذف دائمی حساب</h3>
+              <h3 className="font-display text-base font-bold text-red-400">{isEn ? '⚠️ Permanently delete account' : '⚠️ حذف دائمی حساب'}</h3>
               <button type="button" onClick={() => setIsDeleteOpen(false)} className="text-ink-muted hover:text-ink text-sm p-1">
                 ✕
               </button>
@@ -672,35 +680,37 @@ export default function ProfessionalDashboard({
             {!user?.telegram ? (
               <div className="text-center py-4">
                 <p className="text-sm text-ink-muted mb-4">
-                  برای حذف حساب کاربری، ابتدا باید حساب تلگرام خود را در بخش "ویرایش مشخصات" متصل کنید.
+                  {isEn ? 'Connect your Telegram account in “Edit profile” before deleting your account.' : 'برای حذف حساب کاربری، ابتدا باید حساب تلگرام خود را در بخش "ویرایش مشخصات" متصل کنید.'}
                 </p>
                 <button
                   onClick={() => { setIsDeleteOpen(false); setIsEditProfileOpen(true) }}
                   className="btn-primary w-full py-2 text-xs font-bold"
                 >
-                  رفتن به ویرایش مشخصات
+                  {isEn ? 'Go to profile settings' : 'رفتن به ویرایش مشخصات'}
                 </button>
               </div>
             ) : deleteStep === 'initial' ? (
               <div className="text-center py-4">
                 <p className="text-sm text-ink-muted mb-2">
-                  با این عمل، تمام پرامپت‌ها، لایک‌ها و تنظیمات شما برای <span className="text-red-400 font-bold">همیشه</span> حذف خواهند شد.
+                  {isEn
+                    ? <>This will permanently delete all your prompts, likes, and settings <span className="text-red-400 font-bold">forever</span>.</>
+                    : <>با این عمل، تمام پرامپت‌ها، لایک‌ها و تنظیمات شما برای <span className="text-red-400 font-bold">همیشه</span> حذف خواهند شد.</>}
                 </p>
                 <p className="text-xs text-ink-faint mb-6">
-                  یک کد تایید به تلگرام شما ({user.telegram}) ارسال می‌شود.
+                  {isEn ? `A verification code will be sent to your Telegram (${user.telegram}).` : `یک کد تایید به تلگرام شما (${user.telegram}) ارسال می‌شود.`}
                 </p>
                 <button
                   onClick={handleDeleteRequest}
                   disabled={isDeleting}
                   className="w-full rounded-lg bg-red-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50"
                 >
-                  {isDeleting ? 'در حال ارسال...' : 'درخواست ارسال کد به تلگرام'}
+                  {isDeleting ? (isEn ? 'Sending...' : 'در حال ارسال...') : (isEn ? 'Send verification code' : 'درخواست ارسال کد به تلگرام')}
                 </button>
               </div>
             ) : (
               <div className="py-4">
                 <p className="text-xs text-ink-muted mb-4 text-center">
-                  کد ۶ رقمی ارسال شده به تلگرام خود را وارد کنید:
+                  {isEn ? 'Enter the 6-digit code sent to your Telegram:' : 'کد ۶ رقمی ارسال شده به تلگرام خود را وارد کنید:'}
                 </p>
                 {deleteError && (
                   <div className="mb-3 rounded-lg border border-red-500/40 bg-red-500/10 p-2 text-center text-xs text-red-400">
@@ -720,14 +730,14 @@ export default function ProfessionalDashboard({
                     onClick={() => { setDeleteStep('initial'); setDeleteCode(''); setDeleteError('') }}
                     className="flex-1 rounded-lg border border-line px-4 py-2.5 text-xs text-ink-muted hover:bg-surface"
                   >
-                    بازگشت
+                    {isEn ? 'Back' : 'بازگشت'}
                   </button>
                   <button
                     onClick={handleDeleteConfirm}
                     disabled={isDeleting || deleteCode.length !== 6}
                     className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50"
                   >
-                    {isDeleting ? 'در حال حذف...' : 'تایید و حذف نهایی'}
+                    {isDeleting ? (isEn ? 'Deleting...' : 'در حال حذف...') : (isEn ? 'Confirm and delete' : 'تایید و حذف نهایی')}
                   </button>
                 </div>
               </div>

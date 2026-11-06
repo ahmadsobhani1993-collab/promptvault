@@ -139,25 +139,42 @@ html {
   }
 }
 
+.article-body {
+  color: #F4EFE6;
+}
+.article-body p,
+.article-body li,
+.article-body td {
+  color: #E5E7EB;
+}
 .article-body h2 {
   font-weight: 800;
   color: #f0d491;
-  margin: 1.6rem 0 0.8rem;
-  font-size: 1.05rem;
+  margin: 2.5rem 0 1rem;
+  font-size: 1.5rem;
+  line-height: 1.5;
 }
-.article-body p { margin-bottom: 1rem; }
-.article-body img { border-radius: 1rem; margin: 1rem 0; width: 100%; border: 1px solid rgba(212, 169, 78, 0.25); }
-.article-body a { color: #d4a94e; }
-
-.article-body h2 {
+.article-body h3 {
   font-weight: 800;
-  color: #f0d491;
-  margin: 1.6rem 0 0.8rem;
-  font-size: 1.05rem;
+  color: #e8d39b;
+  margin: 2rem 0 0.75rem;
+  font-size: 1.2rem;
 }
-.article-body p { margin-bottom: 1rem; }
-.article-body img { border-radius: 1rem; margin: 1rem 0; width: 100%; border: 1px solid rgba(212, 169, 78, 0.25); }
-.article-body a { color: #d4a94e; }
+.article-body p { margin: 0 0 1.35rem; }
+.article-body img { border-radius: 1rem; margin: 1.5rem 0; width: 100%; border: 1px solid rgba(212, 169, 78, 0.25); }
+.article-body a { color: #e8c66f; text-decoration: underline; text-underline-offset: 3px; }
+.article-body ul, .article-body ol { margin: 0 0 1.5rem; padding-inline-start: 1.5rem; }
+.article-body li { margin: 0.4rem 0; padding-inline-start: 0.25rem; }
+.article-body ul { list-style: disc; }
+.article-body ol { list-style: decimal; }
+.article-body blockquote { margin: 1.75rem 0; border-inline-start: 3px solid #d4a94e; padding: 0.75rem 1.25rem; color: #e8d39b; background: rgba(212, 169, 78, 0.06); border-radius: 0.5rem; }
+.article-body pre { overflow-x: auto; margin: 1.5rem 0; border: 1px solid rgba(255,255,255,0.16); border-radius: 0.75rem; background: #15151A; color: #F4EFE6 !important; padding: 1rem; }
+.article-body code { border-radius: 0.25rem; background: rgba(255,255,255,0.08); color: #F4EFE6 !important; padding: 0.1rem 0.3rem; }
+.article-body pre code { background: transparent; color: #F4EFE6 !important; -webkit-text-fill-color: #F4EFE6; padding: 0; }
+.article-body table { width: 100%; margin: 1.5rem 0; border-collapse: collapse; }
+.article-body th, .article-body td { border: 1px solid rgba(255,255,255,0.12); padding: 0.65rem; text-align: start; }
+.article-body th { color: #e8d39b; background: rgba(212,169,78,0.08); }
+.article-body hr { margin: 2rem 0; border-color: rgba(255,255,255,0.12); }
 
 .route-loader {
   position: fixed;

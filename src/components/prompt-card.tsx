@@ -3,7 +3,9 @@ import { getImageUrl } from '@/lib/image-utils'
 import type { Locale } from '@/lib/i18n'
 import { getPromptTypeLabel } from '@/lib/data'
 import { L } from '@/lib/l'
+import { localizedPath } from '@/lib/locale-path'
 import SafeImg from '@/components/safe-img'
+import { localizePromptTags } from '@/lib/tag-vocabulary'
 
 type PromptItem = {
   slug: string
@@ -35,10 +37,11 @@ export default function PromptCard(props: {
 }) {
   const item = props?.item || props?.prompt || ({} as PromptItem)
   const locale: Locale = props?.locale || 'fa'
+  const tags = localizePromptTags(item.tagsFa, item.tagsEn, locale)
 
   return (
     <article className="rounded-2xl border border-line/60 bg-[#14120e] p-3 transition-all hover:border-gold/40 hover:-translate-y-1 shadow-md">
-      <Link href={'/prompts/' + (item.slug || '')} prefetch={false} className="block">
+      <Link href={localizedPath(locale, '/prompts/' + (item.slug || ''))} prefetch={false} className="block">
         <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-surface/60">
           <SafeImg
             src={getImageUrl(item.img)}
@@ -61,9 +64,9 @@ export default function PromptCard(props: {
             {L(locale, item.titleFa || 'بدون عنوان', item.titleEn || 'Untitled')}
           </h3>
           <p className="mt-1 line-clamp-1 text-xs text-zinc-400">
-            {Array.isArray(item.tagsFa) && item.tagsFa.length > 0
-              ? item.tagsFa.slice(0, 3).join(' • ')
-              : 'هوش مصنوعی'}
+            {tags.length > 0
+              ? tags.slice(0, 3).join(' • ')
+              : L(locale, 'هوش مصنوعی', 'AI')}
           </p>
         </div>
 

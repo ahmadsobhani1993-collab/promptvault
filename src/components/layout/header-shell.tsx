@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { hasLoginHint } from '@/lib/login-hint'
 import { useLocale } from '@/lib/use-locale'
@@ -15,35 +15,47 @@ export default function HeaderShell({ categories }: { categories: HeaderCategory
 
   const [session, setSession] = useState<any>(null)
   const [notifications, setNotifications] = useState<any[]>([])
-  const loadedRef = useRef(false)
 
   useEffect(() => {
-    // Anonymous visitor: no network calls at all
-    if (!hasLoginHint()) {
-      if (loadedRef.current) {
-        loadedRef.current = false
-        setSession(null)
-        setNotifications([])
+    let active = true
+    let refreshTimer: ReturnType<typeof setInterval> | undefined
+
+    const refreshNotifications = async () => {
+      try {
+        const response = await fetch('/api/notifications/recent', {
+          credentials: 'same-origin',
+          cache: 'no-store',
+        })
+        if (!response.ok) throw new Error(`Notification refresh failed (${response.status})`)
+        const data = await response.json()
+        if (active && Array.isArray(data.items)) setNotifications(data.items)
+      } catch (error) {
+        console.error('[Notifications] Failed to refresh in-app notifications:', error)
       }
+    }
+
+    if (!hasLoginHint()) {
+      setSession(null)
+      setNotifications([])
       try {
         localStorage.removeItem(HINT_KEY)
       } catch {}
-      return
+      return () => { active = false }
     }
 
-    if (loadedRef.current) return
-    loadedRef.current = true
-
-    // Show last known login state immediately to avoid a flash
     try {
       const hint = localStorage.getItem(HINT_KEY)
       if (hint) setSession(JSON.parse(hint))
     } catch {}
 
     fetch('/api/auth/session', { credentials: 'same-origin' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`Session refresh failed (${response.status})`)
+        return response.json()
+      })
+      .then(async (data) => {
         const s = data && data.user ? data : null
+        if (!active) return
         setSession(s)
         try {
           if (s) {
@@ -60,15 +72,18 @@ export default function HeaderShell({ categories }: { categories: HeaderCategory
         } catch {}
 
         if (s) {
-          fetch('/api/notifications/recent', { credentials: 'same-origin' })
-            .then((r) => (r.ok ? r.json() : null))
-            .then((d) => {
-              if (d && Array.isArray(d.items)) setNotifications(d.items)
-            })
-            .catch(() => {})
+          await refreshNotifications()
+          refreshTimer = setInterval(() => { void refreshNotifications() }, 30000)
+        } else {
+          setNotifications([])
         }
       })
-      .catch(() => {})
+      .catch((error) => console.error('[Notifications] Failed to load session:', error))
+
+    return () => {
+      active = false
+      if (refreshTimer) clearInterval(refreshTimer)
+    }
   }, [pathname])
 
   return (

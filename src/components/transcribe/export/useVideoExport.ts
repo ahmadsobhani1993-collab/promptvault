@@ -1,17 +1,17 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { drawSubtitleOnCanvas } from '@/lib/subtitle-render'
 import { loadFFmpeg } from '@/lib/video-extract'
 import { ensureFontLoaded } from '@/lib/studio/font-loader'
+import { renderStudioFrame } from '@/lib/studio/universal-renderer'
+import { DEFAULT_STUDIO_STYLE, type StudioSegment, type StudioStyleConfig } from '@/lib/studio/unified-style'
 import type { Seg, Style } from '@/lib/subtitle-studio'
+import { useLocale } from '@/lib/use-locale'
+import { L } from '@/lib/l'
 
 export type ExportQuality = 'balanced' | 'high'
 
-// true: ویدئوی H.264 ضبط‌شده بدون انکود مجدد (فقط mux با صدا). false: مسیر قدیمی با libx264
-const FAST_MUX = true
-// انکودر سخت‌افزاری مرورگر در بیت‌ریت یکسان کمی ضعیف‌تر از x264 است؛ این ضریب جبرانش می‌کند
-const HW_ENCODER_HEADROOM = 1.25
+const HW_ENCODER_HEADROOM = 1.08
 
 let ffmpegLock: Promise<any> = Promise.resolve()
 function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
@@ -59,7 +59,61 @@ function pickRecorderMime(): { mime: string; isMp4: boolean } {
   return { mime: webm, isMp4: false }
 }
 
+function getRecordedVideoDuration(blob: Blob, fallbackDuration: number): Promise<number> {
+  const url = URL.createObjectURL(blob)
+  const probe = document.createElement('video')
+  probe.preload = 'metadata'
+  probe.src = url
+
+  return new Promise<number>((resolve) => {
+    let settled = false
+    const cleanup = () => {
+      if (settled) return false
+      settled = true
+      probe.removeAttribute('src')
+      probe.load()
+      URL.revokeObjectURL(url)
+      return true
+    }
+    const timeout = window.setTimeout(() => {
+      cleanup()
+      resolve(fallbackDuration)
+    }, 15000)
+    probe.onloadedmetadata = () => {
+      window.clearTimeout(timeout)
+      const duration = probe.duration
+      if (!cleanup()) return
+      resolve(Number.isFinite(duration) && duration > 0 ? duration : fallbackDuration)
+    }
+    probe.onerror = () => {
+      window.clearTimeout(timeout)
+      if (cleanup()) resolve(fallbackDuration)
+    }
+  })
+}
+
+function normalizeExportStyle(style: StudioStyleConfig | Style): StudioStyleConfig {
+  if ('aspectRatio' in style) return style
+  return {
+    ...DEFAULT_STUDIO_STYLE,
+    fontFamily: style.fontId || DEFAULT_STUDIO_STYLE.fontFamily,
+    fontSizePercent: Number(style.size) || DEFAULT_STUDIO_STYLE.fontSizePercent,
+    textColor: style.color || DEFAULT_STUDIO_STYLE.textColor,
+    activeWordColor: style.hlColor || DEFAULT_STUDIO_STYLE.activeWordColor,
+    hasBg: style.bgOpacity > 0,
+    bgOpacity: style.bgOpacity,
+    hasTextStroke: style.outline,
+    textStrokeWidth: style.outline ? DEFAULT_STUDIO_STYLE.textStrokeWidth : 0,
+    positionXPercent: style.x ?? DEFAULT_STUDIO_STYLE.positionXPercent,
+    positionYPercent: style.y ?? DEFAULT_STUDIO_STYLE.positionYPercent,
+    hasActiveWordBg: style.karaoke,
+    alignment: style.align ?? DEFAULT_STUDIO_STYLE.alignment,
+  }
+}
+
 export function useVideoExport(sourceFile?: File | Blob | null) {
+  const locale = useLocale()
+  const translate = (fa: string, en: string) => L(locale, fa, en)
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState(0)
   const [stageText, setStageText] = useState('')
@@ -101,11 +155,16 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
     }
   }, [sourceFile, prepAudio])
 
-  const exportVideo = async (videoUrl: string, segments: Seg[], style: Style, baseName: string = 'video', quality: ExportQuality = 'balanced') => {
+  const exportVideo = async (videoUrl: string, segments: Seg[], style: StudioStyleConfig | Style, baseName: string = 'video', quality: ExportQuality = 'balanced') => {
     if (!videoUrl || exporting) return
+    const renderStyle = normalizeExportStyle(style)
+    const renderSegments: StudioSegment[] = segments.map((segment) => ({
+      ...segment,
+      words: segment.words?.map((word) => ({ text: word.w, start: word.start, end: word.end })),
+    }))
     setExporting(true)
     setProgress(0)
-    setStageText('آماده‌سازی لایه‌ها...')
+    setStageText(translate('آماده‌سازی لایه‌ها...', 'Preparing layers…'))
     cancelRef.current = false
 
     // ویدیو را کوچک ولی داخل صفحه نگه می‌داریم (نه -9999px) تا مرورگر رندرش را متوقف نکند
@@ -126,12 +185,12 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
     let visibilityHandler: (() => void) | null = null
 
     try {
-      const styleRecord = style as Style & { fontFamily?: string; watermarks?: Array<{ type: string; fontFamily?: string }> }
-      const usedFonts = new Set<string>([styleRecord.fontFamily || (styleRecord as any).fontId || 'Vazirmatn'])
-      for (const watermark of styleRecord.watermarks ?? []) {
+      const usedFonts = new Set<string>([renderStyle.fontFamily || 'Vazirmatn'])
+      for (const watermark of renderStyle.watermarks ?? []) {
         if (watermark.type === 'text' && watermark.fontFamily) usedFonts.add(watermark.fontFamily)
       }
-      await Promise.all([...usedFonts].map(ensureFontLoaded))
+      await Promise.all([...usedFonts].map((family) => ensureFontLoaded(family, true)))
+      await document.fonts.ready
       await new Promise<void>((resolve, reject) => {
         video.onloadedmetadata = () => resolve()
         video.onerror = () => reject(new Error('خطا در بارگذاری اولیه ویدیو'))
@@ -157,7 +216,7 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
         probeStream?.getTracks().forEach((t: MediaStreamTrack) => t.stop())
       } catch { targetFps = 30 }
 
-      const ratio = (style as any).aspectRatio || '16:9'
+      const ratio = renderStyle.aspectRatio || '16:9'
       let W: number, H: number
       if (ratio === '9:16') { W = 1080; H = 1920 }
       else if (ratio === '16:9') { W = 1920; H = 1080 }
@@ -173,39 +232,30 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
 
       canvasStream = canvas.captureStream(targetFps)
       const { mime, isMp4 } = pickRecorderMime()
-      const fastPath = FAST_MUX && isMp4
-      console.log('[EXPORT] recorder mime:', mime, '| direct MP4:', isMp4, '| fast mux:', fastPath)
+      console.log('[EXPORT] recorder mime:', mime, '| direct MP4:', isMp4, '| normalizing frame timestamps')
 
       // بودجه‌ی بیت‌ریت بر اساس حجم فایل اصلی (همان منطق قبلی)
-      const sizeFactor = quality === 'high' ? 0.94 : 0.86
+      const sizeFactor = quality === 'high' ? 1.1 : 1.03
       const knownSourceBytes = sourceFile?.size ?? 0
       const knownSourceKbps = knownSourceBytes > 0 && duration > 0
         ? (knownSourceBytes * 8) / duration / 1000
         : 0
 
-      // بیت‌ریت بر پیکسل. برای حجم کمتر عدد 0.04 را به 0.025 کاهش بده.
-      const bitsPerPixel = quality === 'high' ? 0.07 : 0.04
+      const bitsPerPixel = quality === 'high' ? 0.2 : 0.14
       const directBitrate = Math.min(
-        12_000_000,
-        Math.max(1_500_000, Math.round(W * H * Math.min(targetFps, 30) * bitsPerPixel))
+        24_000_000,
+        Math.max(8_000_000, Math.round(W * H * Math.min(targetFps, 30) * bitsPerPixel))
       )
 
       let videoBitrate: number
-      if (fastPath) {
-        // در مسیر سریع، همین ضبط خروجی نهایی است؛ پس بیت‌ریتش را از بودجه‌ی فایل اصلی می‌سازیم
-        if (knownSourceKbps > 0) {
-          const totalKbps = Math.max(80, Math.floor(knownSourceKbps * sizeFactor))
-          const audioKbps = Math.max(32, Math.min(96, Math.floor(totalKbps * 0.25)))
-          const videoKbps = Math.max(32, totalKbps - audioKbps)
-          videoBitrate = Math.min(
-            12_000_000,
-            Math.max(1_000_000, Math.round(videoKbps * 1000 * HW_ENCODER_HEADROOM))
-          )
-        } else {
-          videoBitrate = directBitrate
-        }
+      if (knownSourceKbps > 0) {
+        const totalKbps = Math.max(160, Math.floor(knownSourceKbps * sizeFactor))
+        videoBitrate = Math.min(
+          24_000_000,
+          Math.max(quality === 'high' ? 10_000_000 : 7_000_000, Math.round(totalKbps * 1000 * HW_ENCODER_HEADROOM))
+        )
       } else {
-        videoBitrate = isMp4 ? directBitrate : (duration > 120 ? 9_000_000 : 15_000_000)
+        videoBitrate = directBitrate
       }
 
       const rec = new MediaRecorder(canvasStream, { mimeType: mime, videoBitsPerSecond: videoBitrate })
@@ -220,7 +270,7 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
         if (document.hidden) {
           try { video.pause() } catch {}
           if (rec.state === 'recording') { try { rec.pause() } catch {} }
-          setStageText('رندر متوقف شد؛ برای ادامه به این تب برگردید')
+          setStageText(translate('رندر متوقف شد؛ برای ادامه به این تب برگردید', 'Rendering paused; return to this tab to continue.'))
         } else {
           if (rec.state === 'paused') { try { rec.resume() } catch {} }
           video.play().catch(() => {})
@@ -229,7 +279,15 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
       document.addEventListener('visibilitychange', visibilityHandler)
 
       video.currentTime = 0
-      drawSubtitleOnCanvas(ctx, video, W, H, 0, duration, segments, style)
+      renderStudioFrame({
+        ctx,
+        canvasWidth: W,
+        canvasHeight: H,
+        video,
+        currentTime: 0,
+        segments: renderSegments,
+        style: renderStyle,
+      })
       rec.start(250)
       await video.play()
 
@@ -251,15 +309,22 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
         const finish = () => { if (settled) return; cleanup(); resolve() }
         const fail = (msg: string) => { if (settled) return; cleanup(); reject(new Error(msg)) }
 
-        // در مسیر سریع، مرحله‌ی بعد (mux) فقط چند ثانیه است؛ پس بازه‌ی پیشرفت ضبط بزرگ‌تر می‌شود
-        const recordShare = fastPath ? 90 : 50
+        const recordShare = 50
         const paint = (mediaTime: number) => {
-          drawSubtitleOnCanvas(ctx, video, W, H, mediaTime, duration, segments, style)
+          renderStudioFrame({
+            ctx,
+            canvasWidth: W,
+            canvasHeight: H,
+            video,
+            currentTime: mediaTime,
+            segments: renderSegments,
+            style: renderStyle,
+          })
           const sec = Math.floor(mediaTime)
           if (sec !== lastUiSecond) {
             lastUiSecond = sec
             setProgress(Math.min(recordShare, Math.round((mediaTime / duration) * recordShare)))
-            setStageText(`رندر کانویس (${Math.max(0, Math.ceil(duration - mediaTime))}s باقی‌مانده)`)
+            setStageText(translate(`رندر کانویس (${Math.max(0, Math.ceil(duration - mediaTime))}s باقی‌مانده)`, `Rendering frames (${Math.max(0, Math.ceil(duration - mediaTime))}s remaining)`))
           }
         }
 
@@ -306,8 +371,8 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
       rec.stop(); video.pause(); await recorderStopped
       if (cancelRef.current) return
 
-      setStageText('ادغام صدا و ساخت فایل نهایی...')
-      setProgress(fastPath ? 92 : 55)
+      setStageText(translate('ادغام صدا و ساخت فایل نهایی...', 'Combining audio and creating the final file…'))
+      setProgress(55)
 
       const finalBlob = await runExclusive(async () => {
         const ff = await loadFFmpeg()
@@ -326,9 +391,20 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
         }
 
         const rawBlob = new Blob(rawChunks, { type: mime })
+        const recordedDuration = await getRecordedVideoDuration(rawBlob, duration)
+        const videoTimeScale = duration / recordedDuration
+        console.info('[EXPORT] timeline durations:', {
+          sourceSeconds: duration,
+          recordedSeconds: recordedDuration,
+          videoTimeScale,
+        })
 
-        // اگر صدای اصلی پیدا نشد، در حالت MP4 خروجی ضبط‌شده را بدون انکود مجدد نگه می‌داریم.
-        if (isMp4 && !audioFileToUse) return new Blob([rawBlob], { type: 'video/mp4' })
+        if (!audioFileToUse) {
+          throw new Error(translate(
+            'صدای ویدیوی اصلی استخراج نشد؛ برای جلوگیری از ساخت خروجی بی‌صدا، رندر متوقف شد.',
+            'Could not extract the original audio. Export was stopped to avoid producing a silent video.'
+          ))
+        }
 
         const rawVideoName = `raw_${Date.now()}.${isMp4 ? 'mp4' : 'webm'}`
         const finalOutputName = `final_${Date.now()}.mp4`
@@ -342,62 +418,125 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
         const sourceAverageKbps = sourceBytes > 0 && duration > 0
           ? (sourceBytes * 8) / duration / 1000
           : (rawBlob.size * 8) / Math.max(duration, 0.1) / 1000
-        const targetTotalKbps = Math.max(80, Math.floor(sourceAverageKbps * sizeFactor))
-        const targetAudioKbps = audioFileToUse
-          ? Math.max(32, Math.min(96, Math.floor(targetTotalKbps * 0.25)))
-          : 0
-        const targetVideoKbps = Math.max(32, targetTotalKbps - targetAudioKbps)
-        const targetVideoBps = targetVideoKbps * 1000
+        const targetVideoBps = Math.min(
+          24_000_000,
+          Math.max(quality === 'high' ? 10_000_000 : 7_000_000, Math.round(sourceAverageKbps * sizeFactor * 1000))
+        )
 
-        // صدا: timestamp از صفر و جبران اختلاف جزئی ساعت‌ها (انکود صدا سبک و سریع است)
+        // صدای خروجی را برای پخش موبایل/شبکه هم‌سطح و با بیت‌ریت کافی نگه می‌داریم.
+        const audioOutputArgs = ['-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2']
         const audioCodecArgs = audioFileToUse
-          ? ['-af', 'asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0', '-c:a', 'aac', '-b:a', `${targetAudioKbps}k`]
+          ? ['-af', 'loudnorm=I=-16:TP=-1.5:LRA=11,asetpts=PTS-STARTPTS', ...audioOutputArgs]
           : []
-        console.log('[EXPORT] source avg kbps:', Math.round(sourceAverageKbps), 'target video kbps:', targetVideoKbps)
+        console.log('[EXPORT] source avg kbps:', Math.round(sourceAverageKbps), 'target video kbps:', Math.round(targetVideoBps / 1000), 'audio kbps:', audioFileToUse ? 192 : 0)
 
         // درصد پیشرفت را از لاگ خود ffmpeg (time=...) می‌خوانیم
-        const muxBase = fastPath ? 92 : 55
-        const muxSpan = fastPath ? 7 : 44
+        const muxBase = 55
+        const muxSpan = 40
         const onLog = ({ message }: { message: string }) => {
+          ffmpegLogs.push(message)
+          if (ffmpegLogs.length > 100) ffmpegLogs.shift()
           const m = message.match(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/)
           if (m) {
             const t = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])
             const r = Math.max(0, Math.min(1, t / duration))
             setProgress(muxBase + Math.round(r * muxSpan))
-            setStageText(`${fastPath ? 'ادغام صدا' : 'فشرده‌سازی'}... ${Math.round(r * 100)}%`)
+            setStageText(`${translate('فشرده‌سازی', 'Encoding')}... ${Math.round(r * 100)}%`)
           }
         }
+        const ffmpegLogs: string[] = []
         ff.on('log', onLog)
 
         try {
-          const videoCodecArgs = fastPath
-            ? ['-c:v', 'copy'] // بدون انکود مجدد
-            : [
-                '-vf', `fps=${targetFps},setpts=PTS-STARTPTS`,
-                '-r', String(targetFps),
-                '-c:v', 'libx264',
-                '-pix_fmt', 'yuv420p',
-                '-b:v', String(targetVideoBps),
-                '-maxrate', String(targetVideoBps),
-                '-bufsize', String(targetVideoBps * 2),
-                '-preset', 'veryfast',
-              ]
-          console.log('[EXPORT] ffmpeg start, mode:', fastPath ? 'video copy + audio sync' : 'CFR re-encode + audio sync')
+          const videoCodecArgs = [
+            '-vf', `fps=${targetFps},setpts=(PTS-STARTPTS)*${videoTimeScale.toFixed(8)}`,
+            '-r', String(targetFps),
+            '-c:v', 'libx264',
+            '-pix_fmt', 'yuv420p',
+            '-b:v', String(targetVideoBps),
+            '-maxrate', String(Math.round(targetVideoBps * 1.25)),
+            '-bufsize', String(targetVideoBps * 2),
+            '-preset', 'veryfast',
+          ]
+          console.log('[EXPORT] ffmpeg start: CFR timestamp-normalized video + audio sync')
 
-          const code = await ff.exec([
+          const muxArgs = [
             '-fflags', '+genpts',
             '-i', rawVideoName,
             ...audioArgs,
             ...mapArgs,
             ...videoCodecArgs,
             ...audioCodecArgs,
+            '-t', String(duration),
             '-avoid_negative_ts', 'make_zero',
-            '-shortest',
             '-movflags', '+faststart',
             finalOutputName,
-          ])
+          ]
+          let code = await ff.exec(muxArgs)
           if (typeof code === 'number' && code !== 0) {
-            throw new Error(`ffmpeg با کد ${code} متوقف شد`)
+            const firstFailure = ffmpegLogs.slice(-12).join('\n')
+            const audioFilterFailure = /loudnorm|aresample|channel layout|format_out|Error reinitializing filters|Failed to inject frame/i.test(firstFailure)
+
+            if (audioFileToUse && audioFilterFailure) {
+              console.warn('[EXPORT] audio filter/format failed; retrying with explicit stereo output')
+              ffmpegLogs.length = 0
+              await ff.deleteFile(finalOutputName).catch(() => {})
+              const retryAudioArgs = [
+                '-af', 'dynaudnorm=f=150:g=15:p=0.95:m=10,asetpts=PTS-STARTPTS',
+                ...audioOutputArgs,
+              ]
+              code = await ff.exec([
+                ...muxArgs.slice(0, muxArgs.indexOf('-af')),
+                ...retryAudioArgs,
+                ...muxArgs.slice(muxArgs.indexOf('-af') + audioCodecArgs.length),
+              ])
+
+              if (typeof code === 'number' && code !== 0) {
+                console.warn('[EXPORT] normalized audio retry failed; retrying with sync-only stereo AAC')
+                ffmpegLogs.length = 0
+                await ff.deleteFile(finalOutputName).catch(() => {})
+                const safeAudioArgs = [
+                  '-af', 'asetpts=PTS-STARTPTS',
+                  ...audioOutputArgs,
+                ]
+                code = await ff.exec([
+                  ...muxArgs.slice(0, muxArgs.indexOf('-af')),
+                  ...safeAudioArgs,
+                  ...muxArgs.slice(muxArgs.indexOf('-af') + audioCodecArgs.length),
+                ])
+              }
+            }
+
+            const latestFailure = ffmpegLogs.slice(-12).join('\n')
+            const canCopyVideo = isMp4 &&
+              Math.abs(recordedDuration - duration) <= Math.max(0.25, duration * 0.005) &&
+              /Unknown encoder ['"]?libx264|Encoder not found/i.test(`${firstFailure}\n${latestFailure}`)
+
+            if (typeof code === 'number' && code !== 0 && canCopyVideo && audioFileToUse) {
+              console.warn('[EXPORT] libx264 is unavailable; retrying with the recorded MP4 video stream')
+              ffmpegLogs.length = 0
+              await ff.deleteFile(finalOutputName).catch(() => {})
+              const copyArgs = [
+                '-fflags', '+genpts',
+                '-i', rawVideoName,
+                ...audioArgs,
+                ...mapArgs,
+                '-c:v', 'copy',
+                '-af', 'asetpts=PTS-STARTPTS',
+                ...audioOutputArgs,
+                '-t', String(duration),
+                '-avoid_negative_ts', 'make_zero',
+                '-movflags', '+faststart',
+                finalOutputName,
+              ]
+              code = await ff.exec(copyArgs)
+            }
+
+            if (typeof code === 'number' && code !== 0) {
+              const details = ffmpegLogs.slice(-12).join('\n')
+              console.error('[EXPORT] FFmpeg failed', { code, firstFailure, details })
+              throw new Error(`ffmpeg با کد ${code} متوقف شد${details ? `: ${details}` : ''}`)
+            }
           }
           console.log('[EXPORT] ffmpeg finished')
         } finally {
@@ -414,7 +553,7 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
       })
 
       if (cancelRef.current) return
-      setProgress(100); setStageText('آماده دانلود!')
+      setProgress(100); setStageText(translate('آماده دانلود!', 'Ready to download!'))
       const url = URL.createObjectURL(finalBlob)
       const a = document.createElement('a')
       a.href = url; a.download = `${baseName}.subtitled.mp4`
@@ -422,7 +561,7 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
       setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url) }, 5000)
     } catch (e: any) {
       console.error('[EXPORT ERROR]', e)
-      if (!cancelRef.current) alert('خطا در رندر خروجی: ' + (e?.message || 'نامشخص'))
+      if (!cancelRef.current) alert(translate('خطا در رندر خروجی: ' + (e?.message || 'نامشخص'), 'Video export failed. Please try again.'))
     } finally {
       if (visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler)
       try { if (recorder && recorder.state !== 'inactive') recorder.stop() } catch {}

@@ -3,8 +3,10 @@
 import { useState, useRef, ChangeEvent } from 'react'
 import { removeBackground } from '@imgly/background-removal'
 import ToolAuthGuard from './ToolAuthGuard'
+import { useLocale } from '@/lib/use-locale'
 
 function BackgroundRemoverCore() {
+  const isEn = useLocale() === 'en'
   const [imageSrc, setImageSrc] = useState<string | null>(null)
   const [resultSrc, setResultSrc] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -39,7 +41,7 @@ function BackgroundRemoverCore() {
 
       setResultSrc(URL.createObjectURL(blob))
     } catch (err: any) {
-      alert('خطا در پردازش تصویر')
+      alert(isEn ? 'Image processing failed.' : 'خطا در پردازش تصویر')
     } finally {
       setLoading(false)
     }
@@ -48,7 +50,7 @@ function BackgroundRemoverCore() {
   return (
     <div className="mx-auto max-w-4xl rounded-2xl border border-white/10 bg-zinc-950 p-6 text-white shadow-2xl">
       <div className="mb-6 text-center">
-        <h2 className="text-2xl font-black text-amber-400">حذف پس‌زمینه تصویر</h2>
+        <h2 className="text-2xl font-black text-amber-400">{isEn ? 'Remove image background' : 'حذف پس‌زمینه تصویر'}</h2>
       </div>
 
       <div className="mb-6 flex justify-center">
@@ -58,21 +60,21 @@ function BackgroundRemoverCore() {
           onClick={() => fileInputRef.current?.click()}
           className="rounded-xl border border-dashed border-white/20 bg-white/5 px-6 py-3 text-sm font-medium text-white/80 transition hover:border-amber-500/50 hover:text-amber-300"
         >
-          {imageSrc ? 'تغییر عکس انتخابی' : '📁 انتخاب تصویر'}
+          {imageSrc ? (isEn ? 'Change selected image' : 'تغییر عکس انتخابی') : (isEn ? '📁 Choose an image' : '📁 انتخاب تصویر')}
         </button>
       </div>
 
       {imageSrc && (
         <div className="mb-6 grid grid-cols-1 gap-6 md:grid-cols-2">
           <div className="flex flex-col items-center">
-            <span className="mb-2 text-xs text-white/40">تصویر اصلی</span>
+            <span className="mb-2 text-xs text-white/40">{isEn ? 'Original image' : 'تصویر اصلی'}</span>
             <div className="flex h-80 w-full items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black/40 p-2">
               <img src={imageSrc} alt="Original" className="max-h-full max-w-full object-contain rounded-lg" />
             </div>
           </div>
 
           <div className="flex flex-col items-center">
-            <span className="mb-2 text-xs text-white/40">نتیجه نهایی</span>
+            <span className="mb-2 text-xs text-white/40">{isEn ? 'Result' : 'نتیجه نهایی'}</span>
             <div
               className="flex h-80 w-full items-center justify-center rounded-xl border border-white/10 p-2"
               style={{
@@ -85,7 +87,7 @@ function BackgroundRemoverCore() {
               {resultSrc ? (
                 <img src={resultSrc} alt="Result" className="max-h-full max-w-full object-contain" />
               ) : (
-                <span className="text-xs text-white/30">در انتظار آغاز پردازش...</span>
+                <span className="text-xs text-white/30">{isEn ? 'Waiting to start processing...' : 'در انتظار آغاز پردازش...'}</span>
               )}
             </div>
           </div>
@@ -95,7 +97,7 @@ function BackgroundRemoverCore() {
       {loading && (
         <div className="mb-6">
           <div className="mb-1.5 flex justify-between text-xs text-white/70">
-            <span>در حال پردازش...</span>
+            <span>{isEn ? 'Processing...' : 'در حال پردازش...'}</span>
             <span>{progress}%</span>
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-800">
@@ -111,7 +113,7 @@ function BackgroundRemoverCore() {
           onClick={processImage}
           className="rounded-xl bg-amber-500 px-6 py-2.5 text-sm font-bold text-black transition hover:bg-amber-400 disabled:opacity-40"
         >
-          {loading ? 'در حال پردازش...' : 'شروع پردازش هوش مصنوعی'}
+          {loading ? (isEn ? 'Processing...' : 'در حال پردازش...') : (isEn ? 'Remove background with AI' : 'شروع پردازش هوش مصنوعی')}
         </button>
 
         {resultSrc && (
@@ -120,7 +122,7 @@ function BackgroundRemoverCore() {
             download="cutout.png"
             className="rounded-xl border border-white/10 bg-white/10 px-6 py-2.5 text-sm font-bold text-white transition hover:bg-white/20"
           >
-            دانلود تصویر PNG با پس‌زمینه شفاف
+            {isEn ? 'Download transparent PNG' : 'دانلود تصویر PNG با پس‌زمینه شفاف'}
           </a>
         )}
       </div>
@@ -129,8 +131,9 @@ function BackgroundRemoverCore() {
 }
 
 export default function BackgroundRemover() {
+  const isEn = useLocale() === 'en'
   return (
-    <ToolAuthGuard toolName="حذف پس‌زمینه تصویر">
+    <ToolAuthGuard toolName={isEn ? 'Background remover' : 'حذف پس‌زمینه تصویر'}>
       <BackgroundRemoverCore />
     </ToolAuthGuard>
   )

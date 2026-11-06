@@ -8,6 +8,8 @@ export interface VideoTranscriptSegment {
   isFinal: boolean
 }
 
+type SetupState = { settled: boolean }
+
 export class VideoLiveTranscriber {
   private ws: WebSocket | null = null
   private secondsSent = 0
@@ -18,6 +20,7 @@ export class VideoLiveTranscriber {
   private setupSettled = false
   private lastCommittedTurnText = ''
   private finishResolver: (() => void) | null = null
+  private remoteError: Error | null = null
 
   onSegment?: (seg: VideoTranscriptSegment) => void
   onError?: (msg: string) => void
@@ -34,10 +37,10 @@ export class VideoLiveTranscriber {
 
   async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
-      let settled = false
+      const setupState: SetupState = { settled: false }
       const setupTimeout = window.setTimeout(() => {
-        if (settled) return
-        settled = true
+        if (setupState.settled) return
+        setupState.settled = true
         this.ws?.close()
         reject(new Error('Cloudflare Gemini Live در مهلت ۲۰ ثانیه‌ای آماده نشد.'))
       }, 20000)
@@ -72,11 +75,11 @@ export class VideoLiveTranscriber {
           if (event.data instanceof Blob) {
             const reader = new FileReader()
             reader.onload = () => {
-              this.processMessage(reader.result as string, resolve, reject, settled, setupTimeout)
+              this.processMessage(reader.result as string, resolve, reject, setupState, setupTimeout)
             }
             return
           }
-          this.processMessage(event.data, resolve, reject, settled, setupTimeout)
+          this.processMessage(event.data, resolve, reject, setupState, setupTimeout)
         } catch (err) {
           console.error('[VideoLiveTranscriber] Parse error:', err)
         }
@@ -84,37 +87,52 @@ export class VideoLiveTranscriber {
 
       this.ws.onerror = () => {
         this.onError?.('خطای وب‌سوکت لایو ویدیو')
-        if (!settled) {
-          settled = true
+        if (!setupState.settled) {
+          setupState.settled = true
           window.clearTimeout(setupTimeout)
           reject(new Error('اتصال به Cloudflare Gemini Live برقرار نشد.'))
         }
       }
 
-      this.ws.onclose = () => {
+      this.ws.onclose = (event) => {
+        if (!setupState.settled) {
+          setupState.settled = true
+          window.clearTimeout(setupTimeout)
+          const reason = event.reason.trim()
+          reject(new Error(
+            reason
+              ? `اتصال Gemini Live بسته شد (${event.code}): ${reason}`
+              : `اتصال Gemini Live پیش از آماده‌شدن بسته شد (کد ${event.code}).`
+          ))
+        }
         this.onClose?.()
       }
     })
   }
 
-  private processMessage(dataStr: string, resolve: () => void, reject: (reason: any) => void, settled: boolean, setupTimeout: number) {
+  private processMessage(dataStr: string, resolve: () => void, reject: (reason: any) => void, setupState: SetupState, setupTimeout: number) {
     const res = JSON.parse(dataStr)
 
     if (res.setupComplete) {
       this.setupSettled = true
-      if (settled) return
-      settled = true
+      if (setupState.settled) return
+      setupState.settled = true
       window.clearTimeout(setupTimeout)
       resolve()
       return
     }
 
-    if (res.proxyError) {
-      this.onError?.(res.proxyError)
-      if (!this.setupSettled && !settled) {
-        settled = true
+    const errorMessage = res.proxyError || res.error?.message || res.error
+    if (errorMessage) {
+      const message = typeof errorMessage === 'string'
+        ? errorMessage
+        : JSON.stringify(errorMessage)
+      this.remoteError = new Error(message)
+      this.onError?.(message)
+      if (!this.setupSettled && !setupState.settled) {
+        setupState.settled = true
         window.clearTimeout(setupTimeout)
-        reject(new Error(res.proxyError))
+        reject(this.remoteError)
       }
       return
     }
@@ -178,7 +196,7 @@ export class VideoLiveTranscriber {
   }
 
   sendChunk(base64Pcm: string, durationSec: number): boolean {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
+    if (this.remoteError || !this.ws || this.ws.readyState !== WebSocket.OPEN) return false
     try {
       this.ws.send(JSON.stringify({
         realtimeInput: {
@@ -237,5 +255,9 @@ export class VideoLiveTranscriber {
 
   getTranscript(): string {
     return this.committedText.trim()
+  }
+
+  getErrorMessage(): string | null {
+    return this.remoteError?.message ?? null
   }
 }

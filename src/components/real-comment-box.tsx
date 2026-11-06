@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import type { Locale } from '@/lib/i18n'
+import { localizedPath } from '@/lib/locale-path'
 
 type Comment = {
   id: string
@@ -20,11 +22,12 @@ export default function RealCommentBox({
   targetId,
   promptId,
   targetType = 'prompt',
-  titleLabel = 'دیدگاه‌ها',
-  textPlaceholder = 'دیدگاه یا تجربه خود را درباره این پرامپت بنویسید...',
-  submitLabel = 'ثبت دیدگاه',
-  loginRequired = 'برای ثبت نظر لطفاً وارد حساب خود شوید.',
+titleLabel,
+textPlaceholder,
+submitLabel,
+loginRequired,
   isLoggedIn = false,
+locale = 'fa',
 }: {
   initial?: Comment[]
   initialComments?: Comment[]
@@ -36,10 +39,17 @@ export default function RealCommentBox({
   submitLabel?: string
   loginRequired?: string
   isLoggedIn?: boolean
+locale?: Locale
 }) {
   const effectiveInitial = Array.isArray(initial) && initial.length > 0 
     ? initial 
     : (Array.isArray(initialComments) ? initialComments : [])
+const labels = {
+title: titleLabel ?? (locale === 'en' ? 'Comments' : 'دیدگاه‌ها'),
+placeholder: textPlaceholder ?? (locale === 'en' ? 'Share your thoughts or experience with this prompt...' : 'دیدگاه یا تجربه خود را درباره این پرامپت بنویسید...'),
+submit: submitLabel ?? (locale === 'en' ? 'Post comment' : 'ثبت دیدگاه'),
+login: loginRequired ?? (locale === 'en' ? 'Please sign in to leave a comment.' : 'برای ثبت نظر لطفاً وارد حساب خود شوید.'),
+}
 
   const [list, setList] = useState<Comment[]>(effectiveInitial)
   const [text, setText] = useState('')
@@ -51,8 +61,8 @@ export default function RealCommentBox({
     e.preventDefault()
     if (!text.trim()) return
     if (!isLoggedIn) {
-      alert(loginRequired)
-      window.location.href = '/login'
+alert(labels.login)
+window.location.href = localizedPath(locale, '/login')
       return
     }
     const res = await fetch('/api/comments', {
@@ -79,7 +89,7 @@ export default function RealCommentBox({
 
   const renderOne = (c: Comment, depth: number) => {
     const profileSlug = c.username || c.userId
-    const profileUrl = profileSlug ? `/u/${profileSlug}` : null
+const profileUrl = profileSlug ? localizedPath(locale, `/u/${profileSlug}`) : null
 
     return (
       <div
@@ -108,7 +118,7 @@ export default function RealCommentBox({
             )}
           </div>
           <span className="font-mono text-[11px] text-ink-faint">
-            {c.createdAt ? new Date(c.createdAt).toLocaleDateString('fa-IR') : ''}
+{c.createdAt ? new Date(c.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'fa-IR') : ''}
           </span>
         </div>
 
@@ -120,7 +130,7 @@ export default function RealCommentBox({
             onClick={() => setReplyTo(c)}
             className="text-xs text-gold-bright hover:underline"
           >
-            پاسخ به این نظر
+{locale === 'en' ? 'Reply' : 'پاسخ به این نظر'}
           </button>
         </div>
 
@@ -129,43 +139,55 @@ export default function RealCommentBox({
     )
   }
 
-  return (
-    <div className="space-y-6">
-      <h3 className="text-lg font-bold text-ink flex items-center gap-2">
-        <span>💬</span>
-        <span>{titleLabel}</span>
-        <span className="text-xs font-mono bg-surface px-2 py-0.5 rounded-full border border-line text-ink-muted">
-          {safeList.length}
-        </span>
-      </h3>
+return (
+<div className="space-y-6">
+      <form onSubmit={submit} className="rounded-2xl border border-gold/20 bg-gradient-to-br from-surface via-surface/95 to-gold/5 p-4 shadow-card md:p-5">
+        <label htmlFor="comment-text" className="mb-3 flex items-center gap-2 text-sm font-bold text-ink">
+          <span aria-hidden="true" className="flex h-8 w-8 items-center justify-center rounded-xl border border-gold/25 bg-gold/10 text-base">✍️</span>
+          <span>{locale === 'en' ? 'Write your comment' : 'دیدگاه خود را بنویسید'}</span>
+        </label>
 
-      <form onSubmit={submit} className="space-y-3">
         {replyTo && (
           <div className="flex items-center justify-between bg-gold/10 border border-gold/30 px-3 py-1.5 rounded-xl text-xs text-gold-bright">
-            <span>در حال پاسخ به: <strong>{replyTo.name}</strong></span>
-            <button type="button" onClick={() => setReplyTo(null)} className="hover:text-red-400">✕ انصراف</button>
+<span>{locale === 'en' ? 'Replying to:' : 'در حال پاسخ به:'} <strong>{replyTo.name}</strong></span>
+<button type="button" onClick={() => setReplyTo(null)} className="hover:text-red-400">{locale === 'en' ? '✕ Cancel' : '✕ انصراف'}</button>
           </div>
         )}
 
         <textarea
+          id="comment-text"
+          required
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={textPlaceholder}
-          rows={3}
-          className="w-full rounded-2xl border border-line bg-surface/50 p-3.5 text-sm text-ink placeholder:text-ink-muted/50 focus:border-gold focus:outline-none transition-colors"
+placeholder={labels.placeholder}
+          rows={4}
+          className="min-h-32 w-full resize-y rounded-xl border border-line-strong bg-[#09090B]/80 px-4 py-3.5 text-sm leading-7 !text-[#F4EFE6] caret-gold placeholder:!text-[#A1A1AA] shadow-inner transition-colors focus:border-gold/70 focus:bg-[#0B0B0D] focus:outline-none focus:ring-4 focus:ring-gold/10"
         />
 
-        <div className="flex justify-end">
-          <button type="submit" className="btn-primary px-5 py-2 rounded-xl text-xs font-bold">
-            {submitLabel}
-          </button>
+<div dir="ltr" className="mt-3 flex flex-wrap items-center justify-between gap-3">
+  <button type="submit" className="inline-flex min-h-12 w-auto shrink-0 items-center justify-center rounded-xl border border-gold/70 bg-gold px-8 py-3 text-sm font-extrabold text-[#171512] shadow-gold-glow transition hover:bg-gold-bright focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/70">
+    {labels.submit}
+  </button>
+  <p dir={locale === 'en' ? 'ltr' : 'rtl'} className="text-[11px] leading-5 text-ink-faint">
+    {locale === 'en' ? 'Keep it kind and helpful to the community.' : 'لطفاً دیدگاه خود را محترمانه و مفید بنویسید.'}
+  </p>
         </div>
       </form>
+
+      <div className="flex items-center justify-between border-b border-line/60 pb-3">
+        <h3 className="flex items-center gap-2 text-base font-bold text-ink">
+          <span aria-hidden="true">💬</span>
+          <span>{labels.title}</span>
+        </h3>
+        <span className="rounded-full border border-gold/25 bg-gold/10 px-3 py-1 text-xs font-semibold tabular-nums text-gold-bright">
+          {safeList.length} {locale === 'en' ? 'comments' : 'دیدگاه'}
+        </span>
+      </div>
 
       <div className="space-y-3 pt-4">
         {roots.length === 0 ? (
           <p className="text-xs text-ink-muted text-center py-6 bg-surface/20 rounded-2xl border border-line/40">
-            اولین نفری باشید که برای این پرامپت نظر ثبت می‌کند.
+{locale === 'en' ? 'Be the first to comment on this prompt.' : 'اولین نفری باشید که برای این پرامپت نظر ثبت می‌کند.'}
           </p>
         ) : (
           roots.map((root) => renderOne(root, 0))

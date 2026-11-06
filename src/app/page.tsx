@@ -1,8 +1,8 @@
 ﻿export const revalidate = 60
 import HeroCanvas from '@/components/hero-canvas'
-import { cookies } from 'next/headers'
 import { dictionaries, type Locale } from '@/lib/i18n'
 import { getCategories, getPrompts, getArticles, L } from '@/lib/data'
+import { getRequestLocale } from '@/lib/request-locale'
 import PromptCard from '@/components/prompt-card'
 import Hero from '@/components/hero'
 import ZoomSection from '@/components/zoom-section'
@@ -10,6 +10,7 @@ import DownButton from '@/components/down-button'
 import CategoryGrid from '@/components/category-grid'
 import Reveal from '@/components/reveal'
 import Link from 'next/link'
+import { localizedPath } from '@/lib/locale-path'
 
 const chips = [
   { fa: 'داغ‌ترین', en: 'Trending', href: '/explore?sort=trending' },
@@ -78,14 +79,14 @@ export const metadata = {
 export const dynamic = 'force-dynamic'
 
 export default async function HomePage() {
-  const cookieStore = await cookies()
-  const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
+  const locale: Locale = await getRequestLocale()
   const t = dictionaries[locale]
 
-  const [categories, prompts, articles] = await Promise.all([
+  const [categories, prompts, articles, news] = await Promise.all([
     getCategories(),
     getPrompts({ take: 12 }),
-    getArticles({ take: 6 }),
+    getArticles({ take: 4, excludeTagFa: 'اخبار' }),
+    getArticles({ take: 4, tagFa: 'اخبار' }),
   ])
 
   const imgPrompts = prompts.filter((p) => (p as any).type === 'IMAGE')
@@ -141,7 +142,7 @@ export default async function HomePage() {
             <Reveal>
               <div className="flex items-end justify-between gap-4">
                 <h2 className="title-shine font-display text-2xl font-bold tracking-tight md:text-3xl">{t.trending}</h2>
-                <Link href="/explore" className="btn-secondary whitespace-nowrap text-xs">{L(locale, 'مشاهده همه', 'View all')}</Link>
+                <Link href={localizedPath(locale, '/explore')} className="btn-secondary whitespace-nowrap text-xs">{L(locale, 'مشاهده همه', 'View all')}</Link>
               </div>
             </Reveal>
 
@@ -168,6 +169,7 @@ export default async function HomePage() {
             <Reveal delay={120}>
               <div className="anim-float">
                 <CategoryGrid
+                  locale={locale}
                   items={categories.map((c) => ({
                     slug: c.slug,
                     icon: c.icon,
@@ -180,56 +182,75 @@ export default async function HomePage() {
         </section>
       </ZoomSection>
 
-      <ZoomSection>
-        <section data-section className="snap-section flex min-h-[68vh] flex-col justify-center border-t border-line/60 py-8">
-          <div className="container-app">
-            <Reveal>
-              <div className="flex items-end justify-between gap-6">
-                <h2 className="title-shine font-display text-2xl font-bold tracking-tight md:text-3xl">
-                  {t.blogSection}
-                </h2>
-                <Link href="/blog" className="text-sm text-gold-bright hover:text-gold">
-                  {L(locale, 'همه مقالات', 'All articles')}
-                </Link>
-              </div>
-            </Reveal>
-
-            <div className="mt-10 grid gap-5 md:grid-cols-3">
-              {articles.map((a, i) => (
-                <Reveal key={a.id} delay={i * 120}>
-                  <Link href={'/blog/' + a.slug} className="card group block overflow-hidden transition-colors hover:border-line-strong">
-                    <div className="overflow-hidden">
-                      <img
-                        src={a.img ? (a.img.includes('/upload/') ? a.img.replace('/upload/', '/upload/f_auto,q_auto,w_800/') : a.img) : ''}
-                        alt={L(locale, a.titleFa, a.titleEn)}
-                        loading="lazy"
-                        className="h-44 w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                      />
-                    </div>
-                    <div className="space-y-3 p-5">
-                      <span className="gold-badge">{L(locale, a.tagFa, a.tagEn)}</span>
-                      <h3 className="line-clamp-1 text-sm font-bold text-ink">
-                        {L(locale, a.titleFa, a.titleEn)}
-                      </h3>
-                      <p className="line-clamp-2 text-xs leading-6 text-ink-muted">
-                        {L(locale, a.descFa, a.descEn)}
-                      </p>
-                      <span className="block text-xs text-gold-bright">{t.readMore}</span>
-                    </div>
+      {[
+        {
+          key: 'articles',
+          title: L(locale, 'مقالات و آموزش هوش مصنوعی', 'AI articles and tutorials'),
+          href: '/blog',
+          linkLabel: L(locale, 'همه مقالات', 'All articles'),
+          items: articles,
+        },
+        {
+          key: 'news',
+          title: L(locale, 'اخبار هوش مصنوعی', 'AI news'),
+          href: '/news',
+          linkLabel: L(locale, 'همه اخبار', 'All news'),
+          items: news,
+        },
+      ].map((section) => (
+        <ZoomSection key={section.key}>
+          <section data-section className="snap-section flex min-h-[68vh] flex-col justify-center border-t border-line/60 py-8">
+            <div className="container-app">
+              <Reveal>
+                <div className="flex items-end justify-between gap-6">
+                  <h2 className="title-shine font-display text-2xl font-bold tracking-tight md:text-3xl">
+                    {section.title}
+                  </h2>
+                  <Link href={localizedPath(locale, section.href)} className="whitespace-nowrap text-sm text-gold-bright hover:text-gold">
+                    {section.linkLabel}
                   </Link>
-                </Reveal>
-              ))}
+                </div>
+              </Reveal>
+
+              <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {section.items.map((a, i) => (
+                  <Reveal key={a.id} delay={i * 90}>
+                    <Link href={localizedPath(locale, '/blog/' + a.slug)} className="card group block h-full overflow-hidden transition-colors hover:border-line-strong">
+                      <div className="overflow-hidden">
+                        <img
+                          src={a.img ? (a.img.includes('/upload/') ? a.img.replace('/upload/', '/upload/f_auto,q_auto,w_800/') : a.img) : ''}
+                          alt={L(locale, a.titleFa, a.titleEn)}
+                          loading="lazy"
+                          className="aspect-[16/9] w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        />
+                      </div>
+                      <div className="space-y-2 p-4">
+                        <span className="gold-badge">{L(locale, a.tagFa, a.tagEn)}</span>
+                        <h3 className="line-clamp-2 text-sm font-bold leading-6 text-ink">
+                          {L(locale, a.titleFa, a.titleEn)}
+                        </h3>
+                        <p className="line-clamp-2 text-xs leading-5 text-ink-muted">
+                          {L(locale, a.descFa, a.descEn)}
+                        </p>
+                        <span className="block pt-1 text-xs text-gold-bright">{t.readMore}</span>
+                      </div>
+                    </Link>
+                  </Reveal>
+                ))}
+              </div>
+              {section.items.length === 0 && (
+                <p className="mt-6 text-sm text-ink-muted">
+                  {section.key === 'news'
+                    ? L(locale, 'خبر تازه‌ای برای نمایش نیست.', 'There are no news stories to show yet.')
+                    : L(locale, 'مقاله‌ای برای نمایش نیست.', 'There are no articles to show yet.')}
+                </p>
+              )}
             </div>
-          </div>
-        </section>
-      </ZoomSection>
+          </section>
+        </ZoomSection>
+      ))}
 
       <DownButton />
     </>
   )
 }
-
-
-
-
-

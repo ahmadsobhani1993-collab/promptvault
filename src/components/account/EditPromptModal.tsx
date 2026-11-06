@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useLocale } from '@/lib/use-locale'
 
 type PromptItem = {
   id: string
@@ -14,6 +15,7 @@ type PromptItem = {
 }
 
 export default function EditPromptModal({ prompt }: { prompt: PromptItem }) {
+  const isEn = useLocale() === 'en'
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -41,12 +43,12 @@ export default function EditPromptModal({ prompt }: { prompt: PromptItem }) {
       })
 
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'خطا در ذخیره تغییرات')
+      if (!res.ok) throw new Error(data.error || (isEn ? 'Could not save changes.' : 'خطا در ذخیره تغییرات'))
 
       setOpen(false)
       router.refresh()
     } catch (err: any) {
-      setError(err?.message || 'مشکلی رخ داد')
+      setError(isEn ? 'Could not save changes. Please try again.' : err?.message || 'مشکلی رخ داد')
     } finally {
       setLoading(false)
     }
@@ -57,16 +59,16 @@ export default function EditPromptModal({ prompt }: { prompt: PromptItem }) {
       <button
         onClick={() => setOpen(true)}
         className="rounded-lg border border-line bg-surface px-2.5 py-1 text-xs text-ink-muted transition-colors hover:border-gold/40 hover:text-gold-bright"
-        title="ویرایش پرامپت"
+        title={isEn ? 'Edit prompt' : 'ویرایش پرامپت'}
       >
-        ✏️ ویرایش
+        {isEn ? '✏️ Edit' : '✏️ ویرایش'}
       </button>
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-          <div className="card w-full max-w-xl max-h-[90vh] overflow-y-auto border-gold/30 bg-[#12100d] p-6 text-right shadow-2xl">
+          <div className={`card w-full max-w-xl max-h-[90vh] overflow-y-auto border-gold/30 bg-[#12100d] p-6 shadow-2xl ${isEn ? 'text-left' : 'text-right'}`}>
             <div className="mb-4 flex items-center justify-between border-b border-line pb-3">
-              <h3 className="font-display text-lg font-bold text-gold-bright">ویرایش پرامپت</h3>
+              <h3 className="font-display text-lg font-bold text-gold-bright">{isEn ? 'Edit prompt' : 'ویرایش پرامپت'}</h3>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
@@ -84,7 +86,7 @@ export default function EditPromptModal({ prompt }: { prompt: PromptItem }) {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="mb-1 block text-xs text-ink-muted">عنوان فارسی</label>
+                <label className="mb-1 block text-xs text-ink-muted">{isEn ? 'Persian title' : 'عنوان فارسی'}</label>
                 <input
                   type="text"
                   value={formData.titleFa}
@@ -95,7 +97,7 @@ export default function EditPromptModal({ prompt }: { prompt: PromptItem }) {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs text-ink-muted">عنوان انگلیسی</label>
+                <label className="mb-1 block text-xs text-ink-muted">{isEn ? 'English title' : 'عنوان انگلیسی'}</label>
                 <input
                   type="text"
                   dir="ltr"
@@ -106,7 +108,7 @@ export default function EditPromptModal({ prompt }: { prompt: PromptItem }) {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs text-ink-muted">متن پرامپت</label>
+                <label className="mb-1 block text-xs text-ink-muted">{isEn ? 'Prompt' : 'متن پرامپت'}</label>
                 <textarea
                   rows={5}
                   value={formData.prompt}
@@ -117,7 +119,7 @@ export default function EditPromptModal({ prompt }: { prompt: PromptItem }) {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs text-ink-muted">توضیحات کوتاه</label>
+                <label className="mb-1 block text-xs text-ink-muted">{isEn ? 'Short description' : 'توضیحات کوتاه'}</label>
                 <input
                   type="text"
                   value={formData.descFa}
@@ -127,7 +129,7 @@ export default function EditPromptModal({ prompt }: { prompt: PromptItem }) {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs text-ink-muted">مدل هوش مصنوعی</label>
+                <label className="mb-1 block text-xs text-ink-muted">{isEn ? 'AI model' : 'مدل هوش مصنوعی'}</label>
                 <input
                   type="text"
                   value={formData.model}
@@ -142,14 +144,14 @@ export default function EditPromptModal({ prompt }: { prompt: PromptItem }) {
                   onClick={() => setOpen(false)}
                   className="rounded-lg border border-line px-4 py-2 text-xs text-ink-muted hover:bg-surface"
                 >
-                  انصراف
+                  {isEn ? 'Cancel' : 'انصراف'}
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
                   className="btn-primary px-5 py-2 text-xs font-bold disabled:opacity-50"
                 >
-                  {loading ? 'در حال ذخیره...' : 'ذخیره تغییرات'}
+                  {loading ? (isEn ? 'Saving...' : 'در حال ذخیره...') : (isEn ? 'Save changes' : 'ذخیره تغییرات')}
                 </button>
               </div>
             </form>

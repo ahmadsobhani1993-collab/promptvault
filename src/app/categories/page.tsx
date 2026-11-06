@@ -1,15 +1,15 @@
 import Link from 'next/link'
-import { cookies } from 'next/headers'
 import { type Locale } from '@/lib/i18n'
 import { getCategories, L } from '@/lib/data'
 import CategoryIcon from '@/components/category-icon'
+import { getRequestLocale } from '@/lib/request-locale'
+import { localizedPath } from '@/lib/locale-path'
 
 export const metadata = { title: 'دسته‌بندی‌ها' }
 export const dynamic = 'force-dynamic'
 
 export default async function CategoriesPage() {
-  const cookieStore = await cookies()
-  const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
+  const locale: Locale = await getRequestLocale()
   const categories = await getCategories()
 
   return (
@@ -22,7 +22,7 @@ export default async function CategoriesPage() {
         {categories.map((cat) => (
           <Link
             key={cat.id}
-            href={'/categories/' + cat.slug}
+            href={localizedPath(locale, '/categories/' + cat.slug)}
             className="card-cream glow-gold flex items-start gap-5 p-6 transition-transform hover:-translate-y-1"
           >
             <div className="text-[#171512]">

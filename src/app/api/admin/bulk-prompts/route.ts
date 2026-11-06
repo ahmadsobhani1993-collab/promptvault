@@ -42,6 +42,7 @@ export async function POST(req: Request) {
         descFa: row.descFa || '',
         slug,
         img,
+        model: row.model || 'AI',
         type: type === 'code' ? 'CODE' : type === 'audio' ? 'AUDIO' : 'TEXT',
         categoryId: cat ? cat.id : '',
       }

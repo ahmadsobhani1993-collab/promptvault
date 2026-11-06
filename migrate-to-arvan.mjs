@@ -2,16 +2,23 @@ import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s
 import https from 'https';
 import fs from 'fs';
 
-// ۱. اطلاعات کلودینری (از .env.local خوانده می‌شود یا دستی جایگزین کنید)
-const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || 'nvwsdtvz';
-const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || '194222451166831';
-const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || 'h7Quq9kKZsVHUUQf1UT2mXsDHkE';
-
-// ۲. اطلاعات آروان‌کلاد شما
-const ARVAN_ACCESS_KEY = 'd1a8d795-2443-4dbc-a02c-8daa85f20012';
-const ARVAN_SECRET_KEY = '5bb1ef44f507fcdb5b7983ccedfe9f9a28fc3f12eacab3861377bdbb41bca3df';
-const ARVAN_ENDPOINT = 'https://s3.eu-west1.arvanstorage.ir';
-const ARVAN_BUCKET = 'promptfa';
+// One-time import of legacy images; all credentials must be provided through environment variables.
+const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
+const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY;
+const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET;
+const ARVAN_ACCESS_KEY = process.env.ARVAN_ACCESS_KEY;
+const ARVAN_SECRET_KEY = process.env.ARVAN_SECRET_KEY;
+const ARVAN_ENDPOINT = process.env.ARVAN_ENDPOINT || 'https://s3.eu-west1.arvanstorage.ir';
+const ARVAN_BUCKET = process.env.ARVAN_BUCKET || 'promptfa';
+for (const [name, value] of Object.entries({
+  CLOUDINARY_CLOUD_NAME,
+  CLOUDINARY_API_KEY,
+  CLOUDINARY_API_SECRET,
+  ARVAN_ACCESS_KEY,
+  ARVAN_SECRET_KEY,
+})) {
+  if (!value) throw new Error(`${name} environment variable is required`);
+}
 const s3 = new S3Client({
   region: 'default',
   endpoint: ARVAN_ENDPOINT,
@@ -22,8 +29,6 @@ const s3 = new S3Client({
 });
 
 const authHeader = 'Basic ' + Buffer.from(`${CLOUDINARY_API_KEY}:${CLOUDINARY_API_SECRET}`).toString('base64');
-const CURSOR_FILE = './migration_cursor.txt';
-
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function doesObjectExist(key) {
@@ -35,11 +40,16 @@ async function doesObjectExist(key) {
   }
 }
 
-function streamAndUploadToArvan(url, key, format) {
+function streamAndUploadToArvan(url, key, format, resourceType) {
   return new Promise((resolve, reject) => {
     https.get(url, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return streamAndUploadToArvan(res.headers.location, key, format).then(resolve).catch(reject);
+        return streamAndUploadToArvan(res.headers.location, key, format, resourceType).then(resolve).catch(reject);
+      }
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        res.resume();
+        reject(new Error(`Asset download failed with HTTP ${res.statusCode}`));
+        return;
       }
 
       const chunks = [];
@@ -53,7 +63,9 @@ function streamAndUploadToArvan(url, key, format) {
               Key: key,
               Body: buffer,
               ACL: 'public-read',
-              ContentType: `image/${format === 'jpg' ? 'jpeg' : format}`,
+              ContentType: resourceType === 'video'
+                ? ({ mov: 'video/quicktime', ogv: 'video/ogg' }[format] || `video/${format}`)
+                : `image/${format === 'jpg' ? 'jpeg' : format}`,
             })
           );
           resolve();
@@ -65,8 +77,8 @@ function streamAndUploadToArvan(url, key, format) {
   });
 }
 
-async function fetchFromCloudinary(cursor) {
-  let url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/resources/image/upload?max_results=500`;
+async function fetchFromCloudinary(resourceType, cursor) {
+  let url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/resources/${resourceType}/upload?max_results=500`;
   if (cursor) url += `&next_cursor=${cursor}`;
 
   for (let attempt = 1; attempt <= 5; attempt++) {
@@ -86,17 +98,18 @@ async function fetchFromCloudinary(cursor) {
   throw new Error('ناتوان در اتصال به کلودینری پس از ۵ بار تلاش.');
 }
 
-async function startMigration() {
+async function migrateResourceType(resourceType) {
+  const cursorFile = resourceType === 'image' ? './migration_cursor.txt' : './migration_cursor_video.txt';
   let nextCursor = null;
-  if (fs.existsSync(CURSOR_FILE)) {
-    nextCursor = fs.readFileSync(CURSOR_FILE, 'utf-8').trim() || null;
+  if (fs.existsSync(cursorFile)) {
+    nextCursor = fs.readFileSync(cursorFile, 'utf-8').trim() || null;
     if (nextCursor) {
       console.log(`📌 ادامه انتقال از نقطه قبلی (Cursor: ${nextCursor})`);
     }
   }
 
   while (true) {
-    const data = await fetchFromCloudinary(nextCursor);
+    const data = await fetchFromCloudinary(resourceType, nextCursor);
 
     for (const item of data.resources) {
       const fileKey = `${item.public_id}.${item.format}`;
@@ -112,7 +125,7 @@ async function startMigration() {
       let uploaded = false;
       for (let retries = 0; retries < 3; retries++) {
         try {
-          await streamAndUploadToArvan(item.secure_url, fileKey, item.format);
+          await streamAndUploadToArvan(item.secure_url, fileKey, item.format, resourceType);
           console.log(`✅ ذخیره شد: ${fileKey}`);
           uploaded = true;
           break;
@@ -122,20 +135,28 @@ async function startMigration() {
         }
       }
       if (!uploaded) {
-        console.error(`❌ انتقال ${fileKey} ناموفق بود.`);
+        throw new Error(`Failed to migrate ${fileKey}; the cursor was not advanced.`);
       }
     }
 
     if (data.next_cursor) {
       nextCursor = data.next_cursor;
-      fs.writeFileSync(CURSOR_FILE, nextCursor);
+      fs.writeFileSync(cursorFile, nextCursor);
       console.log('--- رفتن به صفحه بعدی... ---');
     } else {
-      if (fs.existsSync(CURSOR_FILE)) fs.unlinkSync(CURSOR_FILE);
-      console.log('🎉 تمام تصاویر با موفقیت کامل و بدون نقص به آروان‌کلاد منتقل شدند!');
+      if (fs.existsSync(cursorFile)) fs.unlinkSync(cursorFile);
+      console.log(`🎉 انتقال فایل‌های ${resourceType} به آروان کامل شد.`);
       break;
     }
   }
 }
 
-startMigration().catch(console.error);
+async function startMigration() {
+  await migrateResourceType('image');
+  await migrateResourceType('video');
+}
+
+startMigration().catch((error) => {
+  console.error('Migration failed:', error);
+  process.exitCode = 1;
+});

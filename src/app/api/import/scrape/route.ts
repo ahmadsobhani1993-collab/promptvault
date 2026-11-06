@@ -58,7 +58,7 @@ async function scrapePosts(fromId: number, count: number): Promise<any[]> {
 }
 
 // scrape یک پست تکی با عکس
-async function scrapeSingle(msgId: number): Promise<{ text: string; imgUrl: string | null } | null> {
+async function scrapeSingle(msgId: number): Promise<{ text: string; imgUrl: string | null; isVideo: boolean } | null> {
   const url = `https://t.me/s/${CHANNEL}/${msgId}`
   const r = await fetch(url, {
     headers: { 'User-Agent': 'Mozilla/5.0' },
@@ -78,7 +78,8 @@ async function scrapeSingle(msgId: number): Promise<{ text: string; imgUrl: stri
     .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
     .trim()
 
-  return { text, imgUrl: imgMatch ? imgMatch[1] : null }
+  const isVideo = /tgme_widget_message_video|video_player|<video\b/i.test(html)
+  return { text, imgUrl: imgMatch ? imgMatch[1] : null, isVideo }
 }
 
 export async function GET(req: Request) {
@@ -118,7 +119,9 @@ export async function GET(req: Request) {
 
     try {
       const ai = await analyzeWithGemini({ text: post.text.slice(0, 1500), imgBase64: null, categories })
-      const cat = categories.find((c) => c.slug === ai.categorySlug) ?? categories[0]
+      const cat = (post.isVideo && categories.find((c) => c.slug === 'video'))
+        || categories.find((c) => c.slug === ai.categorySlug)
+        || categories[0]
       const sub = ai.subSlug ? cat.subs.find((s) => s.slug === ai.subSlug) ?? null : null
 
       await prisma.prompt.create({
@@ -132,7 +135,7 @@ export async function GET(req: Request) {
           usageEn: ai.usageEn,
           img: post.imgUrl || DEFAULT_IMG,
           model: /--v\s?\d|--ar|midjourney/i.test(post.text) ? 'Midjourney' : 'AI',
-          type: post.imgUrl ? 'IMAGE' : 'CODE',
+          type: post.isVideo ? 'VIDEO' : post.imgUrl ? 'IMAGE' : 'CODE',
           status: 'PENDING',
           categoryId: cat.id,
           subId: sub?.id ?? null,
@@ -159,4 +162,3 @@ export async function GET(req: Request) {
     results,
   })
 }
-

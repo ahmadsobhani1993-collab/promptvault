@@ -3,8 +3,8 @@ import Link from 'next/link'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { L } from '@/lib/data'
-import { cookies } from 'next/headers'
 import { type Locale } from '@/lib/i18n'
+import { getRequestLocale } from '@/lib/request-locale'
 import PromptActions from '@/components/admin-prompt-actions'
 
 export const dynamic = 'force-dynamic'
@@ -14,8 +14,7 @@ export default async function AdminPromptPreview({ params }: { params: Promise<{
   if (session?.user?.role !== 'ADMIN') redirect('/')
 
   const { slug } = await params
-  const cookieStore = await cookies()
-  const locale: Locale = cookieStore.get('locale')?.value === 'en' ? 'en' : 'fa'
+  const locale: Locale = await getRequestLocale()
 
   const prompt = await prisma.prompt.findUnique({
     where: { id: slug },
@@ -112,7 +111,7 @@ export default async function AdminPromptPreview({ params }: { params: Promise<{
         </div>
       </div>
 
-      <PromptActions promptId={prompt.id} status={prompt.status} locale={locale} />
+      <PromptActions promptId={prompt.id} status={prompt.status} />
     </section>
   )
 }

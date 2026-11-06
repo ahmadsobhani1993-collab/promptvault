@@ -7,6 +7,7 @@ import Footer from '@/components/layout/footer'
 import Analytics from '@/components/analytics'
 import ClientProviders from '@/components/client-providers'
 import MouseTrail from '@/components/mouse-trail'
+import LocaleDocument from '@/components/locale-document'
 
 export const revalidate = 86400
 
@@ -14,10 +15,6 @@ export const metadata: Metadata = {
   icons: { icon: '/favicon.svg', apple: '/icon.svg' },
   title: 'PromptsFA | هزاران پرامپت حرفه‌ای هوش مصنوعی',
   description: 'هزاران پرامپت حرفه‌ای هوش مصنوعی برای تصویر، ویدیو، متن و استودیو زیرنویس',
-  alternates: {
-    canonical: 'https://promptsfa.ir',
-    languages: { fa: 'https://promptsfa.ir', en: 'https://promptsfa.ir/en' },
-  },
 }
 
 const localeScript = `(function(){try{var p=location.pathname;if(p==='/en'||p.indexOf('/en/')===0){var h=document.documentElement;h.lang='en';h.dir='ltr';document.body.classList.remove('font-sans')}}catch(e){}})();`
@@ -44,6 +41,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="fa" dir="rtl" suppressHydrationWarning>
       <body suppressHydrationWarning className="bg-[#070503] text-ink antialiased font-sans">
         <script dangerouslySetInnerHTML={{ __html: localeScript }} />
+        <LocaleDocument />
         <HeaderShell categories={categories} />
         <main>{children}</main>
         <Footer />

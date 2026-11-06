@@ -3,11 +3,15 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import CategoryIcon from '@/components/category-icon'
+import type { Locale } from '@/lib/i18n'
+import { localizedPath } from '@/lib/locale-path'
 
 export default function CategoryGrid({
   items,
+  locale,
 }: {
   items: { slug: string; icon: string; label: string }[]
+  locale: Locale
 }) {
   const [hover, setHover] = useState<number | null>(null)
 
@@ -16,7 +20,7 @@ export default function CategoryGrid({
       {items.map((c, i) => (
         <Link
           key={c.slug}
-          href={'/categories/' + c.slug}
+          href={localizedPath(locale, '/categories/' + c.slug)}
           onMouseEnter={() => setHover(i)}
           onMouseLeave={() => setHover(null)}
           className={

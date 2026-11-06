@@ -5,6 +5,50 @@ export type Fx = 'none' | 'pop' | 'zoomIn' | 'zoomOut' | 'slide'
 export type TextDirection = 'auto' | 'rtl' | 'ltr'
 export type TextAlign = 'left' | 'center' | 'right'
 export type Seg = TranscriptSegment & { id: string; words: Word[]; fx?: Fx; hl?: string }
+export type AdjustedWordTiming = { text: string; start: number; end: number }
+
+export function getAdjustedWordTimings(
+  text: string,
+  segmentStart: number,
+  segmentEnd: number,
+  sourceWords?: Array<{ text?: string; w?: string; start: number; end: number }>
+): AdjustedWordTiming[] {
+  const tokens = text.trim().split(/\s+/).filter(Boolean)
+  if (!tokens.length) return []
+
+  const validSource = sourceWords?.filter((word) =>
+    Number.isFinite(word.start) && Number.isFinite(word.end) && word.end > word.start
+  )
+  const sourceStart = validSource?.length ? Math.min(...validSource.map((word) => word.start)) : 0
+  const sourceEnd = validSource?.length ? Math.max(...validSource.map((word) => word.end)) : 0
+  const targetDuration = Math.max(0.01, segmentEnd - segmentStart)
+
+  if (validSource?.length === tokens.length && sourceEnd > sourceStart) {
+    const scale = targetDuration / (sourceEnd - sourceStart)
+    return tokens.map((token, index) => {
+      const source = validSource[index]
+      const start = segmentStart + (source.start - sourceStart) * scale
+      const end = segmentStart + (source.end - sourceStart) * scale
+      return {
+        text: token,
+        start: Math.max(segmentStart, Math.min(segmentEnd, start)),
+        end: Math.max(segmentStart, Math.min(segmentEnd, Math.max(start + 0.005, end))),
+      }
+    })
+  }
+
+  const weights = tokens.map((token) => Math.max(1, token.replace(/[^\p{L}\p{N}]/gu, '').length))
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0)
+  let cursor = segmentStart
+  return tokens.map((token, index) => {
+    const end = index === tokens.length - 1
+      ? segmentEnd
+      : cursor + targetDuration * weights[index] / totalWeight
+    const timing = { text: token, start: cursor, end }
+    cursor = end
+    return timing
+  })
+}
 
 export type Style = {
   fontId: string
@@ -239,4 +283,3 @@ export const loadFont = async (id: string) => {
     await (document as any).fonts?.load(`800 40px "${id}"`)
   } catch {}
 }
-

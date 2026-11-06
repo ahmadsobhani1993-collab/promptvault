@@ -117,9 +117,14 @@ export function getStoredStyle(): StudioStyleConfig {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return DEFAULT_STUDIO_STYLE
     const stored = JSON.parse(raw)
-    const supportedFonts = new Set(['Vazirmatn', 'Estedad', 'Readex Pro', 'IBM Plex Sans Arabic', 'Noto Kufi Arabic', 'Lalezar', 'Amiri', 'Noto Nastaliq Urdu'])
-    const requestedFont = stored.fontId ?? stored.fontFamily
-    const fontFamily = supportedFonts.has(requestedFont) ? requestedFont : DEFAULT_STUDIO_STYLE.fontFamily
+    const supportedFonts = new Set([
+      'Vazirmatn', 'Estedad', 'Readex Pro', 'IBM Plex Sans Arabic', 'Noto Kufi Arabic', 'Lalezar',
+      'Amiri', 'Noto Nastaliq Urdu', 'Markazi Text', 'Cairo', 'Tajawal', 'Reem Kufi',
+      'Aref Ruqaa', 'Gulzar', 'Jomhuria',
+    ])
+    const requestedFont = String(stored.fontId ?? stored.fontFamily ?? '')
+    const isUploadedFont = /^CustomFont_[a-f0-9]{12}$/i.test(requestedFont)
+    const fontFamily = supportedFonts.has(requestedFont) || isUploadedFont ? requestedFont : DEFAULT_STUDIO_STYLE.fontFamily
     return {
       ...DEFAULT_STUDIO_STYLE,
       ...stored,

@@ -21,14 +21,15 @@ import {
 interface RichTextEditorProps {
   value: string
   onChange: (html: string) => void
+  direction?: 'ltr' | 'rtl'
 }
 
-export default function RichTextEditor({ value, onChange }: RichTextEditorProps) {
+export default function RichTextEditor({ value, onChange, direction = 'rtl' }: RichTextEditorProps) {
   const editor = useEditor({
     extensions: [
       StarterKit,
       Placeholder.configure({
-        placeholder: 'محتوای مقاله را اینجا بنویسید...',
+        placeholder: direction === 'rtl' ? 'محتوای مقاله را اینجا بنویسید...' : 'Write your article here...',
       }),
       Link.configure({ openOnClick: false }),
       Image,
@@ -62,7 +63,8 @@ export default function RichTextEditor({ value, onChange }: RichTextEditorProps)
     content: value,
     editorProps: {
       attributes: {
-        class: 'prose prose-gold prose-invert max-w-none min-h-[400px] p-5 focus:outline-none text-right dir-rtl text-ink font-sans leading-relaxed',
+        class: `prose prose-gold prose-invert max-w-none min-h-[400px] p-5 focus:outline-none ${direction === 'rtl' ? 'text-right dir-rtl' : 'text-left dir-ltr'} text-ink font-sans leading-relaxed`,
+        dir: direction,
       },
     },
     onUpdate: ({ editor }) => {
@@ -97,7 +99,7 @@ export default function RichTextEditor({ value, onChange }: RichTextEditorProps)
   return (
     <div className="w-full border border-line rounded-xl bg-surface overflow-hidden shadow-card transition focus-within:border-gold">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-1 p-2 bg-elevated border-b border-line dir-rtl">
+      <div dir={direction} className="flex flex-wrap items-center gap-1 p-2 bg-elevated border-b border-line">
         {/* متن اصلی */}
         <button
           type="button"

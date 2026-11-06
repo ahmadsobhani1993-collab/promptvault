@@ -1,6 +1,8 @@
 ﻿'use client'
 
 import { useState, useTransition } from 'react'
+import { useLocale } from '@/lib/use-locale'
+import { localizedPath } from '@/lib/locale-path'
 
 export default function RealLikeButton({
   promptId,
@@ -14,6 +16,7 @@ export default function RealLikeButton({
   label?: string
   requireLogin?: string
 }) {
+  const locale = useLocale()
   const [liked, setLiked] = useState(initialLiked)
   const [pending, startTransition] = useTransition()
 
@@ -29,7 +32,7 @@ export default function RealLikeButton({
       if (res.status === 401) {
         alert(requireLogin)
         setLiked(!next)
-        window.location.href = '/login'
+        window.location.href = localizedPath(locale, '/login')
       }
     } catch {
       setLiked(!next)

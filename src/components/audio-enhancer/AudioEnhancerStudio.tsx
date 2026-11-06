@@ -8,8 +8,10 @@ import {
   ProcessingOptions,
   SAMPLE_RATE,
 } from './audio-utils'
+import { useLocale } from '@/lib/use-locale'
 
 export default function AudioEnhancerStudio() {
+  const isEn = useLocale() === 'en'
   const [file, setFile] = useState<File | null>(null)
   const [originalBuffer, setOriginalBuffer] = useState<AudioBuffer | null>(null)
   const [previewBuffer, setPreviewBuffer] = useState<AudioBuffer | null>(null)
@@ -47,7 +49,7 @@ export default function AudioEnhancerStudio() {
     setFullProcessedBuffer(null)
     setLoading(true)
     setProgressPercent(0)
-    setLoadingText('در حال دیکود فایل صوتی...')
+    setLoadingText(isEn ? 'Decoding audio...' : 'در حال دیکود فایل صوتی...')
 
     try {
       const arrayBuffer = await selected.arrayBuffer()
@@ -60,7 +62,7 @@ export default function AudioEnhancerStudio() {
       setCurrentTime(0)
       pauseOffsetRef.current = 0
     } catch {
-      alert('فرمت فایل نامعتبر است یا پشتیبانی نمی‌شود.')
+      alert(isEn ? 'This file format is invalid or unsupported.' : 'فرمت فایل نامعتبر است یا پشتیبانی نمی‌شود.')
       setFile(null)
     } finally {
       setLoading(false)
@@ -72,12 +74,18 @@ export default function AudioEnhancerStudio() {
     stopAudio()
     setLoading(true)
     setProgressPercent(10)
-    setLoadingText('در حال آماده‌سازی پیش‌نمایش ۶۰ ثانیه‌ای...')
+    setLoadingText(isEn ? 'Preparing a 60-second preview...' : 'در حال آماده‌سازی پیش‌نمایش ۶۰ ثانیه‌ای...')
 
     try {
       const result = await processAudioBuffer(originalBuffer, options, 60, (pct, status) => {
         setProgressPercent(pct)
-        setLoadingText(status)
+        setLoadingText(isEn
+          ? status.replace('در حال بارگذاری ماژول رسمی DeepFilterNet3...', 'Loading the DeepFilterNet3 module...')
+            .replace('در حال اتصال به فایل‌های مدل در سرور محلی...', 'Connecting to the local model files...')
+            .replace('در حال دریافت هسته هوش مصنوعی...', 'Loading the AI engine...')
+            .replace('در حال رندر آفلاین امواج صوتی...', 'Rendering audio offline...')
+            .replace('پردازش با موفقیت انجام شد!', 'Processing completed successfully!')
+          : status)
       })
       setPreviewBuffer(result)
       setFullProcessedBuffer(null)
@@ -86,7 +94,7 @@ export default function AudioEnhancerStudio() {
       setCurrentTime(0)
       pauseOffsetRef.current = 0
     } catch (err: any) {
-      alert(`خطا در پردازش پیش‌نمایش: ${err?.message || err}`)
+      alert(`${isEn ? 'Preview processing failed' : 'خطا در پردازش پیش‌نمایش'}: ${err?.message || err}`)
     } finally {
       setLoading(false)
     }
@@ -97,12 +105,18 @@ export default function AudioEnhancerStudio() {
     stopAudio()
     setLoading(true)
     setProgressPercent(10)
-    setLoadingText('در حال پردازش کل فایل با DeepFilterNet3...')
+    setLoadingText(isEn ? 'Processing the full file with DeepFilterNet3...' : 'در حال پردازش کل فایل با DeepFilterNet3...')
 
     try {
       const result = await processAudioBuffer(originalBuffer, options, null, (pct, status) => {
         setProgressPercent(pct)
-        setLoadingText(status)
+        setLoadingText(isEn
+          ? status.replace('در حال بارگذاری ماژول رسمی DeepFilterNet3...', 'Loading the DeepFilterNet3 module...')
+            .replace('در حال اتصال به فایل‌های مدل در سرور محلی...', 'Connecting to the local model files...')
+            .replace('در حال دریافت هسته هوش مصنوعی...', 'Loading the AI engine...')
+            .replace('در حال رندر آفلاین امواج صوتی...', 'Rendering audio offline...')
+            .replace('پردازش با موفقیت انجام شد!', 'Processing completed successfully!')
+          : status)
       })
       setFullProcessedBuffer(result)
       setPlayEnhanced(true)
@@ -110,7 +124,7 @@ export default function AudioEnhancerStudio() {
       setCurrentTime(0)
       pauseOffsetRef.current = 0
     } catch (err: any) {
-      alert(`خطا در پردازش کل فایل: ${err?.message || err}`)
+      alert(`${isEn ? 'Full-file processing failed' : 'خطا در پردازش کل فایل'}: ${err?.message || err}`)
     } finally {
       setLoading(false)
     }
@@ -181,7 +195,7 @@ export default function AudioEnhancerStudio() {
     if (!targetBuffer || !file) return
 
     setLoading(true)
-    setLoadingText(`در حال انکود خروجی ${outputFormat.toUpperCase()}...`)
+    setLoadingText(isEn ? `Encoding ${outputFormat.toUpperCase()} output...` : `در حال انکود خروجی ${outputFormat.toUpperCase()}...`)
 
     try {
       const { blob, fileName } = await bufferToStandardAudio(targetBuffer, file.name, outputFormat)
@@ -194,7 +208,7 @@ export default function AudioEnhancerStudio() {
       document.body.removeChild(a)
       URL.revokeObjectURL(downloadUrl)
     } catch {
-      alert('خطا در دانلود خروجی.')
+      alert(isEn ? 'Could not download the output.' : 'خطا در دانلود خروجی.')
     } finally {
       setLoading(false)
     }
@@ -204,15 +218,15 @@ export default function AudioEnhancerStudio() {
     <div className="mx-auto max-w-2xl space-y-6">
       <div className="text-center">
         <h1 className="font-display text-3xl font-extrabold tracking-tight text-white md:text-4xl">
-          استودیو تقویت و <span className="text-gold-bright">شفاف‌ساز صدا</span>
+          {isEn ? <>Audio <span className="text-gold-bright">Enhancer Studio</span></> : <>استودیو تقویت و <span className="text-gold-bright">شفاف‌ساز صدا</span></>}
         </h1>
         <p className="mt-2 text-sm text-zinc-400">
-          حذف نویز با مدل هوش مصنوعی DeepFilterNet3 کاملاً محلی در مرورگر
+          {isEn ? 'Remove noise with DeepFilterNet3, processed locally in your browser.' : 'حذف نویز با مدل هوش مصنوعی DeepFilterNet3 کاملاً محلی در مرورگر'}
         </p>
       </div>
 
       <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 text-center text-xs text-emerald-400">
-        تمامی پردازش‌ها ۱۰۰٪ محلی در مرورگر شما انجام می‌شود و فایلی به هیچ سروری ارسال نمی‌شود.
+        {isEn ? 'All processing happens locally in your browser. Your files are never uploaded.' : 'تمامی پردازش‌ها ۱۰۰٪ محلی در مرورگر شما انجام می‌شود و فایلی به هیچ سروری ارسال نمی‌شود.'}
       </div>
 
       {!file && (
@@ -229,8 +243,8 @@ export default function AudioEnhancerStudio() {
             <span className="grid h-14 w-14 place-items-center rounded-full bg-gold/10 text-2xl text-gold-bright">
               🎙️
             </span>
-            <span className="mt-3 text-sm font-bold text-white">انتخاب یا رها کردن فایل صوتی</span>
-            <span className="mt-1 text-xs text-zinc-500">پشتیبانی از انواع فرمت‌های صوتی و ویدیویی</span>
+            <span className="mt-3 text-sm font-bold text-white">{isEn ? 'Choose or drop an audio file' : 'انتخاب یا رها کردن فایل صوتی'}</span>
+            <span className="mt-1 text-xs text-zinc-500">{isEn ? 'Supports common audio and video formats' : 'پشتیبانی از انواع فرمت‌های صوتی و ویدیویی'}</span>
           </label>
         </div>
       )}
@@ -252,16 +266,16 @@ export default function AudioEnhancerStudio() {
       {file && !activeBuffer && !loading && (
         <div className="space-y-6 rounded-2xl border border-zinc-800 bg-zinc-950/70 p-6 shadow-2xl">
           <div>
-            <span className="block text-xs font-semibold text-zinc-400 mb-2">فایل صوتی انتخابی:</span>
+            <span className="block text-xs font-semibold text-zinc-400 mb-2">{isEn ? 'Selected file:' : 'فایل صوتی انتخابی:'}</span>
             <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 text-center">
               <span className="text-sm font-bold text-white">{file.name}</span>
-              <span className="block text-xs text-zinc-500 mt-1">مدت زمان: {formatAudioTime(duration)}</span>
+              <span className="block text-xs text-zinc-500 mt-1">{isEn ? 'Duration:' : 'مدت زمان:'} {formatAudioTime(duration)}</span>
             </div>
           </div>
 
           <div className="space-y-2">
             <div className="flex justify-between text-xs font-semibold">
-              <span className="text-zinc-300">شدت حذف نویز:</span>
+              <span className="text-zinc-300">{isEn ? 'Noise reduction:' : 'شدت حذف نویز:'}</span>
               <span className="text-gold-bright font-bold">{options.attenuationLevel}%</span>
             </div>
             <input
@@ -274,13 +288,13 @@ export default function AudioEnhancerStudio() {
               className="w-full accent-gold cursor-pointer"
             />
             <div className="flex justify-between text-[10px] text-zinc-500 font-mono">
-              <span>ملایم (Light)</span>
-              <span>قوی (Heavy)</span>
+              <span>{isEn ? 'Light' : 'ملایم (Light)'}</span>
+              <span>{isEn ? 'Strong' : 'قوی (Heavy)'}</span>
             </div>
           </div>
 
           <div className="space-y-3 border-t border-zinc-800/80 pt-4">
-            <span className="block text-xs font-semibold text-zinc-400">بهینه‌سازی صدا (اختیاری):</span>
+            <span className="block text-xs font-semibold text-zinc-400">{isEn ? 'Audio enhancements (optional):' : 'بهینه‌سازی صدا (اختیاری):'}</span>
 
             <label className="flex items-center gap-3 cursor-pointer">
               <input
@@ -290,8 +304,8 @@ export default function AudioEnhancerStudio() {
                 className="h-4 w-4 accent-gold cursor-pointer rounded"
               />
               <div>
-                <span className="block text-xs font-bold text-white">نرمال‌سازی بلندی صدا (Loudness Normalization)</span>
-                <span className="block text-[11px] text-zinc-500">تنظیم تراز صدا بر اساس استاندارد پادکست</span>
+                <span className="block text-xs font-bold text-white">{isEn ? 'Loudness normalization' : 'نرمال‌سازی بلندی صدا (Loudness Normalization)'}</span>
+                <span className="block text-[11px] text-zinc-500">{isEn ? 'Set audio levels to podcast standards' : 'تنظیم تراز صدا بر اساس استاندارد پادکست'}</span>
               </div>
             </label>
 
@@ -303,14 +317,14 @@ export default function AudioEnhancerStudio() {
                 className="h-4 w-4 accent-gold cursor-pointer rounded"
               />
               <div>
-                <span className="block text-xs font-bold text-white">اکولایزر وضوح کلام (Voice EQ)</span>
-                <span className="block text-[11px] text-zinc-500">حذف فرکانس‌های بم اضافه و افزایش شفافیت کلام</span>
+                <span className="block text-xs font-bold text-white">{isEn ? 'Voice clarity EQ' : 'اکولایزر وضوح کلام (Voice EQ)'}</span>
+                <span className="block text-[11px] text-zinc-500">{isEn ? 'Reduce excess low frequencies and improve speech clarity' : 'حذف فرکانس‌های بم اضافه و افزایش شفافیت کلام'}</span>
               </div>
             </label>
           </div>
 
           <div className="border-t border-zinc-800/80 pt-4 flex items-center justify-between">
-            <span className="text-xs font-semibold text-zinc-400">فرمت خروجی نهایی:</span>
+            <span className="text-xs font-semibold text-zinc-400">{isEn ? 'Output format:' : 'فرمت خروجی نهایی:'}</span>
             <div className="flex gap-2">
               <button
                 type="button"
@@ -319,7 +333,7 @@ export default function AudioEnhancerStudio() {
                   outputFormat === 'mp3' ? 'border-gold bg-gold/15 text-gold-bright font-bold' : 'border-zinc-800 text-zinc-400'
                 }`}
               >
-                MP3 (کم‌حجم)
+                MP3 {isEn ? '(smaller file)' : '(کم‌حجم)'}
               </button>
               <button
                 type="button"
@@ -328,7 +342,7 @@ export default function AudioEnhancerStudio() {
                   outputFormat === 'wav' ? 'border-gold bg-gold/15 text-gold-bright font-bold' : 'border-zinc-800 text-zinc-400'
                 }`}
               >
-                WAV (خام و استودیویی)
+                WAV {isEn ? '(uncompressed)' : '(خام و استودیویی)'}
               </button>
             </div>
           </div>
@@ -339,14 +353,14 @@ export default function AudioEnhancerStudio() {
               onClick={handlePreview}
               className="flex-1 rounded-xl border border-zinc-700 bg-zinc-900 py-3 text-xs font-bold text-zinc-200 transition hover:bg-zinc-800 hover:text-white"
             >
-              🎧 پیش‌نمایش (۶۰ ثانیه اول)
+              {isEn ? '🎧 Preview (first 60 seconds)' : '🎧 پیش‌نمایش (۶۰ ثانیه اول)'}
             </button>
             <button
               type="button"
               onClick={handleProcessFull}
               className="flex-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 py-3 text-xs font-bold text-white shadow-lg shadow-emerald-600/20 transition"
             >
-              🚀 پردازش کل فایل صوتی
+              {isEn ? '🚀 Process full audio' : '🚀 پردازش کل فایل صوتی'}
             </button>
           </div>
 
@@ -359,7 +373,7 @@ export default function AudioEnhancerStudio() {
               }}
               className="text-[11px] text-zinc-500 hover:text-red-400"
             >
-              انصراف و انتخاب فایل دیگر
+              {isEn ? 'Cancel and choose another file' : 'انصراف و انتخاب فایل دیگر'}
             </button>
           </div>
         </div>
@@ -371,7 +385,7 @@ export default function AudioEnhancerStudio() {
             <div>
               <p className="text-sm font-bold text-white truncate max-w-xs">{file?.name}</p>
               <p className="text-xs text-gold-bright">
-                {fullProcessedBuffer ? 'کل فایل پردازش شد' : 'در حال پخش پیش‌نمایش (۶۰ ثانیه)'}
+                {fullProcessedBuffer ? (isEn ? 'Full file processed' : 'کل فایل پردازش شد') : (isEn ? 'Playing preview (60 seconds)' : 'در حال پخش پیش‌نمایش (۶۰ ثانیه)')}
               </p>
             </div>
 
@@ -386,7 +400,7 @@ export default function AudioEnhancerStudio() {
                   !playEnhanced ? 'bg-red-500/20 text-red-400 border border-red-500/40' : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                صدای خام اولیه
+                {isEn ? 'Original audio' : 'صدای خام اولیه'}
               </button>
               <button
                 type="button"
@@ -398,7 +412,7 @@ export default function AudioEnhancerStudio() {
                   playEnhanced ? 'bg-gold/20 text-gold-bright border border-gold/40' : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                صدای تمیز شده ✨
+                {isEn ? 'Enhanced audio ✨' : 'صدای تمیز شده ✨'}
               </button>
             </div>
           </div>
@@ -454,7 +468,7 @@ export default function AudioEnhancerStudio() {
               }}
               className="text-xs text-zinc-400 hover:text-white"
             >
-              🔄 بازگشت و تغییر تنظیمات
+              {isEn ? '🔄 Back to settings' : '🔄 بازگشت و تغییر تنظیمات'}
             </button>
 
             <div className="flex items-center gap-2">
@@ -465,7 +479,7 @@ export default function AudioEnhancerStudio() {
                   disabled={loading}
                   className="rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-4 py-2 text-xs font-bold text-white transition"
                 >
-                  ⚡ پردازش کل فایل
+                  {isEn ? '⚡ Process full file' : '⚡ پردازش کل فایل'}
                 </button>
               )}
 
@@ -476,7 +490,7 @@ export default function AudioEnhancerStudio() {
                 className="btn-primary flex items-center gap-2 px-5 py-2 text-xs font-bold shadow-lg shadow-gold/20"
               >
                 <span>⬇️</span>
-                <span>دانلود ({outputFormat.toUpperCase()})</span>
+                <span>{isEn ? `Download (${outputFormat.toUpperCase()})` : `دانلود (${outputFormat.toUpperCase()})`}</span>
               </button>
             </div>
           </div>

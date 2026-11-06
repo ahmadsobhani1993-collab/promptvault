@@ -7,6 +7,7 @@ const securityHeaders = [
 ]
 
 const nextConfig = {
+  distDir: process.env.NODE_ENV === 'development' ? '.next-dev' : '.next',
   output: 'standalone',
   reactStrictMode: true,
   poweredByHeader: false,
@@ -16,10 +17,6 @@ const nextConfig = {
       {
         protocol: 'https',
         hostname: 'promptfa.s3.eu-west1.arvanstorage.ir',
-      },
-      {
-        protocol: 'https',
-        hostname: 'res.cloudinary.com',
       },
       {
         protocol: 'https',

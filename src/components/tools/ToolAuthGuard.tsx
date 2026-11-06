@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import { useAuth } from '@/lib/use-auth'
+import { useLocale } from '@/lib/use-locale'
+import { localizedPath } from '@/lib/locale-path'
 
 interface ToolAuthGuardProps {
   children: React.ReactNode
@@ -15,6 +17,7 @@ export default function ToolAuthGuard({
   description,
 }: ToolAuthGuardProps) {
   const auth = useAuth()
+  const isEn = useLocale() === 'en'
 
   if (auth === 'checking') {
     return (
@@ -26,7 +29,7 @@ export default function ToolAuthGuard({
 
   if (auth === 'no') {
     return (
-      <div className="relative min-h-[75vh] w-full flex items-center justify-center p-4 overflow-hidden" dir="rtl">
+      <div className={`relative min-h-[75vh] w-full flex items-center justify-center p-4 overflow-hidden ${isEn ? 'text-left' : 'text-right'}`} dir={isEn ? 'ltr' : 'rtl'}>
         {/* کادر پس‌زمینه نیمه‌محو ابزار */}
         <div className="absolute inset-0 opacity-15 pointer-events-none filter blur-sm select-none">
           {children}
@@ -39,25 +42,25 @@ export default function ToolAuthGuard({
           </div>
 
           <h2 className="font-display text-2xl font-black text-white mb-2">
-            ورود یا عضویت برای استفاده از {toolName}
+            {isEn ? `Sign in or create an account to use ${toolName}` : `ورود یا عضویت برای استفاده از ${toolName}`}
           </h2>
 
           <p className="text-xs md:text-sm text-stone-400 leading-relaxed mb-8 max-w-md mx-auto">
-            {description || `برای دسترسی به قابلیت‌های پردازش نامحدود «${toolName}»، لطفاً وارد حساب خود شوید.`}
+            {description || (isEn ? `Sign in to access unlimited processing with ${toolName}.` : `برای دسترسی به قابلیت‌های پردازش نامحدود «${toolName}»، لطفاً وارد حساب خود شوید.`)}
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link
-              href="/login"
+              href={localizedPath(isEn ? 'en' : 'fa', '/login')}
               className="w-full sm:w-auto rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black px-8 py-3 text-xs transition-all shadow-lg shadow-amber-500/20 active:scale-95"
             >
-              ورود سریع با تلگرام / گوگل
+              {isEn ? 'Continue with Telegram / Google' : 'ورود سریع با تلگرام / گوگل'}
             </Link>
             <Link
-              href="/login"
+              href={localizedPath(isEn ? 'en' : 'fa', '/login')}
               className="w-full sm:w-auto rounded-xl border border-white/10 bg-zinc-900/80 px-8 py-3 text-xs font-bold text-stone-300 hover:border-amber-500/40 hover:text-white transition-all"
             >
-              ثبت‌نام رایگان
+              {isEn ? 'Create a free account' : 'ثبت‌نام رایگان'}
             </Link>
           </div>
         </div>

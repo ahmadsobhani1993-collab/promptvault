@@ -1,5 +1,6 @@
 ﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 
 const PAGE_SIZE = 20
@@ -28,13 +29,15 @@ export async function GET(req: Request) {
   const type = searchParams.get('type')
   const model = searchParams.get('model')
   const sub = searchParams.get('sub')
+  const category = searchParams.get('category')
   const tags = (searchParams.get('tags') ?? '').split(',').map((t) => t.trim()).filter(Boolean).slice(0, 10)
   const q = searchParams.get('q') ?? ''
 
   const where: any = { status: 'PUBLISHED' }
-  if (type) where.type = type
+  if (['IMAGE', 'VIDEO', 'TEXT', 'CODE', 'AUDIO'].includes(type ?? '')) where.type = type
   if (model) where.model = model
   if (sub) where.sub = { slug: sub }
+  if (category) where.category = { slug: category }
   if (tags.length) where.tagsFa = { hasSome: tags }
   if (q) {
     where.OR = [
@@ -45,7 +48,8 @@ export async function GET(req: Request) {
     ]
   }
 
-  const orderBy = sort === 'likes' ? { likes: 'desc' } : sort === 'views' ? { views: 'desc' } : { createdAt: 'desc' }
+  const orderBy: Prisma.PromptOrderByWithRelationInput =
+    sort === 'likes' ? { likes: 'desc' } : sort === 'views' ? { views: 'desc' } : { createdAt: 'desc' }
 
   const [rows, total] = await Promise.all([
     prisma.prompt.findMany({
@@ -60,4 +64,3 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ rows, total, page, pages: Math.max(1, Math.ceil(total / PAGE_SIZE)) })
 }
-

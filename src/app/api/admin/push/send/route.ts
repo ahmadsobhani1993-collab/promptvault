@@ -1,8 +1,8 @@
 ﻿export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
-import webpush from 'web-push';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
+import { sendPushToSubscriptions } from '@/lib/push-notifications';
 
 export async function POST(req: Request) {
   try {
@@ -11,55 +11,30 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'دسترسی غیرمجاز' }, { status: 403 });
     }
 
-    const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-    const privateKey = process.env.VAPID_PRIVATE_KEY;
-    const subject = process.env.VAPID_SUBJECT || 'mailto:admin@promptsfa.ir';
-
-    if (!publicKey || !privateKey) {
-      return NextResponse.json(
-        { error: 'کلیدهای VAPID در متغیرهای محیطی سرور تنظیم نشده‌اند.' },
-        { status: 500 }
-      );
+    const { title, body, url, target, targetEmail } = await req.json();
+    if (typeof title !== 'string' || typeof body !== 'string') {
+      return NextResponse.json({ error: 'عنوان و متن اعلان الزامی است.' }, { status: 400 });
     }
 
-    webpush.setVapidDetails(subject, publicKey, privateKey);
-
-    const { title, body, url, target, targetEmail } = await req.json();
-
-    let subscriptions: any[] = [];
-
-    if (target === 'SINGLE' && targetEmail) {
+    let subscriptions;
+    if (target === 'SINGLE' && typeof targetEmail === 'string') {
       subscriptions = await prisma.pushSubscription.findMany({
         where: { user: { email: targetEmail } },
+        select: { id: true, endpoint: true, keys: true },
       });
     } else {
-      subscriptions = await prisma.pushSubscription.findMany();
+      subscriptions = await prisma.pushSubscription.findMany({
+        select: { id: true, endpoint: true, keys: true },
+      });
     }
 
-    let deliveredCount = 0;
-    const payload = JSON.stringify({
+    const result = await sendPushToSubscriptions(subscriptions, {
       title,
       body,
       url: url || '/',
-      icon: '/icons/icon-192.png',
     });
 
-    for (const sub of subscriptions) {
-      try {
-        const pushConfig = {
-          endpoint: sub.endpoint,
-          keys: JSON.parse(sub.keys),
-        };
-        await webpush.sendNotification(pushConfig, payload);
-        deliveredCount++;
-      } catch (err: any) {
-        if (err.statusCode === 404 || err.statusCode === 410) {
-          await prisma.pushSubscription.delete({ where: { id: sub.id } });
-        }
-      }
-    }
-
-    return NextResponse.json({ success: true, deliveredCount });
+    return NextResponse.json({ success: true, ...result });
   } catch (error) {
     console.error('Push notification send error:', error);
     return NextResponse.json({ error: 'خطای سرور در ارسال اعلان' }, { status: 500 });

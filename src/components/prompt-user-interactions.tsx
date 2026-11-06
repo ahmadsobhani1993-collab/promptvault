@@ -8,6 +8,7 @@ import ShareButtons from '@/components/share-buttons'
 import PromptReveal from '@/components/prompt-reveal'
 import { L } from '@/lib/l'
 import { hasLoginHint } from '@/lib/login-hint'
+import { localizedPath } from '@/lib/locale-path'
 import type { Locale } from '@/lib/i18n'
 
 interface PromptUserInteractionsProps {
@@ -102,7 +103,7 @@ export default function PromptUserInteractions({
           <p className="text-sm text-ink-muted">
             {L(locale, 'برای مشاهده و کپی کردن متن پرامپت، ابتدا باید وارد حساب کاربری خود شوید.', 'To view and copy the prompt text, you must first log in to your account.')}
           </p>
-          <Link href="/login" prefetch={false} className="btn-primary mt-4 inline-flex">
+          <Link href={localizedPath(locale, '/login')} prefetch={false} className="btn-primary mt-4 inline-flex">
             {L(locale, 'ورود به حساب کاربری', 'Login to Account')}
           </Link>
         </div>

@@ -2,7 +2,12 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
-import { tgSendText } from '@/lib/telegram'
+import { articleContentToHtml } from '@/lib/article-content'
+
+function articleBody(value: unknown): string[] {
+  const raw = typeof value === 'string' ? value : Array.isArray(value) ? value.join('\n\n') : ''
+  return raw.trim() ? [articleContentToHtml(raw)] : []
+}
 
 export async function POST(req: Request) {
   const session = await auth()
@@ -16,27 +21,33 @@ export async function POST(req: Request) {
     const dateFa = new Intl.DateTimeFormat('fa-IR-u-nu-latn', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'long', day: 'numeric' }).format(now)
     const dateEn = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'long', day: 'numeric' }).format(now)
     const titleFa = String(j.titleFa ?? '').trim()
-    if (!titleFa) return NextResponse.json({ error: 'title required' }, { status: 400 })
+    const titleEn = String(j.titleEn ?? '').trim()
+    if (!titleFa || !titleEn) return NextResponse.json({ error: 'Persian and English titles are required' }, { status: 400 })
     const descFa = String(j.descFa ?? titleFa).trim()
-    const contentRaw = String(j.contentFa ?? '')
+    const descEn = String(j.descEn ?? titleEn).trim()
     const tagFa = String(j.tagFa ?? 'هوش مصنوعی').trim()
-    const img = String(j.img ?? '').trim() || 'https://image.pollinations.ai/prompt/' + encodeURIComponent(titleFa) + '?width=1200&height=630&nologo=true'
+    const tagEn = String(j.tagEn ?? 'Artificial Intelligence').trim()
+    const img = String(j.img ?? '').trim()
+    const contentFa = articleBody(j.contentFa)
+    const contentEn = articleBody(j.contentEn)
+    if (!img) return NextResponse.json({ error: 'cover image required' }, { status: 400 })
+    if (!contentFa.length || !contentEn.length) return NextResponse.json({ error: 'Both Persian and English article bodies are required' }, { status: 400 })
     const a = await prisma.article.create({
       data: {
         slug: 'manual-' + now.getTime().toString(36),
         titleFa,
-        titleEn: titleFa,
+        titleEn,
         descFa,
-        descEn: descFa,
+        descEn,
         img,
         tagFa,
-        tagEn: tagFa,
+        tagEn,
         dateFa,
         dateEn,
         readFa: '۵ دقیقه مطالعه',
         readEn: '5 min read',
-        contentFa: contentRaw.split(/\n/).map((x: string) => x.trim()).filter(Boolean),
-        contentEn: contentRaw.split(/\n/).map((x: string) => x.trim()).filter(Boolean),
+        contentFa,
+        contentEn,
         status: 'PUBLISHED',
       },
     })
@@ -47,23 +58,28 @@ export async function POST(req: Request) {
     const article = await prisma.article.findUnique({ where: { id } })
     if (!article) return NextResponse.json({ error: 'not found' }, { status: 404 })
     const titleFa = String(j.titleFa ?? '').trim()
-    if (!titleFa) return NextResponse.json({ error: 'title required' }, { status: 400 })
+    const titleEn = String(j.titleEn ?? '').trim()
+    if (!titleFa || !titleEn) return NextResponse.json({ error: 'Persian and English titles are required' }, { status: 400 })
     
-    const contentRaw = String(j.contentFa ?? '')
+    const descFa = String(j.descFa ?? titleFa).trim()
+    const descEn = String(j.descEn ?? titleEn).trim()
     const img = String(j.img ?? '').trim() || article.img
+    const contentFa = articleBody(j.contentFa)
+    const contentEn = articleBody(j.contentEn)
+    if (!contentFa.length || !contentEn.length) return NextResponse.json({ error: 'Both Persian and English article bodies are required' }, { status: 400 })
     
     await prisma.article.update({
       where: { id },
       data: {
         titleFa,
-        titleEn: titleFa,
-        descFa: String(j.descFa ?? titleFa).trim(),
-        descEn: String(j.descFa ?? titleFa).trim(),
+        titleEn,
+        descFa,
+        descEn,
         img,
         tagFa: String(j.tagFa ?? 'هوش مصنوعی').trim(),
-        tagEn: String(j.tagFa ?? 'هوش مصنوعی').trim(),
-        contentFa: contentRaw.split(/\n|<br\s*\/?>/i).map((x: string) => x.trim()).filter(Boolean),
-        contentEn: contentRaw.split(/\n|<br\s*\/?>/i).map((x: string) => x.trim()).filter(Boolean),
+        tagEn: String(j.tagEn ?? 'Artificial Intelligence').trim(),
+        contentFa,
+        contentEn,
       },
     })
     return NextResponse.json({ ok: true })
@@ -83,4 +99,3 @@ export async function POST(req: Request) {
   }
   return NextResponse.json({ error: 'bad action' }, { status: 400 })
 }
-
