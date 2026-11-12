@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import Link from 'next/link'
 import { getImageUrl } from '@/lib/image-utils'
 import { notFound } from 'next/navigation'
@@ -18,9 +19,6 @@ import { localizedPath } from '@/lib/locale-path'
 export const revalidate = 86400
 export const dynamicParams = true
 
-export async function generateStaticParams() {
-  return []
-}
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   return generatePromptMetadata(params, 'fa')

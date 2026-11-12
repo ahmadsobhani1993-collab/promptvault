@@ -27,14 +27,9 @@ export async function uploadImageToStorage(
   }
 
   // Compress and convert images to WebP before storing them in Arvan.
-  let finalBuffer = buf
-  try {
-    finalBuffer = await sharp(buf)
-      .webp({ quality: 82, effort: 4 })
-      .toBuffer()
-  } catch (err) {
-    console.warn('[Sharp] WebP conversion fallback to original buffer:', err)
-  }
+  const finalBuffer = await sharp(buf)
+    .webp({ quality: 82, effort: 4 })
+    .toBuffer()
 
   const randomName = crypto.randomBytes(8).toString('hex')
   const cleanFolder = folder.replace(/^\/+|\/+$/g, '')

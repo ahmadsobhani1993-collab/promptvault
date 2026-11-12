@@ -12,7 +12,6 @@ export interface Dict {
   login: string
   logout: string
   heroLabel: string
-  heroSubtitle: string
   searchPlaceholder: string
   trending: string
   categoriesTitle: string
@@ -41,8 +40,6 @@ export const dictionaries: Record<Locale, Dict> = {
     login: 'Login',
     logout: 'Sign out',
     heroLabel: 'Prompt Discovery Platform',
-    heroSubtitle:
-      'Discover premium AI prompts for image, video, text, code, music, and productivity.',
     searchPlaceholder: 'Search thousands of AI prompts...',
     trending: 'Trending Prompts',
     categoriesTitle: 'Explore Categories',
@@ -69,8 +66,6 @@ export const dictionaries: Record<Locale, Dict> = {
     login: 'ورود',
     logout: 'خروج',
     heroLabel: 'پلتفرم کشف پرامپت هوش مصنوعی',
-    heroSubtitle:
-      'هزاران پرامپت حرفه‌ای هوش مصنوعی برای تصویر، ویدیو، متن، کد، موسیقی و بهره‌وری کشف کن.',
     searchPlaceholder: 'جستجو در هزاران پرامپت هوش مصنوعی...',
     trending: 'پرامپت‌های داغ',
     categoriesTitle: 'دسته‌بندی‌ها',

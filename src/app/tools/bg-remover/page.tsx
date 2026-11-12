@@ -2,7 +2,7 @@
 
 export default function BgRemoverPage() {
   return (
-    <div className="min-h-screen bg-black px-4 py-12">
+    <div className="min-h-screen px-4 py-12">
       <BackgroundRemover />
     </div>
   );

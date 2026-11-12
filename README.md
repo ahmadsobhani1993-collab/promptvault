@@ -4,6 +4,8 @@
 
 Video subtitles use audio-only Gemini transcription followed by local WhisperX forced alignment. The source video and its frames are never sent to Gemini; only extracted WAV chunks are. The separate Python service only aligns Gemini's transcript to the WAV and does not run Whisper ASR. Setup and environment variables are documented in [services/whisper_api/README.md](services/whisper_api/README.md).
 
+The Cloudflare Worker also needs the Workers AI binding named `AI` to run Whisper alignment. It is declared in `worker-fix/wrangler.toml`; when deploying from the Cloudflare dashboard, add a Workers AI binding with variable name `AI` and deploy the Worker again.
+
 ## Arvan server schedules and Gemini proxy
 
 Deploy the updated `worker-fix/index.js` to the existing Cloudflare Worker. The app server sends Gemini requests to Cloudflare; only the Worker calls Google. Configure `GEMINI_API_KEY`, `GEMINI_API_KEYS`, or numbered `GEMINI_API_KEY_1`, `GEMINI_API_KEY_2`, etc. on the Arvan app server. Also set the same long random `GEMINI_PROXY_SECRET` in Arvan's server environment and as a secret in the Worker. This secret authorizes the server-to-Worker request; Gemini API keys are sent only server-to-server and are never exposed to the browser. The browser-based `/gemini-live` route and optional Gemini correction in `/align` use keys configured on the Worker. Gemini text requests use `https://gemini-live-proxy.ahmadsobhani1993.workers.dev/gemini-generate` by default; optionally override it with `GEMINI_TEXT_PROXY_URL`.

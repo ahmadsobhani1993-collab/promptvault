@@ -47,6 +47,37 @@ export const getImageUrl = (url: string | null | undefined): string => {
   return source
 }
 
+export function getArticleCardImageUrl(url: string | null | undefined, width = 800): string {
+  const source = url?.trim()
+  if (!source || source === 'null' || source === 'undefined') return '/placeholder.jpg'
+
+  try {
+    const parsed = new URL(source)
+    if (parsed.hostname !== 'res.cloudinary.com') return getImageUrl(source)
+
+    const uploadIndex = parsed.pathname.indexOf('/upload/')
+    if (uploadIndex < 0) return source
+
+    const pathAfterUpload = parsed.pathname.slice(uploadIndex + '/upload/'.length)
+    const segments = pathAfterUpload.split('/').filter(Boolean)
+    const versionIndex = segments.findIndex((segment) => /^v\d+$/.test(segment))
+    const assetIndex = versionIndex >= 0
+      ? versionIndex
+      : segments.findIndex((segment) => segment.includes('.'))
+    const transformations = (assetIndex >= 0 ? segments.slice(0, assetIndex) : [])
+      .map((segment) => segment.split(',').filter((part) => !/^(?:f_|q_|w_)/.test(part)).join(','))
+      .filter(Boolean)
+    const assetPath = assetIndex >= 0 ? segments.slice(assetIndex) : segments
+    const transform = `f_webp,q_auto,w_${Math.max(1, Math.round(width))}`
+    parsed.pathname = `${parsed.pathname.slice(0, uploadIndex + '/upload/'.length)}${[...transformations, transform, ...assetPath].join('/')}`
+    parsed.search = ''
+    parsed.hash = ''
+    return parsed.toString()
+  } catch {
+    return source
+  }
+}
+
 export function getVideoPosterUrl(url: string | null | undefined): string | undefined {
   const resolved = getImageUrl(url)
   try {

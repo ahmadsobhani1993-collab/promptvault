@@ -1,10 +1,31 @@
 import { prisma } from '@/lib/db'
 import { AI_NEWS_MODEL_CHAIN, generateText } from '@/lib/gemini'
 import { articleContentToHtml } from '@/lib/article-content'
+import { uploadImageToStorage } from '@/lib/arvan-storage'
 
-const SOURCE_ORIGIN = 'https://www.ai-daily.news'
-const RSS_URL = `${SOURCE_ORIGIN}/api/rss`
 const MAX_SOURCE_CHARS = 14000
+const MAX_NEWS_IMAGE_BYTES = 10 * 1024 * 1024
+
+interface FeedSource {
+  name: string
+  url: string
+  type: 'NEWS' | 'ARTICLE'
+  tagFa: string
+  tagEn: string
+}
+
+const SOURCES: FeedSource[] = [
+  //  
+  { name: 'TechCrunch', url: 'https://techcrunch.com/category/artificial-intelligence/feed/', type: 'NEWS', tagFa: '', tagEn: 'News' },
+  { name: 'The Verge', url: 'https://www.theverge.com/rss/ai-artificial-intelligence/index.xml', type: 'NEWS', tagFa: '', tagEn: 'News' },
+  { name: 'The Rundown', url: 'https://www.therundown.ai/feed', type: 'NEWS', tagFa: '', tagEn: 'News' },
+  { name: 'Bens Bites', url: 'https://www.bensbites.co/feed', type: 'NEWS', tagFa: '', tagEn: 'News' },
+  //    
+  { name: 'VentureBeat', url: 'https://venturebeat.com/category/ai/feed/', type: 'ARTICLE', tagFa: '', tagEn: 'Articles' },
+  { name: 'Ars Technica', url: 'https://arstechnica.com/tag/ai/feed/', type: 'ARTICLE', tagFa: '', tagEn: 'Articles' },
+  { name: 'Maginative', url: 'https://www.maginative.com/rss/', type: 'ARTICLE', tagFa: '', tagEn: 'Articles' },
+  { name: 'Prompt Engineering Daily', url: 'https://feed.bitefeed.co/prompt-engineering-daily', type: 'ARTICLE', tagFa: '', tagEn: 'Articles' },
+]
 
 interface FeedArticle {
   title: string
@@ -13,6 +34,7 @@ interface FeedArticle {
   url: string
   image: string
   publishedAt: Date
+  source: FeedSource
 }
 
 interface GeneratedNews {
@@ -37,124 +59,118 @@ function decodeHtml(value: string): string {
     .replace(/&gt;/gi, '>')
 }
 
-function extractAttributes(tag: string): Record<string, string> {
-  const attributes: Record<string, string> = {}
-  const pattern = /([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g
-  for (const match of tag.matchAll(pattern)) {
-    attributes[match[1].toLowerCase()] = decodeHtml(match[2] ?? match[3] ?? match[4] ?? '')
-  }
-  return attributes
+function extractTagValue(xml: string, tagName: string): string {
+  const match = xml.match(new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'i'))
+  return match ? decodeHtml(match[1]).trim() : ''
 }
 
-function xmlTag(xml: string, name: string): string {
-  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const value = xml.match(new RegExp(`<${escapedName}\\b[^>]*>([\\s\\S]*?)</${escapedName}\\s*>`, 'i'))?.[1] ?? ''
-  return decodeHtml(value).trim()
+function extractAttribute(xml: string, tagName: string, attributeName: string): string {
+  const match = xml.match(new RegExp(`<${tagName}[^>]*\\b${attributeName}=["']([^"']+)["'][^>]*>`, 'i'))
+  return match ? decodeHtml(match[1]).trim() : ''
 }
 
-function xmlAttribute(xml: string, tagName: string, attributeName: string): string {
-  const escapedTag = tagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const tag = xml.match(new RegExp(`<${escapedTag}\\b[^>]*>`, 'i'))?.[0] ?? ''
-  return extractAttributes(tag)[attributeName.toLowerCase()] ?? ''
-}
-
-function parseRss(xml: string): FeedArticle[] {
+function parseRss(xml: string, source: FeedSource): FeedArticle[] {
+  const items = xml.match(/<item[\s\S]*?<\/item>|<entry[\s\S]*?<\/entry>/gi) ?? []
   const articles: FeedArticle[] = []
-  for (const match of xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item\s*>/gi)) {
-    const item = match[1]
-    const title = xmlTag(item, 'title')
-    const description = xmlTag(item, 'description')
-    const body = xmlTag(item, 'content:encoded') || description
-    const url = xmlTag(item, 'link') || xmlTag(item, 'guid')
-    const publishedAt = new Date(xmlTag(item, 'pubDate'))
-    let parsedUrl: URL
-    try {
-      parsedUrl = new URL(url)
-    } catch {
-      continue
+
+  for (const item of items) {
+    const title = extractTagValue(item, 'title')
+    const description = extractTagValue(item, 'description') || extractTagValue(item, 'summary')
+    const body = extractTagValue(item, 'content:encoded') || extractTagValue(item, 'content') || description
+
+    let url = extractTagValue(item, 'link')
+    if (!url) {
+      url = extractAttribute(item, 'link', 'href')
     }
 
-    if (
-      parsedUrl.origin !== SOURCE_ORIGIN ||
-      !parsedUrl.pathname.startsWith('/articles/') ||
-      !Number.isFinite(publishedAt.getTime()) ||
-      !title ||
-      !description ||
-      !body
-    ) continue
+    const pubDateStr = extractTagValue(item, 'pubDate') || extractTagValue(item, 'published') || extractTagValue(item, 'updated')
+    const publishedAt = pubDateStr ? new Date(pubDateStr) : new Date()
 
-    const image = xmlAttribute(item, 'media:content', 'url')
-      || xmlAttribute(item, 'enclosure', 'url')
-      || item.match(/<img\b[^>]*\bsrc\s*=\s*(?:"([^"]+)"|'([^']+)')/i)?.slice(1).find(Boolean)
-      || ''
-    let imageUrl: URL
-    try {
-      imageUrl = new URL(decodeHtml(image))
-    } catch {
-      continue
+    if (!title || !url) continue
+
+    let image = extractAttribute(item, 'media:content', 'url') ||
+                extractAttribute(item, 'media:thumbnail', 'url') ||
+                extractAttribute(item, 'enclosure', 'url')
+
+    if (!image) {
+      const imgMatch = item.match(/<img[^>]+src=["']([^"']+)["']/i)
+      if (imgMatch) image = imgMatch[1]
     }
-    if (imageUrl.protocol !== 'https:') continue
+
+    if (!image || !image.startsWith('http')) {
+      image = 'https://promptfa.s3.eu-west1.arvanstorage.ir/promptsfa/default-cover.jpg'
+    }
 
     articles.push({
       title,
       description,
       body,
-      url: parsedUrl.toString(),
-      image: imageUrl.toString(),
-      publishedAt,
+      url,
+      image,
+      publishedAt: Number.isFinite(publishedAt.getTime()) ? publishedAt : new Date(),
+      source,
     })
   }
+
   return articles.sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
 }
 
 function getArticleText(content: string): string {
-  return decodeHtml(
-    content
-      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
-      .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-      .replace(/<a\b[^>]*>/gi, '')
-      .replace(/<\/a>/gi, '')
-      .replace(/<(?:p|h[1-6]|li|blockquote|br)\b[^>]*>/gi, '\n')
-      .replace(/<\/(?:p|h[1-6]|li|blockquote)>/gi, '\n')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/[ \t]+/g, ' ')
-      .replace(/\n\s+/g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-  ).trim().slice(0, MAX_SOURCE_CHARS)
+  return decodeHtml(content)
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ' ')
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
-function slugFromUrl(url: string): string {
-  const parts = new URL(url).pathname.split('/').filter(Boolean)
-  const sourceSlug = parts[parts.length - 1] ?? ''
-  return `news-ai-daily-${sourceSlug.toLowerCase().replace(/[^a-z0-9-]/g, '')}`
-}
-
-function validateGeneratedNews(value: unknown): GeneratedNews {
-  if (!value || typeof value !== 'object') throw new Error('Gemini returned an invalid news payload')
-  const candidate = value as Record<keyof GeneratedNews, unknown>
-  const fields: (keyof GeneratedNews)[] = ['titleFa', 'titleEn', 'descFa', 'descEn', 'contentFa', 'contentEn']
-  for (const field of fields) {
-    if (typeof candidate[field] !== 'string' || !candidate[field].trim()) {
-      throw new Error(`Gemini response is missing ${field}`)
-    }
+async function storeNewsImage(imageUrl: string): Promise<string> {
+  const url = new URL(imageUrl)
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+    throw new Error('Unsupported news image URL')
   }
 
-  return candidate as GeneratedNews
+  const response = await fetch(url, {
+    headers: { 'User-Agent': 'PromptsFA-NewsBot/1.0 (+https://promptsfa.ir)' },
+    signal: AbortSignal.timeout(12000),
+  })
+  if (!response.ok) throw new Error(`News image download failed (${response.status})`)
+
+  const contentLength = Number(response.headers.get('content-length'))
+  if (Number.isFinite(contentLength) && contentLength > MAX_NEWS_IMAGE_BYTES) {
+    throw new Error('News image exceeds the 10 MB limit')
+  }
+  if (!response.body) throw new Error('News image response is empty')
+
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let totalBytes = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    totalBytes += value.byteLength
+    if (totalBytes > MAX_NEWS_IMAGE_BYTES) {
+      await reader.cancel()
+      throw new Error('News image exceeds the 10 MB limit')
+    }
+    chunks.push(value)
+  }
+
+  if (!totalBytes) throw new Error('News image response is empty')
+  const imageBuffer = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)), totalBytes)
+  return (await uploadImageToStorage(imageBuffer, 'promptsfa/news')).url
 }
 
 async function generateBilingualArticle(source: { title: string; description: string; body: string }): Promise<GeneratedNews> {
-  const sourceText = [source.title, source.description, source.body].filter(Boolean).join('\n\n')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+  const sourceText = [
+    `Title: ${source.title}`,
+    `Summary: ${source.description}`,
+    `Body:\n${source.body.slice(0, MAX_SOURCE_CHARS)}`,
+  ].join('\n\n')
 
   const { text } = await generateText({
-    expectJson: true,
-    temperature: 0.35,
-    timeoutMs: 10000,
-    totalTimeoutMs: 40000,
     modelChain: AI_NEWS_MODEL_CHAIN,
+    temperature: 0.2,
     responseSchema: {
       type: 'OBJECT',
       properties: {
@@ -181,67 +197,97 @@ ${sourceText}
   })
 
   const clean = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
-  return validateGeneratedNews(JSON.parse(clean))
+  return JSON.parse(clean) as GeneratedNews
 }
 
 function formatReadTime(html: string, locale: 'fa' | 'en'): string {
   const wordCount = html.replace(/<[^>]+>/g, ' ').trim().split(/\s+/).filter(Boolean).length
   const minutes = Math.max(3, Math.ceil(wordCount / 220))
-  return locale === 'fa' ? `${minutes} دقیقه مطالعه` : `${minutes} min read`
+  return locale === 'fa' ? `${minutes}  ` : `${minutes} min read`
 }
 
 export async function importLatestAiDailyNews() {
-  const feedResponse = await fetch(RSS_URL, {
-    headers: { 'User-Agent': 'PromptsFA-NewsBot/1.0 (+https://promptsfa.ir)' },
-    signal: AbortSignal.timeout(12000),
-  })
-  if (!feedResponse.ok) throw new Error(`AI Daily RSS request failed (${feedResponse.status})`)
+  const results = []
 
-  const candidates = parseRss(await feedResponse.text())
-  for (const candidate of candidates) {
-    const slug = slugFromUrl(candidate.url)
-    if (await prisma.article.findUnique({ where: { slug }, select: { id: true } })) continue
+  for (const source of SOURCES) {
+    try {
+      const feedResponse = await fetch(source.url, {
+        headers: { 'User-Agent': 'PromptsFA-NewsBot/1.0 (+https://promptsfa.ir)' },
+        signal: AbortSignal.timeout(12000),
+      })
 
-    const body = getArticleText(candidate.body)
-    if (body.length < 200) {
-      throw new Error(`AI Daily article did not contain usable title, summary, and body: ${candidate.url}`)
+      if (!feedResponse.ok) continue
+
+      const xml = await feedResponse.text()
+      const candidates = parseRss(xml, source)
+      const candidate = candidates[0] //    
+
+      if (!candidate) continue
+
+      const baseSlug = candidate.title
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .trim()
+        .replace(/\s+/g, '-')
+        .slice(0, 50)
+
+      //      
+      const existing = await prisma.article.findFirst({
+        where: { slug: { startsWith: baseSlug } },
+        select: { id: true },
+      })
+
+      if (existing) continue
+
+      const body = getArticleText(candidate.body || candidate.description)
+      if (body.length < 100) continue
+
+      //   
+      const generated = await generateBilingualArticle({
+        title: candidate.title,
+        description: candidate.description,
+        body,
+      })
+
+      const sourceNoticeFa = `<p><strong> :</strong> <a href="${candidate.url}">${source.name}</a>.       .</p>`
+      const sourceNoticeEn = `<p><strong>Source:</strong> <a href="${candidate.url}">${source.name}</a>. Rewritten and translated for our readers.</p>`
+
+      const contentFa = articleContentToHtml(`${generated.contentFa}\n${sourceNoticeFa}`)
+      const contentEn = articleContentToHtml(`${generated.contentEn}\n${sourceNoticeEn}`)
+
+      const dateFa = new Intl.DateTimeFormat('fa-IR-u-nu-latn', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'long', day: 'numeric' }).format(candidate.publishedAt)
+      const dateEn = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'long', day: 'numeric' }).format(candidate.publishedAt)
+
+      const slug = `${baseSlug}-${Math.random().toString(36).slice(2, 6)}`
+      const imageUrl = await storeNewsImage(candidate.image)
+
+      const article = await prisma.article.create({
+        data: {
+          slug,
+          titleFa: generated.titleFa.trim(),
+          titleEn: generated.titleEn.trim(),
+          descFa: generated.descFa.trim(),
+          descEn: generated.descEn.trim(),
+          img: imageUrl,
+          tagFa: source.tagFa,
+          tagEn: source.tagEn,
+          dateFa,
+          dateEn,
+          readFa: formatReadTime(contentFa, 'fa'),
+          readEn: formatReadTime(contentEn, 'en'),
+          contentFa: [contentFa],
+          contentEn: [contentEn],
+          status: 'PUBLISHED',
+        },
+        select: { id: true, slug: true, titleFa: true, tagFa: true },
+      })
+
+      console.log(`[${source.tagEn}]  : ${article.titleFa}`)
+      results.push(article)
+    } catch (err) {
+      console.error(`   ${source.name}:`, err)
     }
-
-    const generated = await generateBilingualArticle({
-      title: candidate.title,
-      description: candidate.description,
-      body,
-    })
-    const sourceNoticeFa = `<p><strong>منبع خبر:</strong> <a href="${candidate.url}">AI Daily News</a>. این مطلب با بازنویسی و ترجمهٔ تحریریه تهیه شده است.</p>`
-    const sourceNoticeEn = `<p><strong>Source:</strong> <a href="${candidate.url}">AI Daily News</a>. This story was rewritten and translated for our readers.</p>`
-    const contentFa = articleContentToHtml(`${generated.contentFa}\n${sourceNoticeFa}`)
-    const contentEn = articleContentToHtml(`${generated.contentEn}\n${sourceNoticeEn}`)
-    const dateFa = new Intl.DateTimeFormat('fa-IR-u-nu-latn', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'long', day: 'numeric' }).format(candidate.publishedAt)
-    const dateEn = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tehran', year: 'numeric', month: 'long', day: 'numeric' }).format(candidate.publishedAt)
-
-    const article = await prisma.article.create({
-      data: {
-        slug,
-        titleFa: generated.titleFa.trim(),
-        titleEn: generated.titleEn.trim(),
-        descFa: generated.descFa.trim(),
-        descEn: generated.descEn.trim(),
-        img: candidate.image,
-        tagFa: 'اخبار',
-        tagEn: 'AI News',
-        dateFa,
-        dateEn,
-        readFa: formatReadTime(contentFa, 'fa'),
-        readEn: formatReadTime(contentEn, 'en'),
-        contentFa: [contentFa],
-        contentEn: [contentEn],
-        status: 'PUBLISHED',
-      },
-      select: { id: true, slug: true, titleFa: true, titleEn: true },
-    })
-
-    return { imported: true, article, sourceUrl: candidate.url }
   }
 
-  return { imported: false }
+  return { importedCount: results.length, articles: results }
 }

@@ -42,8 +42,8 @@ function VerifyInner() {
   }, [token, router])
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#070605] text-white p-4" dir="rtl">
-      <div className="max-w-md w-full bg-[#110f0d] border border-stone-800 rounded-3xl p-8 text-center shadow-2xl">
+    <div className="min-h-screen flex items-center justify-center text-white p-4" dir="rtl">
+      <div className="max-w-md w-full bg-[#110f0d]/90 border border-stone-800 rounded-3xl p-8 text-center shadow-2xl backdrop-blur-md">
         {!error ? (
           <div className="flex flex-col items-center gap-4">
             <div className="h-10 w-10 animate-spin rounded-full border-2 border-amber-500 border-t-transparent" />

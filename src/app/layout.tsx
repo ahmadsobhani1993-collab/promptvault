@@ -8,6 +8,7 @@ import Analytics from '@/components/analytics'
 import ClientProviders from '@/components/client-providers'
 import MouseTrail from '@/components/mouse-trail'
 import LocaleDocument from '@/components/locale-document'
+import HomeCosmosBackground from '@/components/home-cosmos-background'
 
 export const revalidate = 86400
 
@@ -39,12 +40,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang="fa" dir="rtl" suppressHydrationWarning>
-      <body suppressHydrationWarning className="bg-[#070503] text-ink antialiased font-sans">
+      <body suppressHydrationWarning className="relative isolate min-h-screen bg-[#070709] text-ink antialiased font-sans">
         <script dangerouslySetInnerHTML={{ __html: localeScript }} />
         <LocaleDocument />
-        <HeaderShell categories={categories} />
-        <main>{children}</main>
-        <Footer />
+        <div className="pointer-events-none fixed inset-0 z-0">
+          <HomeCosmosBackground />
+        </div>
+        <div className="relative z-10 flex min-h-screen flex-col">
+          <HeaderShell categories={categories} />
+          <main className="flex-1">{children}</main>
+          <Footer />
+        </div>
         <Analytics />
         <ClientProviders />
         <MouseTrail />

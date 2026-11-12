@@ -1,14 +1,14 @@
 ﻿export const revalidate = 60
-import HeroCanvas from '@/components/hero-canvas'
 import { dictionaries, type Locale } from '@/lib/i18n'
 import { getCategories, getPrompts, getArticles, L } from '@/lib/data'
 import { getRequestLocale } from '@/lib/request-locale'
+import HomeToolsOrbit from '@/components/home-tools-orbit'
 import PromptCard from '@/components/prompt-card'
 import Hero from '@/components/hero'
 import ZoomSection from '@/components/zoom-section'
-import DownButton from '@/components/down-button'
 import CategoryGrid from '@/components/category-grid'
 import Reveal from '@/components/reveal'
+import { getArticleCardImageUrl } from '@/lib/image-utils'
 import Link from 'next/link'
 import { localizedPath } from '@/lib/locale-path'
 
@@ -84,24 +84,23 @@ export default async function HomePage() {
 
   const [categories, prompts, articles, news] = await Promise.all([
     getCategories(),
-    getPrompts({ take: 12 }),
+    getPrompts({ type: 'IMAGE', take: 12 }),
     getArticles({ take: 4, excludeTagFa: 'اخبار' }),
     getArticles({ take: 4, tagFa: 'اخبار' }),
   ])
 
-  const imgPrompts = prompts.filter((p) => (p as any).type === 'IMAGE')
   const trending: typeof prompts = []
-  for (const p of imgPrompts) {
+  for (const p of prompts) {
     if (trending.length >= 5) break
     if (!trending.some((d) => d.categoryId === p.categoryId)) trending.push(p)
   }
-  for (const p of imgPrompts) {
+  for (const p of prompts) {
     if (trending.length >= 5) break
     if (!trending.includes(p)) trending.push(p)
   }
 
   return (
-    <>
+    <div className="relative">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -118,26 +117,18 @@ export default async function HomePage() {
           }),
         }}
       />
-      <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <HeroCanvas />
-        <div className="fx-blob anim-float" style={{ top: '-12%', right: '-14%', width: '46vw', height: '46vw' }} />
-        <div className="fx-blob anim-float2" style={{ bottom: '-18%', left: '-12%', width: '40vw', height: '40vw' }} />
-        <div className="fx-blob anim-float" style={{ top: '38%', left: '30%', width: '26vw', height: '26vw', opacity: 0.12 }} />
-      </div>
-
       <ZoomSection>
         <Hero
           locale={locale}
           label={t.heroLabel}
-          title={L(locale, 'با هوش مصنوعی باهوش کار کن.', 'Work smart with AI.')}
-          subtitle={t.heroSubtitle}
+          title={L(locale, 'یک دکمه فاصله بین ایده و عمل', 'One button between idea and action')}
           placeholder={t.searchPlaceholder}
           chips={chips}
         />
       </ZoomSection>
 
       <ZoomSection>
-        <section data-section className="snap-section flex min-h-[68vh] flex-col justify-center py-8">
+        <section id="trending" data-section className="snap-section flex min-h-[68vh] flex-col justify-center py-8">
           <div className="container-app">
             <Reveal>
               <div className="flex items-end justify-between gap-4">
@@ -182,12 +173,22 @@ export default async function HomePage() {
         </section>
       </ZoomSection>
 
+      <ZoomSection>
+        <HomeToolsOrbit locale={locale} />
+      </ZoomSection>
+
       {[
         {
           key: 'articles',
           title: L(locale, 'مقالات و آموزش هوش مصنوعی', 'AI articles and tutorials'),
           href: '/blog',
           linkLabel: L(locale, 'همه مقالات', 'All articles'),
+          sourcesTitle: L(locale, 'خبرنامه‌های روزانه', 'Daily newsletters'),
+          sources: [
+            { name: 'Superhuman AI', href: 'https://www.superhuman.ai/' },
+            { name: "Ben's Bites", href: 'https://www.bensbites.com/' },
+            { name: 'Mindstream', href: 'https://www.mindstream.news/' },
+          ],
           items: articles,
         },
         {
@@ -195,6 +196,13 @@ export default async function HomePage() {
           title: L(locale, 'اخبار هوش مصنوعی', 'AI news'),
           href: '/news',
           linkLabel: L(locale, 'همه اخبار', 'All news'),
+          sourcesTitle: L(locale, 'منابع خبری', 'News sources'),
+          sources: [
+            { name: 'The Verge', href: 'https://www.theverge.com/ai-artificial-intelligence' },
+            { name: 'WIRED', href: 'https://www.wired.com/tag/artificial-intelligence/' },
+            { name: 'Mashable', href: 'https://mashable.com/category/artificial-intelligence' },
+            { name: 'CNET', href: 'https://www.cnet.com/tech/services-and-software/ai/' },
+          ],
           items: news,
         },
       ].map((section) => (
@@ -212,15 +220,31 @@ export default async function HomePage() {
                 </div>
               </Reveal>
 
+              <nav aria-label={section.sourcesTitle} className="mt-4 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-ink-muted">{section.sourcesTitle}:</span>
+                {section.sources.map((source) => (
+                  <a
+                    key={source.href}
+                    href={source.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-full border border-line/60 bg-black/20 px-3 py-1 text-[11px] text-ink-muted transition-colors hover:border-gold/40 hover:text-gold-bright"
+                  >
+                    {source.name}
+                  </a>
+                ))}
+              </nav>
+
               <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 {section.items.map((a, i) => (
                   <Reveal key={a.id} delay={i * 90}>
                     <Link href={localizedPath(locale, '/blog/' + a.slug)} className="card group block h-full overflow-hidden transition-colors hover:border-line-strong">
                       <div className="overflow-hidden">
                         <img
-                          src={a.img ? (a.img.includes('/upload/') ? a.img.replace('/upload/', '/upload/f_auto,q_auto,w_800/') : a.img) : ''}
+                          src={getArticleCardImageUrl(a.img, 600)}
                           alt={L(locale, a.titleFa, a.titleEn)}
                           loading="lazy"
+                          decoding="async"
                           className="aspect-[16/9] w-full object-cover transition-transform duration-500 group-hover:scale-105"
                         />
                       </div>
@@ -249,8 +273,6 @@ export default async function HomePage() {
           </section>
         </ZoomSection>
       ))}
-
-      <DownButton />
-    </>
+    </div>
   )
 }

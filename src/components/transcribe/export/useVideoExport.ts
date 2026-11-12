@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { ArrayBufferTarget, Muxer } from 'mp4-muxer'
 import { loadFFmpeg } from '@/lib/video-extract'
 import { ensureFontLoaded } from '@/lib/studio/font-loader'
 import { renderStudioFrame } from '@/lib/studio/universal-renderer'
@@ -111,6 +112,164 @@ function normalizeExportStyle(style: StudioStyleConfig | Style): StudioStyleConf
   }
 }
 
+function computeExportBitrate(width: number, height: number, fps: number, quality: ExportQuality): number {
+  const bitsPerPixel = quality === 'high' ? 0.3 : 0.18
+  const floor = quality === 'high' ? 8_000_000 : 5_000_000
+  return Math.min(24_000_000, Math.max(floor, Math.round(width * height * Math.min(fps, 60) * bitsPerPixel)))
+}
+
+async function pickVideoEncoderConfig(
+  width: number,
+  height: number,
+  fps: number,
+  bitrate: number
+): Promise<VideoEncoderConfig | null> {
+  if (typeof VideoEncoder === 'undefined') return null
+
+  const pixels = width * height
+  const pixelsPerSecond = pixels * fps
+  const codecs: string[] = []
+  if (pixels <= 1920 * 1080 && pixelsPerSecond <= 1920 * 1080 * 30) codecs.push('avc1.640028')
+  if (pixels <= 1920 * 1080 && pixelsPerSecond <= 1920 * 1080 * 60) codecs.push('avc1.64002a')
+  codecs.push('avc1.640033', 'avc1.640034')
+
+  for (const hardwareAcceleration of ['prefer-hardware', 'no-preference'] as const) {
+    for (const codec of codecs) {
+      const config: VideoEncoderConfig = {
+        codec,
+        width,
+        height,
+        bitrate,
+        framerate: fps,
+        hardwareAcceleration,
+        latencyMode: 'quality',
+        avc: { format: 'avc' },
+      }
+      try {
+        const support = await VideoEncoder.isConfigSupported(config)
+        if (support.supported) return support.config ?? config
+      } catch {
+        // Try the next supported codec/acceleration combination.
+      }
+    }
+  }
+  return null
+}
+
+function seekVideoTo(video: HTMLVideoElement, time: number): Promise<void> {
+  if (Math.abs(video.currentTime - time) < 0.0005 && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+    return Promise.resolve()
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    let settled = false
+    const cleanup = () => {
+      window.clearTimeout(timer)
+      video.removeEventListener('seeked', onSeeked)
+      video.removeEventListener('error', onError)
+    }
+    const onSeeked = () => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve()
+    }
+    const onError = () => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(new Error('خطا در خواندن فریم ویدیو'))
+    }
+    const timer = window.setTimeout(() => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(new Error('خواندن فریم ویدیو بیش از حد طول کشید'))
+    }, 10000)
+    video.addEventListener('seeked', onSeeked)
+    video.addEventListener('error', onError)
+    video.currentTime = time
+  })
+}
+
+async function renderVideoOffline(options: {
+  video: HTMLVideoElement
+  canvas: HTMLCanvasElement
+  ctx: CanvasRenderingContext2D
+  width: number
+  height: number
+  fps: number
+  duration: number
+  segments: StudioSegment[]
+  style: StudioStyleConfig
+  encoderConfig: VideoEncoderConfig
+  cancelRef: { current: boolean }
+  onProgress: (ratio: number) => void
+}): Promise<Blob> {
+  const { video, canvas, ctx, width, height, fps, duration, segments, style, encoderConfig, cancelRef, onProgress } = options
+  const target = new ArrayBufferTarget()
+  const muxer = new Muxer({
+    target,
+    video: { codec: 'avc', width, height, frameRate: fps },
+    fastStart: 'in-memory',
+    firstTimestampBehavior: 'offset',
+  })
+  let encoderError: Error | null = null
+  const encoder = new VideoEncoder({
+    output: (chunk, metadata) => muxer.addVideoChunk(chunk, metadata),
+    error: (error) => { encoderError = error instanceof Error ? error : new Error(String(error)) },
+  })
+
+  const totalFrames = Math.max(1, Math.ceil(duration * fps))
+  const frameDurationUs = Math.round(1_000_000 / fps)
+  const keyFrameInterval = Math.max(1, Math.round(fps * 2))
+
+  try {
+    encoder.configure(encoderConfig)
+    for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
+      if (cancelRef.current) throw new DOMException('Export cancelled', 'AbortError')
+      if (encoderError) throw encoderError
+
+      const mediaTime = frameIndex / fps
+      await seekVideoTo(video, Math.min(mediaTime, Math.max(0, duration - 0.001)))
+      renderStudioFrame({
+        ctx,
+        canvasWidth: width,
+        canvasHeight: height,
+        video,
+        currentTime: mediaTime,
+        segments,
+        style,
+      })
+
+      const frame = new VideoFrame(canvas, {
+        timestamp: Math.round(mediaTime * 1_000_000),
+        duration: frameDurationUs,
+      })
+      try {
+        encoder.encode(frame, { keyFrame: frameIndex % keyFrameInterval === 0 })
+      } finally {
+        frame.close()
+      }
+
+      while (encoder.encodeQueueSize > 8) {
+        if (encoderError) throw encoderError
+        if (cancelRef.current) throw new DOMException('Export cancelled', 'AbortError')
+        await new Promise((resolve) => setTimeout(resolve, 5))
+      }
+      onProgress((frameIndex + 1) / totalFrames)
+    }
+
+    await encoder.flush()
+    if (encoderError) throw encoderError
+    if (cancelRef.current) throw new DOMException('Export cancelled', 'AbortError')
+    muxer.finalize()
+    return new Blob([target.buffer], { type: 'video/mp4' })
+  } finally {
+    if (encoder.state !== 'closed') encoder.close()
+  }
+}
+
 export function useVideoExport(sourceFile?: File | Blob | null) {
   const locale = useLocale()
   const translate = (fa: string, en: string) => L(locale, fa, en)
@@ -185,11 +344,16 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
     let visibilityHandler: (() => void) | null = null
 
     try {
-      const usedFonts = new Set<string>([renderStyle.fontFamily || 'Vazirmatn'])
+      const usedFonts = new Set<string>([renderStyle.fontFamily || 'Vazirmatn', 'Vazirmatn'])
       for (const watermark of renderStyle.watermarks ?? []) {
         if (watermark.type === 'text' && watermark.fontFamily) usedFonts.add(watermark.fontFamily)
       }
       await Promise.all([...usedFonts].map((family) => ensureFontLoaded(family, true)))
+      const persianSample = 'نمونه فونت فارسی: پ چ ژ گ ک ی ء آ ا ب ت ث ج ح خ د ذ ر ز س ش ص ض ط ظ ع غ ف ق ل م ن و ه'
+      const renderWeight = renderStyle.fontWeight || 'bold'
+      await Promise.all([...usedFonts].map((family) =>
+        document.fonts.load(`${renderWeight} 24px "${family}"`, persianSample)
+      ))
       await document.fonts.ready
       await new Promise<void>((resolve, reject) => {
         video.onloadedmetadata = () => resolve()
@@ -230,8 +394,50 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
       const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true })
       if (!ctx) throw new Error('امکان ایجاد Canvas وجود ندارد')
 
+      const exportBitrate = computeExportBitrate(W, H, targetFps, quality)
+      const encoderConfig = await pickVideoEncoderConfig(W, H, targetFps, exportBitrate)
+      let rawBlob: Blob
+      let isMp4 = false
+      let copyVideo = false
+
+      if (encoderConfig) {
+        console.log('[EXPORT] WebCodecs offline render:', {
+          codec: encoderConfig.codec,
+          width: W,
+          height: H,
+          fps: targetFps,
+          bitrate: exportBitrate,
+        })
+        let lastPercent = -1
+        rawBlob = await renderVideoOffline({
+          video,
+          canvas,
+          ctx,
+          width: W,
+          height: H,
+          fps: targetFps,
+          duration,
+          segments: renderSegments,
+          style: renderStyle,
+          encoderConfig,
+          cancelRef,
+          onProgress: (ratioDone) => {
+            const percent = Math.floor(ratioDone * 100)
+            if (percent === lastPercent) return
+            lastPercent = percent
+            setProgress(Math.min(50, Math.round(ratioDone * 50)))
+            const remaining = Math.max(0, Math.ceil(duration * (1 - ratioDone)))
+            setStageText(translate(`رندر کانویس (${remaining}s باقی‌مانده)`, `Rendering frames (${remaining}s remaining)`))
+          },
+        })
+        if (cancelRef.current) return
+        isMp4 = true
+        copyVideo = true
+      } else {
+      // Fallback for browsers without a supported WebCodecs encoder.
       canvasStream = canvas.captureStream(targetFps)
-      const { mime, isMp4 } = pickRecorderMime()
+      const { mime, isMp4: recorderIsMp4 } = pickRecorderMime()
+      isMp4 = recorderIsMp4
       console.log('[EXPORT] recorder mime:', mime, '| direct MP4:', isMp4, '| normalizing frame timestamps')
 
       // بودجه‌ی بیت‌ریت بر اساس حجم فایل اصلی (همان منطق قبلی)
@@ -371,6 +577,9 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
       rec.stop(); video.pause(); await recorderStopped
       if (cancelRef.current) return
 
+      rawBlob = new Blob(rawChunks, { type: mime })
+      }
+
       setStageText(translate('ادغام صدا و ساخت فایل نهایی...', 'Combining audio and creating the final file…'))
       setProgress(55)
 
@@ -390,8 +599,7 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
           await ff.deleteFile(tmpSrc).catch(() => {})
         }
 
-        const rawBlob = new Blob(rawChunks, { type: mime })
-        const recordedDuration = await getRecordedVideoDuration(rawBlob, duration)
+        const recordedDuration = copyVideo ? duration : await getRecordedVideoDuration(rawBlob, duration)
         const videoTimeScale = duration / recordedDuration
         console.info('[EXPORT] timeline durations:', {
           sourceSeconds: duration,
@@ -413,7 +621,8 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
         const audioArgs = audioFileToUse ? ['-i', audioFileToUse] : []
         const mapArgs = audioFileToUse ? ['-map', '0:v:0', '-map', '1:a:0'] : ['-map', '0:v:0']
 
-        // بودجه‌ی بیت‌ریت (برای مسیر قدیمی ویدئو، و برای بیت‌ریت صدا در هر دو مسیر)
+        // Keep the source-based bitrate budget for the MediaRecorder fallback.
+        const sizeFactor = quality === 'high' ? 1.1 : 1.03
         const sourceBytes = workingSource?.size ?? 0
         const sourceAverageKbps = sourceBytes > 0 && duration > 0
           ? (sourceBytes * 8) / duration / 1000
@@ -448,18 +657,21 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
         ff.on('log', onLog)
 
         try {
-          const videoCodecArgs = [
-            '-vf', `fps=${targetFps},setpts=(PTS-STARTPTS)*${videoTimeScale.toFixed(8)}`,
-            '-r', String(targetFps),
-            '-c:v', 'libx264',
-            '-pix_fmt', 'yuv420p',
-            '-b:v', String(targetVideoBps),
-            '-maxrate', String(Math.round(targetVideoBps * 1.25)),
-            '-bufsize', String(targetVideoBps * 2),
-            '-preset', 'veryfast',
-          ]
-          console.log('[EXPORT] ffmpeg start: CFR timestamp-normalized video + audio sync')
+          const videoCodecArgs = copyVideo
+            ? ['-c:v', 'copy']
+            : [
+                '-vf', `fps=${targetFps},setpts=(PTS-STARTPTS)*${videoTimeScale.toFixed(8)}`,
+                '-r', String(targetFps),
+                '-c:v', 'libx264',
+                '-pix_fmt', 'yuv420p',
+                '-b:v', String(targetVideoBps),
+                '-maxrate', String(Math.round(targetVideoBps * 1.25)),
+                '-bufsize', String(targetVideoBps * 2),
+                '-preset', 'veryfast',
+              ]
+          console.log('[EXPORT] ffmpeg start:', copyVideo ? 'stream-copy video + audio sync' : 'CFR timestamp-normalized video + audio sync')
 
+          const outputDuration = copyVideo ? Math.ceil(duration * targetFps) / targetFps : duration
           const muxArgs = [
             '-fflags', '+genpts',
             '-i', rawVideoName,
@@ -467,7 +679,7 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
             ...mapArgs,
             ...videoCodecArgs,
             ...audioCodecArgs,
-            '-t', String(duration),
+            '-t', String(outputDuration),
             '-avoid_negative_ts', 'make_zero',
             '-movflags', '+faststart',
             finalOutputName,
@@ -524,7 +736,7 @@ export function useVideoExport(sourceFile?: File | Blob | null) {
                 '-c:v', 'copy',
                 '-af', 'asetpts=PTS-STARTPTS',
                 ...audioOutputArgs,
-                '-t', String(duration),
+                '-t', String(outputDuration),
                 '-avoid_negative_ts', 'make_zero',
                 '-movflags', '+faststart',
                 finalOutputName,
