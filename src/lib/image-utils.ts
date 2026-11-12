@@ -78,6 +78,15 @@ export function getArticleCardImageUrl(url: string | null | undefined, width = 8
   }
 }
 
+export function shouldOptimizeArticleCardImage(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'https:' && parsed.hostname === 'platform.theverge.com'
+  } catch {
+    return false
+  }
+}
+
 export function getVideoPosterUrl(url: string | null | undefined): string | undefined {
   const resolved = getImageUrl(url)
   try {

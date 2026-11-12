@@ -1,4 +1,5 @@
 import 'vazirmatn/misc/Farsi-Digits/Vazirmatn-FD-font-face.css';
+import { Suspense } from 'react'
 import type { Metadata } from 'next'
 import './globals.css'
 import { getCategories } from '@/lib/data'
@@ -35,9 +36,12 @@ async function loadHeaderCategories() {
   }
 }
 
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
+async function HeaderWithCategories() {
   const categories = await loadHeaderCategories()
+  return <HeaderShell categories={categories} />
+}
 
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fa" dir="rtl" suppressHydrationWarning>
       <body suppressHydrationWarning className="relative isolate min-h-screen bg-[#070709] text-ink antialiased font-sans">
@@ -47,7 +51,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <HomeCosmosBackground />
         </div>
         <div className="relative z-10 flex min-h-screen flex-col">
-          <HeaderShell categories={categories} />
+          <Suspense fallback={<HeaderShell categories={[]} />}>
+            <HeaderWithCategories />
+          </Suspense>
           <main className="flex-1">{children}</main>
           <Footer />
         </div>

@@ -60,7 +60,7 @@ export default function SafeImg({
   if (fill) {
     return (
       <div className="relative w-full h-full">
-        <Image src={cur} alt={alt} fill className={`object-cover ${className}`} loading={loading ?? 'lazy'} onError={() => cur !== FALLBACK && setCur(FALLBACK)} />
+        <Image src={cur} alt={alt} fill className={`object-cover ${className}`} loading={loading ?? 'lazy'} unoptimized onError={() => cur !== FALLBACK && setCur(FALLBACK)} />
       </div>
     )
   }
@@ -70,6 +70,7 @@ export default function SafeImg({
       src={cur} alt={alt}
       width={width || 400} height={height || 300}
       className={className} loading={loading ?? 'lazy'}
+      unoptimized
       onError={() => cur !== FALLBACK && setCur(FALLBACK)}
     />
   )

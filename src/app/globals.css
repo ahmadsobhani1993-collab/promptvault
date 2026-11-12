@@ -346,6 +346,14 @@ html {
     scroll-snap-align: none !important;
     min-height: auto !important;
   }
+  .home-cosmos-star,
+  .hero-scroll-cue svg,
+  .anim-float,
+  .anim-float2,
+  .anim-fade-up,
+  .title-shine {
+    animation: none;
+  }
 }
 
 .article-body {

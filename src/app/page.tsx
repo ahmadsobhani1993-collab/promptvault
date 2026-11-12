@@ -1,4 +1,6 @@
 ﻿export const revalidate = 60
+import { Suspense } from 'react'
+import Image from 'next/image'
 import { dictionaries, type Locale } from '@/lib/i18n'
 import { getCategories, getPrompts, getArticles, L } from '@/lib/data'
 import { getRequestLocale } from '@/lib/request-locale'
@@ -8,7 +10,7 @@ import Hero from '@/components/hero'
 import ZoomSection from '@/components/zoom-section'
 import CategoryGrid from '@/components/category-grid'
 import Reveal from '@/components/reveal'
-import { getArticleCardImageUrl } from '@/lib/image-utils'
+import { getArticleCardImageUrl, shouldOptimizeArticleCardImage } from '@/lib/image-utils'
 import Link from 'next/link'
 import { localizedPath } from '@/lib/locale-path'
 
@@ -82,23 +84,6 @@ export default async function HomePage() {
   const locale: Locale = await getRequestLocale()
   const t = dictionaries[locale]
 
-  const [categories, prompts, articles, news] = await Promise.all([
-    getCategories(),
-    getPrompts({ type: 'IMAGE', take: 12 }),
-    getArticles({ take: 4, excludeTagFa: 'اخبار' }),
-    getArticles({ take: 4, tagFa: 'اخبار' }),
-  ])
-
-  const trending: typeof prompts = []
-  for (const p of prompts) {
-    if (trending.length >= 5) break
-    if (!trending.some((d) => d.categoryId === p.categoryId)) trending.push(p)
-  }
-  for (const p of prompts) {
-    if (trending.length >= 5) break
-    if (!trending.includes(p)) trending.push(p)
-  }
-
   return (
     <div className="relative">
       <script
@@ -126,7 +111,34 @@ export default async function HomePage() {
           chips={chips}
         />
       </ZoomSection>
+      <Suspense fallback={<div aria-hidden className="min-h-[68vh]" />}>
+        <HomeContent locale={locale} />
+      </Suspense>
+    </div>
+  )
+}
 
+async function HomeContent({ locale }: { locale: Locale }) {
+  const t = dictionaries[locale]
+  const [categories, prompts, articles, news] = await Promise.all([
+    getCategories(),
+    getPrompts({ type: 'IMAGE', take: 12 }),
+    getArticles({ take: 4, excludeTagFa: 'اخبار' }),
+    getArticles({ take: 4, tagFa: 'اخبار' }),
+  ])
+
+  const trending: typeof prompts = []
+  for (const p of prompts) {
+    if (trending.length >= 5) break
+    if (!trending.some((d) => d.categoryId === p.categoryId)) trending.push(p)
+  }
+  for (const p of prompts) {
+    if (trending.length >= 5) break
+    if (!trending.includes(p)) trending.push(p)
+  }
+
+  return (
+    <>
       <ZoomSection>
         <section id="trending" data-section className="snap-section flex min-h-[68vh] flex-col justify-center py-8">
           <div className="container-app">
@@ -240,11 +252,15 @@ export default async function HomePage() {
                   <Reveal key={a.id} delay={i * 90}>
                     <Link href={localizedPath(locale, '/blog/' + a.slug)} className="card group block h-full overflow-hidden transition-colors hover:border-line-strong">
                       <div className="overflow-hidden">
-                        <img
+                        <Image
                           src={getArticleCardImageUrl(a.img, 600)}
                           alt={L(locale, a.titleFa, a.titleEn)}
+                          width={600}
+                          height={338}
+                          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+                          quality={70}
+                          unoptimized={!shouldOptimizeArticleCardImage(getArticleCardImageUrl(a.img, 600))}
                           loading="lazy"
-                          decoding="async"
                           className="aspect-[16/9] w-full object-cover transition-transform duration-500 group-hover:scale-105"
                         />
                       </div>
@@ -273,6 +289,6 @@ export default async function HomePage() {
           </section>
         </ZoomSection>
       ))}
-    </div>
+    </>
   )
 }

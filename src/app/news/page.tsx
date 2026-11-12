@@ -4,7 +4,8 @@ import type { Locale } from '@/lib/i18n'
 import { getArticles, L } from '@/lib/data'
 import { getRequestLocale } from '@/lib/request-locale'
 import { localizedPath } from '@/lib/locale-path'
-import { getArticleCardImageUrl } from '@/lib/image-utils'
+import Image from 'next/image'
+import { getArticleCardImageUrl, shouldOptimizeArticleCardImage } from '@/lib/image-utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,7 +44,17 @@ export default async function NewsPage() {
         {articles.map((article) => (
           <Link key={article.id} href={localizedPath(locale, `/blog/${article.slug}`)} className="group card overflow-hidden transition-all duration-200 hover:-translate-y-1 hover:border-gold/40">
             <div className="overflow-hidden">
-              <img src={getArticleCardImageUrl(article.img, 600)} alt={L(locale, article.titleFa, article.titleEn)} loading="lazy" decoding="async" className="aspect-[16/9] w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
+              <Image
+                src={getArticleCardImageUrl(article.img, 600)}
+                alt={L(locale, article.titleFa, article.titleEn)}
+                width={600}
+                height={338}
+                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+                quality={70}
+                unoptimized={!shouldOptimizeArticleCardImage(getArticleCardImageUrl(article.img, 600))}
+                loading="lazy"
+                className="aspect-[16/9] w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+              />
             </div>
             <div className="flex min-h-40 flex-col p-4">
               <span className="gold-badge self-start text-[10px]">{L(locale, 'اخبار هوش مصنوعی', 'AI news')}</span>
